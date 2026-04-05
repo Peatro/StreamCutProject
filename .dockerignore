@@ -1,0 +1,13 @@
+.git
+.gradle
+.idea
+build
+*.iml
+HELP.md
+MVP Plan.md
+Main idea.md
+STORAGE.md
+worker/.venv
+worker/.pytest_cache
+worker/__pycache__
+worker/tests/__pycache__
