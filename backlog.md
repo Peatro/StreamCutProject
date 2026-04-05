@@ -16,6 +16,7 @@ Branch snapshot: `develop`
 - `feature/TASK-004-persistence-foundation` was merged into `develop`.
 - `main` is behind `develop` and does not contain the current MVP implementation yet.
 - Docker runtime has been repaired locally and is working on `develop`.
+- Smoke-test on the current Docker stack has been completed without confirmed code defects.
 
 ## DONE
 
@@ -61,6 +62,21 @@ Branch snapshot: `develop`
 ### Important Corrections Already Applied
 - Removed accidental Java-side worker audio implementation to preserve architecture boundaries.
 - Merged MVP feature branch into `develop`.
+- Full API smoke-test executed on the live Docker stack:
+  - `GET /health`
+  - `GET /`
+  - `GET /job.html?id=1`
+  - `POST /api/jobs/url`
+  - `POST /api/jobs/upload`
+  - `GET /api/jobs`
+  - `GET /api/jobs/{id}`
+  - `GET /api/jobs/{id}/transcript`
+  - `GET /api/jobs/{id}/candidates`
+  - `GET /api/jobs/{id}/events`
+  - `POST /api/candidates/{id}/approve`
+  - `POST /api/candidates/{id}/export`
+  - `GET /api/exports/{id}`
+- Smoke-test data was cleaned from the local PostgreSQL volume after validation.
 
 ## IN_PROGRESS
 
@@ -94,14 +110,9 @@ Files currently changed:
 - Decide whether worker should remain long-running idle by default or move to explicit queue/command mode.
 
 ### Validation
-- Run a fuller smoke-test for:
-  - upload flow
-  - job details page
-  - transcript endpoint
-  - candidate moderation endpoints
-  - export endpoint
 - Manually verify UI flows in a real browser.
 - Run worker-side functional checks with an actual input media file.
+- Run a true end-to-end job execution once backend-to-worker processing is wired beyond the current lightweight runtime loop.
 
 ### Stabilization
 - Document current actual delivery status against `TASK-001` ... `TASK-025`.
@@ -126,7 +137,7 @@ Files currently changed:
 - The worker is structurally present, but real media pipeline validation is still thinner than backend validation.
 
 ## Recommended Next Sequence
-1. Run full smoke-test on the current `develop` stack.
-2. Fix any end-to-end issues found in upload, moderation, or export.
-3. Decide the permanent Docker baseline for backend, worker, and postgres images.
-4. Update `main` only after `develop` passes the smoke-test cleanly.
+1. Decide the permanent Docker baseline for backend, worker, and postgres images.
+2. Manually verify the UI in a real browser.
+3. Run a real media-file end-to-end flow through the worker pipeline.
+4. Update `main` only after `develop` passes the remaining validation cleanly.
