@@ -1,0 +1,70 @@
+databaseChangeLog:
+  - changeSet:
+      id: 006-create-analysis-window
+      author: codex
+      comment: Create the analysis_window table for persisted worker analysis windows.
+      changes:
+        - createTable:
+            tableName: analysis_window
+            columns:
+              - column:
+                  name: id
+                  type: BIGINT
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: job_id
+                  type: BIGINT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: start_sec
+                  type: DOUBLE PRECISION
+                  constraints:
+                    nullable: false
+              - column:
+                  name: end_sec
+                  type: DOUBLE PRECISION
+                  constraints:
+                    nullable: false
+              - column:
+                  name: speech_density
+                  type: DOUBLE PRECISION
+                  constraints:
+                    nullable: false
+              - column:
+                  name: silence_ratio
+                  type: DOUBLE PRECISION
+                  constraints:
+                    nullable: false
+              - column:
+                  name: emotion_hits
+                  type: INT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: continuity_score
+                  type: DOUBLE PRECISION
+                  constraints:
+                    nullable: false
+              - column:
+                  name: total_score
+                  type: DOUBLE PRECISION
+                  constraints:
+                    nullable: false
+        - addForeignKeyConstraint:
+            baseTableName: analysis_window
+            baseColumnNames: job_id
+            referencedTableName: vod_job
+            referencedColumnNames: id
+            constraintName: fk_analysis_window_job_id
+        - createIndex:
+            tableName: analysis_window
+            indexName: idx_analysis_window_job_start
+            columns:
+              - column:
+                  name: job_id
+              - column:
+                  name: start_sec
