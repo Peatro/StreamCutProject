@@ -5,6 +5,9 @@ import com.peatroxd.streamcutproject.vodjob.api.JobDetailResponse;
 import com.peatroxd.streamcutproject.vodjob.api.JobEventResponse;
 import com.peatroxd.streamcutproject.vodjob.event.JobEvent;
 import com.peatroxd.streamcutproject.vodjob.event.JobEventRepository;
+import com.peatroxd.streamcutproject.workerdispatch.WorkerDispatchPayload;
+import com.peatroxd.streamcutproject.workerdispatch.WorkerDispatchPayloadFactory;
+import com.peatroxd.streamcutproject.workerdispatch.WorkerDispatchPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -17,10 +20,10 @@ import java.time.Instant;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import org.springframework.web.server.ResponseStatusException;
 
 @ExtendWith(MockitoExtension.class)
@@ -32,11 +35,22 @@ class VodJobServiceTest {
     @Mock
     private JobEventRepository jobEventRepository;
 
+    @Mock
+    private WorkerDispatchPort workerDispatchPort;
+
+    @Mock
+    private WorkerDispatchPayloadFactory workerDispatchPayloadFactory;
+
     private VodJobService vodJobService;
 
     @BeforeEach
     void setUp() {
-        vodJobService = new VodJobService(vodJobRepository, jobEventRepository);
+        vodJobService = new VodJobService(
+                vodJobRepository,
+                jobEventRepository,
+                workerDispatchPort,
+                workerDispatchPayloadFactory
+        );
     }
 
     @Test
@@ -119,6 +133,42 @@ class VodJobServiceTest {
         assertThatThrownBy(() -> vodJobService.getJob(99L))
                 .isInstanceOf(ResponseStatusException.class)
                 .hasMessageContaining("Job not found: 99");
+    }
+
+    @Test
+    void dispatchJobBuildsPayloadMarksQueuedAndRecordsEvent() {
+        VodJob job = buildJob(1L, "https://example.com/video", Instant.parse("2026-04-05T10:00:00Z"));
+        job.setStorageVideoPath("/var/lib/streamcut/jobs/1/source/video.mp4");
+        when(vodJobRepository.findById(1L)).thenReturn(java.util.Optional.of(job));
+
+        WorkerDispatchPayload payload = new WorkerDispatchPayload(
+                1L,
+                "/var/lib/streamcut/jobs/1/source/video.mp4",
+                "URL",
+                "https://example.com/video"
+        );
+        when(workerDispatchPayloadFactory.fromJob(job)).thenReturn(payload);
+
+        WorkerDispatchPayload result = vodJobService.dispatchJob(1L);
+
+        assertThat(result).isEqualTo(payload);
+        assertThat(job.getStatus()).isEqualTo(JobStatus.QUEUED);
+        assertThat(job.getUpdatedAt()).isNotNull();
+        verify(workerDispatchPort).dispatch(payload);
+        verify(jobEventRepository).save(any(JobEvent.class));
+    }
+
+    @Test
+    void dispatchJobThrowsWhenStorageVideoPathIsMissing() {
+        VodJob job = buildJob(1L, "https://example.com/video", Instant.parse("2026-04-05T10:00:00Z"));
+        when(vodJobRepository.findById(1L)).thenReturn(java.util.Optional.of(job));
+
+        when(workerDispatchPayloadFactory.fromJob(job))
+                .thenThrow(new IllegalStateException("Job 1 has no storage video path"));
+
+        assertThatThrownBy(() -> vodJobService.dispatchJob(1L))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("has no storage video path");
     }
 
     @Test

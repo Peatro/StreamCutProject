@@ -5,28 +5,41 @@ import com.peatroxd.streamcutproject.vodjob.api.JobDetailResponse;
 import com.peatroxd.streamcutproject.vodjob.api.JobEventResponse;
 import com.peatroxd.streamcutproject.vodjob.api.JobSummaryResponse;
 import com.peatroxd.streamcutproject.vodjob.api.JobMapper;
+import com.peatroxd.streamcutproject.vodjob.event.JobEvent;
 import com.peatroxd.streamcutproject.vodjob.event.JobEventRepository;
+import com.peatroxd.streamcutproject.workerdispatch.WorkerDispatchPayload;
+import com.peatroxd.streamcutproject.workerdispatch.WorkerDispatchPayloadFactory;
+import com.peatroxd.streamcutproject.workerdispatch.WorkerDispatchPort;
 import org.springframework.http.HttpStatus;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Instant;
 import java.util.List;
-import org.springframework.data.domain.Sort;
 
 @Service
 public class VodJobService {
 
     private static final String SOURCE_TYPE_URL = "URL";
     private static final String SOURCE_TYPE_FILE = "FILE";
+    private static final String EVENT_JOB_QUEUED = "JOB_QUEUED";
 
     private final VodJobRepository vodJobRepository;
     private final JobEventRepository jobEventRepository;
+    private final WorkerDispatchPort workerDispatchPort;
+    private final WorkerDispatchPayloadFactory workerDispatchPayloadFactory;
 
-    public VodJobService(VodJobRepository vodJobRepository, JobEventRepository jobEventRepository) {
+    public VodJobService(
+            VodJobRepository vodJobRepository,
+            JobEventRepository jobEventRepository,
+            WorkerDispatchPort workerDispatchPort,
+            WorkerDispatchPayloadFactory workerDispatchPayloadFactory) {
         this.vodJobRepository = vodJobRepository;
         this.jobEventRepository = jobEventRepository;
+        this.workerDispatchPort = workerDispatchPort;
+        this.workerDispatchPayloadFactory = workerDispatchPayloadFactory;
     }
 
     @Transactional
@@ -66,6 +79,29 @@ public class VodJobService {
                         event.getCreatedAt()
                 ))
                 .toList();
+    }
+
+    @Transactional
+    public WorkerDispatchPayload dispatchJob(Long jobId) {
+        VodJob job = vodJobRepository.findById(jobId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Job not found: " + jobId));
+
+        WorkerDispatchPayload payload = workerDispatchPayloadFactory.fromJob(job);
+        workerDispatchPort.dispatch(payload);
+
+        Instant now = Instant.now();
+        job.setStatus(JobStatus.QUEUED);
+        job.setUpdatedAt(now);
+        vodJobRepository.save(job);
+
+        jobEventRepository.save(JobEvent.create(
+                job,
+                EVENT_JOB_QUEUED,
+                "Job queued for worker dispatch",
+                now
+        ));
+
+        return payload;
     }
 
     private JobSummaryResponse createJob(String sourceType, String sourceUrl, String originalFilename) {

@@ -37,6 +37,15 @@ public class JobEvent {
     protected JobEvent() {
     }
 
+    public static JobEvent create(VodJob vodJob, String eventType, String message, Instant createdAt) {
+        JobEvent event = new JobEvent();
+        event.setVodJob(vodJob);
+        event.setEventType(eventType);
+        event.setMessage(message);
+        event.setCreatedAt(createdAt);
+        return event;
+    }
+
     public Long getId() {
         return id;
     }
