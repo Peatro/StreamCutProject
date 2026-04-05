@@ -1,6 +1,7 @@
 package com.peatroxd.streamcutproject.clipcandidate;
 
 import com.peatroxd.streamcutproject.clipcandidate.api.ClipCandidateResponse;
+import com.peatroxd.streamcutproject.clipcandidate.api.ExportStatusResponse;
 import com.peatroxd.streamcutproject.vodjob.VodJobService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -65,5 +66,41 @@ class ClipCandidateControllerTest {
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
                 .andExpect(jsonPath("$.id").value(7))
                 .andExpect(jsonPath("$.moderationStatus").value("REJECTED"));
+    }
+
+    @Test
+    void startsExportForApprovedCandidate() throws Exception {
+        when(vodJobService.startExport(anyLong())).thenReturn(new ExportStatusResponse(
+                7L,
+                1L,
+                "EXPORTING_CLIP",
+                "/var/lib/streamcut/jobs/1/exports/candidate-7.mp4",
+                "APPROVED"
+        ));
+
+        mockMvc.perform(post("/api/candidates/7/export"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.id").value(7))
+                .andExpect(jsonPath("$.status").value("EXPORTING_CLIP"))
+                .andExpect(jsonPath("$.artifactPath").value("/var/lib/streamcut/jobs/1/exports/candidate-7.mp4"));
+    }
+
+    @Test
+    void getsExportStatus() throws Exception {
+        when(vodJobService.getExportStatus(anyLong())).thenReturn(new ExportStatusResponse(
+                7L,
+                1L,
+                "EXPORTING_CLIP",
+                "/var/lib/streamcut/jobs/1/exports/candidate-7.mp4",
+                "APPROVED"
+        ));
+
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/api/exports/7"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.id").value(7))
+                .andExpect(jsonPath("$.status").value("EXPORTING_CLIP"))
+                .andExpect(jsonPath("$.artifactPath").value("/var/lib/streamcut/jobs/1/exports/candidate-7.mp4"));
     }
 }

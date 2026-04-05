@@ -5,6 +5,7 @@ import com.peatroxd.streamcutproject.clipcandidate.ClipCandidateRepository;
 import com.peatroxd.streamcutproject.clipcandidate.ModerationStatus;
 import com.peatroxd.streamcutproject.clipcandidate.api.ClipCandidateMapper;
 import com.peatroxd.streamcutproject.clipcandidate.api.ClipCandidateResponse;
+import com.peatroxd.streamcutproject.clipcandidate.api.ExportStatusResponse;
 import com.peatroxd.streamcutproject.vodjob.api.JobListItemResponse;
 import com.peatroxd.streamcutproject.vodjob.api.JobDetailResponse;
 import com.peatroxd.streamcutproject.vodjob.api.JobEventResponse;
@@ -14,6 +15,7 @@ import com.peatroxd.streamcutproject.vodjob.api.TranscriptSegmentResponse;
 import com.peatroxd.streamcutproject.vodjob.event.JobEvent;
 import com.peatroxd.streamcutproject.vodjob.event.JobEventRepository;
 import com.peatroxd.streamcutproject.transcript.TranscriptSegmentRepository;
+import com.peatroxd.streamcutproject.storage.StorageService;
 import com.peatroxd.streamcutproject.workerdispatch.WorkerDispatchPayload;
 import com.peatroxd.streamcutproject.workerdispatch.WorkerDispatchPayloadFactory;
 import com.peatroxd.streamcutproject.workerdispatch.WorkerDispatchPort;
@@ -32,11 +34,13 @@ public class VodJobService {
     private static final String SOURCE_TYPE_URL = "URL";
     private static final String SOURCE_TYPE_FILE = "FILE";
     private static final String EVENT_JOB_QUEUED = "JOB_QUEUED";
+    private static final String EVENT_EXPORT_STARTED = "EXPORT_STARTED";
 
     private final VodJobRepository vodJobRepository;
     private final JobEventRepository jobEventRepository;
     private final TranscriptSegmentRepository transcriptSegmentRepository;
     private final ClipCandidateRepository clipCandidateRepository;
+    private final StorageService storageService;
     private final WorkerDispatchPort workerDispatchPort;
     private final WorkerDispatchPayloadFactory workerDispatchPayloadFactory;
 
@@ -45,12 +49,14 @@ public class VodJobService {
             JobEventRepository jobEventRepository,
             TranscriptSegmentRepository transcriptSegmentRepository,
             ClipCandidateRepository clipCandidateRepository,
+            StorageService storageService,
             WorkerDispatchPort workerDispatchPort,
             WorkerDispatchPayloadFactory workerDispatchPayloadFactory) {
         this.vodJobRepository = vodJobRepository;
         this.jobEventRepository = jobEventRepository;
         this.transcriptSegmentRepository = transcriptSegmentRepository;
         this.clipCandidateRepository = clipCandidateRepository;
+        this.storageService = storageService;
         this.workerDispatchPort = workerDispatchPort;
         this.workerDispatchPayloadFactory = workerDispatchPayloadFactory;
     }
@@ -128,6 +134,42 @@ public class VodJobService {
     }
 
     @Transactional
+    public ExportStatusResponse startExport(Long candidateId) {
+        ClipCandidate candidate = requireCandidate(candidateId);
+        if (candidate.getModerationStatus() != ModerationStatus.APPROVED) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "Candidate must be approved before export: " + candidateId
+            );
+        }
+
+        VodJob job = candidate.getVodJob();
+        Instant now = Instant.now();
+        String artifactPath = resolveExportArtifactPath(candidate);
+
+        candidate.setExportedClipPath(artifactPath);
+        job.setStatus(JobStatus.EXPORTING_CLIP);
+        job.setUpdatedAt(now);
+
+        clipCandidateRepository.save(candidate);
+        vodJobRepository.save(job);
+        jobEventRepository.save(JobEvent.create(
+                job,
+                EVENT_EXPORT_STARTED,
+                "Export started for candidate " + candidateId,
+                now
+        ));
+
+        return toExportStatusResponse(candidate, artifactPath, JobStatus.EXPORTING_CLIP);
+    }
+
+    @Transactional(readOnly = true)
+    public ExportStatusResponse getExportStatus(Long exportId) {
+        ClipCandidate candidate = requireCandidate(exportId);
+        return toExportStatusResponse(candidate, resolveExportArtifactPath(candidate), candidate.getVodJob().getStatus());
+    }
+
+    @Transactional
     public WorkerDispatchPayload dispatchJob(Long jobId) {
         VodJob job = vodJobRepository.findById(jobId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Job not found: " + jobId));
@@ -175,5 +217,39 @@ public class VodJobService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Candidate not found: " + candidateId));
         candidate.setModerationStatus(moderationStatus);
         return ClipCandidateMapper.toResponse(clipCandidateRepository.save(candidate));
+    }
+
+    private ClipCandidate requireCandidate(Long candidateId) {
+        return clipCandidateRepository.findById(candidateId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Candidate not found: " + candidateId));
+    }
+
+    private String resolveExportArtifactPath(ClipCandidate candidate) {
+        if (candidate.getExportedClipPath() != null && !candidate.getExportedClipPath().isBlank()) {
+            return normalizeArtifactPath(candidate.getExportedClipPath());
+        }
+        return normalizeArtifactPath(storageService.resolveExportedClipPath(
+                candidate.getVodJob().getId(),
+                candidate.getId(),
+                ".mp4"
+        ).toString());
+    }
+
+    private static String normalizeArtifactPath(String path) {
+        return path.replace('\\', '/');
+    }
+
+    private ExportStatusResponse toExportStatusResponse(
+            ClipCandidate candidate,
+            String artifactPath,
+            JobStatus jobStatus
+    ) {
+        return new ExportStatusResponse(
+                candidate.getId(),
+                candidate.getVodJob().getId(),
+                jobStatus.name(),
+                artifactPath,
+                candidate.getModerationStatus().name()
+        );
     }
 }
