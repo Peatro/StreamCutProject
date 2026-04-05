@@ -2,6 +2,9 @@
 .gradle
 .idea
 build
+!build/
+!build/libs/
+!build/libs/*.jar
 *.iml
 HELP.md
 MVP Plan.md
