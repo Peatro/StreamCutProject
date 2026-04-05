@@ -1,0 +1,50 @@
+databaseChangeLog:
+  - changeSet:
+      id: 003-create-job-event
+      author: codex
+      comment: Create the job_event table for job pipeline events.
+      changes:
+        - createTable:
+            tableName: job_event
+            columns:
+              - column:
+                  name: id
+                  type: BIGINT
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: job_id
+                  type: BIGINT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: event_type
+                  type: VARCHAR(100)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: message
+                  type: CLOB
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: TIMESTAMP
+                  constraints:
+                    nullable: false
+        - addForeignKeyConstraint:
+            baseTableName: job_event
+            baseColumnNames: job_id
+            referencedTableName: vod_job
+            referencedColumnNames: id
+            constraintName: fk_job_event_job_id
+        - createIndex:
+            tableName: job_event
+            indexName: idx_job_event_job_created_at
+            columns:
+              - column:
+                  name: job_id
+              - column:
+                  name: created_at

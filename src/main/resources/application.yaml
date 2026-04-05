@@ -1,3 +1,17 @@
 spring:
   application:
     name: StreamCutProject
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/streamcut}
+    username: ${SPRING_DATASOURCE_USERNAME:streamcut}
+    password: ${SPRING_DATASOURCE_PASSWORD:streamcut}
+    driver-class-name: org.postgresql.Driver
+  liquibase:
+    change-log: classpath:db/changelog/db.changelog-master.yaml
+    enabled: true
+  sql:
+    init:
+      mode: never
+app:
+  storage:
+    local-root: ${APP_STORAGE_LOCAL_ROOT:data/storage}

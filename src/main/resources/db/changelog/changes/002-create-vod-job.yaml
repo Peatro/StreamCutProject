@@ -1,0 +1,63 @@
+databaseChangeLog:
+  - changeSet:
+      id: 002-create-vod-job
+      author: codex
+      comment: Create the core vod_job table for job persistence.
+      changes:
+        - createTable:
+            tableName: vod_job
+            columns:
+              - column:
+                  name: id
+                  type: BIGINT
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: source_type
+                  type: VARCHAR(50)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: source_url
+                  type: VARCHAR(2048)
+              - column:
+                  name: original_filename
+                  type: VARCHAR(255)
+              - column:
+                  name: status
+                  type: VARCHAR(50)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: started_at
+                  type: TIMESTAMP
+              - column:
+                  name: finished_at
+                  type: TIMESTAMP
+              - column:
+                  name: error_message
+                  type: CLOB
+              - column:
+                  name: duration_sec
+                  type: BIGINT
+              - column:
+                  name: language
+                  type: VARCHAR(64)
+              - column:
+                  name: storage_video_path
+                  type: VARCHAR(512)
+              - column:
+                  name: storage_audio_path
+                  type: VARCHAR(512)

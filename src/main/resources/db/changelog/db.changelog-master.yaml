@@ -1,0 +1,22 @@
+databaseChangeLog:
+  - include:
+      file: changes/001-initial-noop.yaml
+      relativeToChangelogFile: true
+  - include:
+      file: changes/002-create-vod-job.yaml
+      relativeToChangelogFile: true
+  - include:
+      file: changes/003-create-job-event.yaml
+      relativeToChangelogFile: true
+  - include:
+      file: changes/004-create-transcript-segment.yaml
+      relativeToChangelogFile: true
+  - include:
+      file: changes/005-create-silence-segment.yaml
+      relativeToChangelogFile: true
+  - include:
+      file: changes/006-create-analysis-window.yaml
+      relativeToChangelogFile: true
+  - include:
+      file: changes/007-create-clip-candidate.yaml
+      relativeToChangelogFile: true
