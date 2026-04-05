@@ -32,4 +32,23 @@ public final class JobMapper {
                 job.getLanguage()
         );
     }
+
+    public static JobDetailResponse toDetailResponse(VodJob job) {
+        return new JobDetailResponse(
+                job.getId(),
+                job.getSourceType(),
+                job.getSourceUrl(),
+                job.getOriginalFilename(),
+                job.getStatus().name(),
+                job.getCreatedAt(),
+                job.getUpdatedAt(),
+                job.getStartedAt(),
+                job.getFinishedAt(),
+                job.getErrorMessage(),
+                job.getDurationSec(),
+                job.getLanguage(),
+                job.getStorageVideoPath(),
+                job.getStorageAudioPath()
+        );
+    }
 }

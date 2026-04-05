@@ -1,6 +1,7 @@
 package com.peatroxd.streamcutproject.vodjob;
 
 import com.peatroxd.streamcutproject.vodjob.api.JobListItemResponse;
+import com.peatroxd.streamcutproject.vodjob.api.JobDetailResponse;
 import com.peatroxd.streamcutproject.vodjob.api.JobEventResponse;
 import com.peatroxd.streamcutproject.vodjob.event.JobEvent;
 import com.peatroxd.streamcutproject.vodjob.event.JobEventRepository;
@@ -71,7 +72,40 @@ class VodJobServiceTest {
     }
 
     @Test
+    void getJobReturnsDetailResponse() {
+        VodJob job = buildJob(1L, "https://example.com/video", Instant.parse("2026-04-05T10:00:00Z"));
+        job.setSourceType("URL");
+        job.setOriginalFilename("video.mp4");
+        job.setStartedAt(Instant.parse("2026-04-05T10:01:00Z"));
+        job.setFinishedAt(Instant.parse("2026-04-05T10:05:00Z"));
+        job.setErrorMessage(null);
+        job.setDurationSec(120L);
+        job.setLanguage("en");
+        job.setStorageVideoPath("/data/video.mp4");
+        job.setStorageAudioPath("/data/audio.wav");
+        when(vodJobRepository.findById(1L)).thenReturn(java.util.Optional.of(job));
+
+        JobDetailResponse response = vodJobService.getJob(1L);
+
+        assertThat(response.id()).isEqualTo(1L);
+        assertThat(response.status()).isEqualTo("NEW");
+        assertThat(response.sourceType()).isEqualTo("URL");
+        assertThat(response.originalFilename()).isEqualTo("video.mp4");
+        assertThat(response.storageAudioPath()).isEqualTo("/data/audio.wav");
+    }
+
+    @Test
+    void getJobThrowsNotFoundForUnknownJob() {
+        when(vodJobRepository.findById(99L)).thenReturn(java.util.Optional.empty());
+
+        assertThatThrownBy(() -> vodJobService.getJob(99L))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("Job not found: 99");
+    }
+
+    @Test
     void listJobEventsReturnsPersistedEventsInStableOrder() {
+        VodJob job = buildJob(1L, "https://example.com/video", Instant.parse("2026-04-05T10:00:00Z"));
         JobEvent earlier = Mockito.mock(JobEvent.class);
         when(earlier.getId()).thenReturn(10L);
         when(earlier.getEventType()).thenReturn("JOB_CREATED");
@@ -84,7 +118,7 @@ class VodJobServiceTest {
         when(later.getMessage()).thenReturn("Job queued");
         when(later.getCreatedAt()).thenReturn(Instant.parse("2026-04-05T10:00:02Z"));
 
-        when(vodJobRepository.existsById(1L)).thenReturn(true);
+        when(vodJobRepository.findById(1L)).thenReturn(java.util.Optional.of(job));
         when(jobEventRepository.findAllByJobIdOrderByCreatedAtAscIdAsc(1L)).thenReturn(List.of(earlier, later));
 
         List<JobEventResponse> events = vodJobService.listJobEvents(1L);
@@ -98,7 +132,7 @@ class VodJobServiceTest {
 
     @Test
     void listJobEventsThrowsNotFoundForUnknownJob() {
-        when(vodJobRepository.existsById(99L)).thenReturn(false);
+        when(vodJobRepository.findById(99L)).thenReturn(java.util.Optional.empty());
 
         assertThatThrownBy(() -> vodJobService.listJobEvents(99L))
                 .isInstanceOf(ResponseStatusException.class)

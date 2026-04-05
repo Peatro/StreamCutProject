@@ -1,6 +1,7 @@
 package com.peatroxd.streamcutproject.vodjob;
 
 import com.peatroxd.streamcutproject.vodjob.api.JobListItemResponse;
+import com.peatroxd.streamcutproject.vodjob.api.JobDetailResponse;
 import com.peatroxd.streamcutproject.vodjob.api.JobEventResponse;
 import com.peatroxd.streamcutproject.vodjob.api.JobSummaryResponse;
 import com.peatroxd.streamcutproject.vodjob.api.JobMapper;
@@ -51,11 +52,15 @@ public class VodJobService {
     }
 
     @Transactional(readOnly = true)
-    public List<JobEventResponse> listJobEvents(Long jobId) {
-        if (!vodJobRepository.existsById(jobId)) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Job not found: " + jobId);
-        }
+    public JobDetailResponse getJob(Long jobId) {
+        VodJob job = vodJobRepository.findById(jobId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Job not found: " + jobId));
+        return JobMapper.toDetailResponse(job);
+    }
 
+    @Transactional(readOnly = true)
+    public List<JobEventResponse> listJobEvents(Long jobId) {
+        getJob(jobId);
         return jobEventRepository.findAllByJobIdOrderByCreatedAtAscIdAsc(jobId)
                 .stream()
                 .map(event -> new JobEventResponse(

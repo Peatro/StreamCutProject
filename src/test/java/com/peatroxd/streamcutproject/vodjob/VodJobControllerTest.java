@@ -1,6 +1,7 @@
 package com.peatroxd.streamcutproject.vodjob;
 
 import com.peatroxd.streamcutproject.vodjob.api.CreateJobByUrlRequest;
+import com.peatroxd.streamcutproject.vodjob.api.JobDetailResponse;
 import com.peatroxd.streamcutproject.vodjob.api.JobEventResponse;
 import com.peatroxd.streamcutproject.vodjob.api.JobListItemResponse;
 import com.peatroxd.streamcutproject.vodjob.api.JobSummaryResponse;
@@ -94,6 +95,35 @@ class VodJobControllerTest {
                 .andExpect(jsonPath("$[0].status").value("NEW"))
                 .andExpect(jsonPath("$[0].sourceType").value("URL"))
                 .andExpect(jsonPath("$[0].sourceUrl").value("https://example.com/video"));
+    }
+
+    @Test
+    void getsJobDetails() throws Exception {
+        when(vodJobService.getJob(1L)).thenReturn(new JobDetailResponse(
+                1L,
+                "URL",
+                "https://example.com/video",
+                "video.mp4",
+                "NEW",
+                Instant.parse("2026-04-05T10:00:00Z"),
+                Instant.parse("2026-04-05T10:00:00Z"),
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null
+        ));
+
+        mockMvc.perform(get("/api/jobs/1"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.id").value(1))
+                .andExpect(jsonPath("$.status").value("NEW"))
+                .andExpect(jsonPath("$.sourceType").value("URL"))
+                .andExpect(jsonPath("$.sourceUrl").value("https://example.com/video"))
+                .andExpect(jsonPath("$.originalFilename").value("video.mp4"));
     }
 
     @Test

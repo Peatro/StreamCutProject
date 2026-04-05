@@ -1,6 +1,7 @@
 package com.peatroxd.streamcutproject.vodjob;
 
 import com.peatroxd.streamcutproject.vodjob.api.CreateJobByUrlRequest;
+import com.peatroxd.streamcutproject.vodjob.api.JobDetailResponse;
 import com.peatroxd.streamcutproject.vodjob.api.JobEventResponse;
 import com.peatroxd.streamcutproject.vodjob.api.JobListItemResponse;
 import com.peatroxd.streamcutproject.vodjob.api.JobSummaryResponse;
@@ -9,6 +10,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
@@ -36,8 +38,13 @@ public class VodJobController {
         return vodJobService.listJobs();
     }
 
+    @GetMapping("/{id}")
+    public JobDetailResponse getJob(@PathVariable Long id) {
+        return vodJobService.getJob(id);
+    }
+
     @GetMapping("/{id}/events")
-    public List<JobEventResponse> listJobEvents(@org.springframework.web.bind.annotation.PathVariable Long id) {
+    public List<JobEventResponse> listJobEvents(@PathVariable Long id) {
         return vodJobService.listJobEvents(id);
     }
 }
