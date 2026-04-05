@@ -19,6 +19,7 @@ import org.springframework.data.domain.Sort;
 public class VodJobService {
 
     private static final String SOURCE_TYPE_URL = "URL";
+    private static final String SOURCE_TYPE_FILE = "FILE";
 
     private final VodJobRepository vodJobRepository;
     private final JobEventRepository jobEventRepository;
@@ -30,17 +31,12 @@ public class VodJobService {
 
     @Transactional
     public JobSummaryResponse createUrlJob(String url) {
-        Instant now = Instant.now();
+        return createJob(SOURCE_TYPE_URL, url, null);
+    }
 
-        VodJob job = new VodJob();
-        job.setSourceType(SOURCE_TYPE_URL);
-        job.setSourceUrl(url);
-        job.setStatus(JobStatus.NEW);
-        job.setCreatedAt(now);
-        job.setUpdatedAt(now);
-
-        VodJob savedJob = vodJobRepository.save(job);
-        return JobMapper.toSummaryResponse(savedJob);
+    @Transactional
+    public JobSummaryResponse createFileJob(String originalFilename) {
+        return createJob(SOURCE_TYPE_FILE, null, originalFilename);
     }
 
     @Transactional(readOnly = true)
@@ -70,5 +66,20 @@ public class VodJobService {
                         event.getCreatedAt()
                 ))
                 .toList();
+    }
+
+    private JobSummaryResponse createJob(String sourceType, String sourceUrl, String originalFilename) {
+        Instant now = Instant.now();
+
+        VodJob job = new VodJob();
+        job.setSourceType(sourceType);
+        job.setSourceUrl(sourceUrl);
+        job.setOriginalFilename(originalFilename);
+        job.setStatus(JobStatus.NEW);
+        job.setCreatedAt(now);
+        job.setUpdatedAt(now);
+
+        VodJob savedJob = vodJobRepository.save(job);
+        return JobMapper.toSummaryResponse(savedJob);
     }
 }

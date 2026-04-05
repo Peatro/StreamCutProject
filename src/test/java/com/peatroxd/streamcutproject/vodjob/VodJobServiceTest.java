@@ -57,6 +57,24 @@ class VodJobServiceTest {
     }
 
     @Test
+    void createFileJobUsesFileStatusAndOriginalFilename() {
+        when(vodJobRepository.save(any())).thenAnswer(invocation -> {
+            VodJob job = invocation.getArgument(0);
+            job.setId(2L);
+            return job;
+        });
+
+        var response = vodJobService.createFileJob("video.mp4");
+
+        assertThat(response.id()).isEqualTo(2L);
+        assertThat(response.status()).isEqualTo("NEW");
+        assertThat(response.sourceType()).isEqualTo("FILE");
+        assertThat(response.sourceUrl()).isNull();
+        assertThat(response.originalFilename()).isEqualTo("video.mp4");
+        verify(vodJobRepository).save(any(VodJob.class));
+    }
+
+    @Test
     void listJobsReturnsPersistedJobsInStableOrder() {
         VodJob older = buildJob(1L, "https://example.com/older", Instant.parse("2026-04-05T10:00:00Z"));
         VodJob newer = buildJob(2L, "https://example.com/newer", Instant.parse("2026-04-05T11:00:00Z"));

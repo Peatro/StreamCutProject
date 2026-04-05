@@ -10,12 +10,14 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.validation.beanvalidation.LocalValidatorFactoryBean;
 
 import java.util.List;
 import java.time.Instant;
+import java.nio.charset.StandardCharsets;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -70,6 +72,40 @@ class VodJobControllerTest {
         ArgumentCaptor<String> urlCaptor = ArgumentCaptor.forClass(String.class);
         verify(vodJobService).createUrlJob(urlCaptor.capture());
         assertThat(urlCaptor.getValue()).isEqualTo("https://example.com/video");
+    }
+
+    @Test
+    void createsUploadJobWithFileSourceType() throws Exception {
+        when(vodJobService.createFileJob("video.mp4")).thenReturn(new JobSummaryResponse(
+                2L,
+                "NEW",
+                "FILE",
+                null,
+                "video.mp4",
+                null,
+                null
+        ));
+
+        MockMultipartFile file = new MockMultipartFile(
+                "file",
+                "video.mp4",
+                MediaType.APPLICATION_OCTET_STREAM_VALUE,
+                "test-content".getBytes(StandardCharsets.UTF_8)
+        );
+
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart("/api/jobs/upload")
+                        .file(file))
+                .andExpect(status().isCreated())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.id").value(2))
+                .andExpect(jsonPath("$.status").value("NEW"))
+                .andExpect(jsonPath("$.sourceType").value("FILE"))
+                .andExpect(jsonPath("$.sourceUrl").isEmpty())
+                .andExpect(jsonPath("$.originalFilename").value("video.mp4"));
+
+        ArgumentCaptor<String> originalFilenameCaptor = ArgumentCaptor.forClass(String.class);
+        verify(vodJobService).createFileJob(originalFilenameCaptor.capture());
+        assertThat(originalFilenameCaptor.getValue()).isEqualTo("video.mp4");
     }
 
     @Test
@@ -151,6 +187,12 @@ class VodJobControllerTest {
                                   "url": " "
                                 }
                                 """))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void rejectsMissingUploadFile() throws Exception {
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart("/api/jobs/upload"))
                 .andExpect(status().isBadRequest());
     }
 }
