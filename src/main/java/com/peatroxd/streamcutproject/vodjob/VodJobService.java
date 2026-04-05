@@ -5,8 +5,10 @@ import com.peatroxd.streamcutproject.vodjob.api.JobDetailResponse;
 import com.peatroxd.streamcutproject.vodjob.api.JobEventResponse;
 import com.peatroxd.streamcutproject.vodjob.api.JobSummaryResponse;
 import com.peatroxd.streamcutproject.vodjob.api.JobMapper;
+import com.peatroxd.streamcutproject.vodjob.api.TranscriptSegmentResponse;
 import com.peatroxd.streamcutproject.vodjob.event.JobEvent;
 import com.peatroxd.streamcutproject.vodjob.event.JobEventRepository;
+import com.peatroxd.streamcutproject.transcript.TranscriptSegmentRepository;
 import com.peatroxd.streamcutproject.workerdispatch.WorkerDispatchPayload;
 import com.peatroxd.streamcutproject.workerdispatch.WorkerDispatchPayloadFactory;
 import com.peatroxd.streamcutproject.workerdispatch.WorkerDispatchPort;
@@ -28,16 +30,19 @@ public class VodJobService {
 
     private final VodJobRepository vodJobRepository;
     private final JobEventRepository jobEventRepository;
+    private final TranscriptSegmentRepository transcriptSegmentRepository;
     private final WorkerDispatchPort workerDispatchPort;
     private final WorkerDispatchPayloadFactory workerDispatchPayloadFactory;
 
     public VodJobService(
             VodJobRepository vodJobRepository,
             JobEventRepository jobEventRepository,
+            TranscriptSegmentRepository transcriptSegmentRepository,
             WorkerDispatchPort workerDispatchPort,
             WorkerDispatchPayloadFactory workerDispatchPayloadFactory) {
         this.vodJobRepository = vodJobRepository;
         this.jobEventRepository = jobEventRepository;
+        this.transcriptSegmentRepository = transcriptSegmentRepository;
         this.workerDispatchPort = workerDispatchPort;
         this.workerDispatchPayloadFactory = workerDispatchPayloadFactory;
     }
@@ -62,14 +67,28 @@ public class VodJobService {
 
     @Transactional(readOnly = true)
     public JobDetailResponse getJob(Long jobId) {
-        VodJob job = vodJobRepository.findById(jobId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Job not found: " + jobId));
+        VodJob job = requireJob(jobId);
         return JobMapper.toDetailResponse(job);
     }
 
     @Transactional(readOnly = true)
+    public List<TranscriptSegmentResponse> listTranscriptSegments(Long jobId) {
+        requireJob(jobId);
+        return transcriptSegmentRepository.findAllByJobIdOrderByStartSecAscIdAsc(jobId)
+                .stream()
+                .map(segment -> new TranscriptSegmentResponse(
+                        segment.getId(),
+                        segment.getStartSec(),
+                        segment.getEndSec(),
+                        segment.getText(),
+                        segment.getWordCount()
+                ))
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
     public List<JobEventResponse> listJobEvents(Long jobId) {
-        getJob(jobId);
+        requireJob(jobId);
         return jobEventRepository.findAllByJobIdOrderByCreatedAtAscIdAsc(jobId)
                 .stream()
                 .map(event -> new JobEventResponse(
@@ -102,6 +121,11 @@ public class VodJobService {
         ));
 
         return payload;
+    }
+
+    private VodJob requireJob(Long jobId) {
+        return vodJobRepository.findById(jobId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Job not found: " + jobId));
     }
 
     private JobSummaryResponse createJob(String sourceType, String sourceUrl, String originalFilename) {

@@ -3,8 +3,11 @@ package com.peatroxd.streamcutproject.vodjob;
 import com.peatroxd.streamcutproject.vodjob.api.JobListItemResponse;
 import com.peatroxd.streamcutproject.vodjob.api.JobDetailResponse;
 import com.peatroxd.streamcutproject.vodjob.api.JobEventResponse;
+import com.peatroxd.streamcutproject.vodjob.api.TranscriptSegmentResponse;
 import com.peatroxd.streamcutproject.vodjob.event.JobEvent;
 import com.peatroxd.streamcutproject.vodjob.event.JobEventRepository;
+import com.peatroxd.streamcutproject.transcript.TranscriptSegment;
+import com.peatroxd.streamcutproject.transcript.TranscriptSegmentRepository;
 import com.peatroxd.streamcutproject.workerdispatch.WorkerDispatchPayload;
 import com.peatroxd.streamcutproject.workerdispatch.WorkerDispatchPayloadFactory;
 import com.peatroxd.streamcutproject.workerdispatch.WorkerDispatchPort;
@@ -36,6 +39,9 @@ class VodJobServiceTest {
     private JobEventRepository jobEventRepository;
 
     @Mock
+    private TranscriptSegmentRepository transcriptSegmentRepository;
+
+    @Mock
     private WorkerDispatchPort workerDispatchPort;
 
     @Mock
@@ -48,6 +54,7 @@ class VodJobServiceTest {
         vodJobService = new VodJobService(
                 vodJobRepository,
                 jobEventRepository,
+                transcriptSegmentRepository,
                 workerDispatchPort,
                 workerDispatchPayloadFactory
         );
@@ -131,6 +138,46 @@ class VodJobServiceTest {
         when(vodJobRepository.findById(99L)).thenReturn(java.util.Optional.empty());
 
         assertThatThrownBy(() -> vodJobService.getJob(99L))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("Job not found: 99");
+    }
+
+    @Test
+    void listTranscriptSegmentsReturnsPersistedSegmentsInStableOrder() {
+        VodJob job = buildJob(1L, "https://example.com/video", Instant.parse("2026-04-05T10:00:00Z"));
+        TranscriptSegment earlier = TranscriptSegment.create(job, 1.5, 3.0, "Hello world", 2);
+        earlier.setId(21L);
+        TranscriptSegment later = TranscriptSegment.create(job, 3.0, 5.0, "More text", 2);
+        later.setId(22L);
+
+        when(vodJobRepository.findById(1L)).thenReturn(java.util.Optional.of(job));
+        when(transcriptSegmentRepository.findAllByJobIdOrderByStartSecAscIdAsc(1L)).thenReturn(List.of(earlier, later));
+
+        List<TranscriptSegmentResponse> segments = vodJobService.listTranscriptSegments(1L);
+
+        assertThat(segments).hasSize(2);
+        assertThat(segments.get(0).id()).isEqualTo(21L);
+        assertThat(segments.get(0).startSec()).isEqualTo(1.5);
+        assertThat(segments.get(1).id()).isEqualTo(22L);
+        assertThat(segments.get(1).text()).isEqualTo("More text");
+    }
+
+    @Test
+    void listTranscriptSegmentsReturnsEmptyListWhenTranscriptMissing() {
+        VodJob job = buildJob(1L, "https://example.com/video", Instant.parse("2026-04-05T10:00:00Z"));
+        when(vodJobRepository.findById(1L)).thenReturn(java.util.Optional.of(job));
+        when(transcriptSegmentRepository.findAllByJobIdOrderByStartSecAscIdAsc(1L)).thenReturn(List.of());
+
+        List<TranscriptSegmentResponse> segments = vodJobService.listTranscriptSegments(1L);
+
+        assertThat(segments).isEmpty();
+    }
+
+    @Test
+    void listTranscriptSegmentsThrowsNotFoundForUnknownJob() {
+        when(vodJobRepository.findById(99L)).thenReturn(java.util.Optional.empty());
+
+        assertThatThrownBy(() -> vodJobService.listTranscriptSegments(99L))
                 .isInstanceOf(ResponseStatusException.class)
                 .hasMessageContaining("Job not found: 99");
     }

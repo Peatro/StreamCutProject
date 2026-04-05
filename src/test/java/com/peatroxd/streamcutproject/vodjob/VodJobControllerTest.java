@@ -5,6 +5,7 @@ import com.peatroxd.streamcutproject.vodjob.api.JobDetailResponse;
 import com.peatroxd.streamcutproject.vodjob.api.JobEventResponse;
 import com.peatroxd.streamcutproject.vodjob.api.JobListItemResponse;
 import com.peatroxd.streamcutproject.vodjob.api.JobSummaryResponse;
+import com.peatroxd.streamcutproject.vodjob.api.TranscriptSegmentResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -160,6 +161,23 @@ class VodJobControllerTest {
                 .andExpect(jsonPath("$.sourceType").value("URL"))
                 .andExpect(jsonPath("$.sourceUrl").value("https://example.com/video"))
                 .andExpect(jsonPath("$.originalFilename").value("video.mp4"));
+    }
+
+    @Test
+    void listsTranscriptSegments() throws Exception {
+        when(vodJobService.listTranscriptSegments(1L)).thenReturn(List.of(
+                new TranscriptSegmentResponse(21L, 1.5, 3.0, "Hello world", 2),
+                new TranscriptSegmentResponse(22L, 3.0, 5.0, "More text", 2)
+        ));
+
+        mockMvc.perform(get("/api/jobs/1/transcript"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$[0].id").value(21))
+                .andExpect(jsonPath("$[0].startSec").value(1.5))
+                .andExpect(jsonPath("$[0].text").value("Hello world"))
+                .andExpect(jsonPath("$[1].id").value(22))
+                .andExpect(jsonPath("$[1].startSec").value(3.0));
     }
 
     @Test
