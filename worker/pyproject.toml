@@ -7,6 +7,9 @@ name = "streamcut-worker"
 version = "0.1.0"
 description = "StreamCutProject Python worker"
 requires-python = ">=3.11"
+dependencies = [
+    "faster-whisper>=1.2.1",
+]
 
 [project.scripts]
 streamcut-worker = "streamcut_worker.main:main"
