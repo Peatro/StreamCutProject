@@ -12,3 +12,6 @@ spring:
   sql:
     init:
       mode: never
+app:
+  storage:
+    local-root: ${APP_STORAGE_LOCAL_ROOT:data/storage}
