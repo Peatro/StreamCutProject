@@ -299,6 +299,107 @@ tbody tr:hover {
   gap: 10px;
 }
 
+.candidate-excerpt {
+  font-size: 0.98rem;
+  line-height: 1.6;
+}
+
+.candidate-meta {
+  display: grid;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.candidate-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.action-button {
+  appearance: none;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: 10px 14px;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 140ms ease, box-shadow 140ms ease, background-color 140ms ease, border-color 140ms ease;
+}
+
+.action-button:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-soft);
+}
+
+.action-button:disabled {
+  cursor: progress;
+  opacity: 0.72;
+  transform: none;
+  box-shadow: none;
+}
+
+.action-button-approve {
+  background: rgba(19, 115, 51, 0.12);
+  color: var(--success);
+  border-color: rgba(19, 115, 51, 0.18);
+}
+
+.action-button-reject {
+  background: rgba(180, 35, 24, 0.12);
+  color: var(--danger);
+  border-color: rgba(180, 35, 24, 0.18);
+}
+
+.action-button-export {
+  background: rgba(15, 118, 110, 0.12);
+  color: var(--accent-strong);
+  border-color: rgba(15, 118, 110, 0.18);
+}
+
+.candidate-message {
+  min-height: 1.2em;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.page-status {
+  margin-bottom: 16px;
+}
+
+.banner {
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.84);
+  box-shadow: var(--shadow-soft);
+}
+
+.banner-success {
+  border-color: rgba(19, 115, 51, 0.18);
+  background: rgba(19, 115, 51, 0.08);
+  color: var(--success);
+}
+
+.banner-warning {
+  border-color: rgba(180, 83, 9, 0.18);
+  background: rgba(180, 83, 9, 0.08);
+  color: var(--warning);
+}
+
+.banner-error {
+  border-color: rgba(180, 35, 24, 0.18);
+  background: rgba(180, 35, 24, 0.08);
+  color: var(--danger);
+}
+
+.banner-info {
+  border-color: rgba(15, 118, 110, 0.18);
+  background: rgba(15, 118, 110, 0.08);
+  color: var(--accent-strong);
+}
+
 .candidate-top,
 .event-top,
 .segment-top {

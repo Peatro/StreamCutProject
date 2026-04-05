@@ -4,7 +4,10 @@
     getJob: (id) => fetchJson(`/api/jobs/${id}`),
     getTranscript: (id) => fetchJson(`/api/jobs/${id}/transcript`),
     getEvents: (id) => fetchJson(`/api/jobs/${id}/events`),
-    getCandidates: (id) => fetchJson(`/api/jobs/${id}/candidates`)
+    getCandidates: (id) => fetchJson(`/api/jobs/${id}/candidates`),
+    approveCandidate: (id) => postJson(`/api/candidates/${id}/approve`),
+    rejectCandidate: (id) => postJson(`/api/candidates/${id}/reject`),
+    exportCandidate: (id) => postJson(`/api/candidates/${id}/export`)
   };
 
   const pages = {
@@ -61,7 +64,10 @@
     }
 
     root.innerHTML = renderLoading("Loading job details...");
+    await renderJobPage(root, jobId);
+  }
 
+  async function renderJobPage(root, jobId, flashMessage = null, flashType = "info") {
     const [job, transcript, events, candidates] = await Promise.all([
       api.getJob(jobId),
       api.getTranscript(jobId),
@@ -72,6 +78,9 @@
     const candidateSummary = summarizeCandidates(candidates);
 
     root.innerHTML = `
+      <div class="page-status" data-status-banner ${flashMessage ? "" : "hidden"}>
+        ${flashMessage ? renderBanner(flashMessage, flashType) : ""}
+      </div>
       <div class="breadcrumbs"><a href="/index.html">Jobs</a> / Job #${escapeHtml(job.id)}</div>
       <section class="panel">
         <div class="panel-header">
@@ -140,13 +149,110 @@
       <section class="panel">
         <div class="panel-header">
           <div>
-            <h2>Candidate Summary</h2>
-            <p>Sorted by score, then start time.</p>
+            <h2>Candidate Review</h2>
+            <p>Approve, reject, and trigger export from the same surface.</p>
           </div>
         </div>
         ${renderCandidates(candidates)}
       </section>
     `;
+
+    bindCandidateActions(root, jobId);
+  }
+
+  function bindCandidateActions(root, jobId) {
+    root.querySelectorAll("[data-candidate-action]").forEach((button) => {
+      button.addEventListener("click", async (event) => {
+        const candidateId = event.currentTarget.dataset.candidateId;
+        const action = event.currentTarget.dataset.candidateAction;
+        const candidateCard = event.currentTarget.closest("[data-candidate-card]");
+        const message = candidateCard?.querySelector("[data-candidate-message]");
+        const previousLabel = event.currentTarget.textContent;
+
+        event.currentTarget.disabled = true;
+        event.currentTarget.textContent = "Working...";
+        setCardMessage(message, "Processing action...");
+
+        try {
+          let result;
+          if (action === "approve") {
+            result = await api.approveCandidate(candidateId);
+            await renderJobPage(root, jobId, `Candidate #${result.id} approved.`, "success");
+            return;
+          }
+          if (action === "reject") {
+            result = await api.rejectCandidate(candidateId);
+            await renderJobPage(root, jobId, `Candidate #${result.id} rejected.`, "warning");
+            return;
+          }
+          if (action === "export") {
+            result = await api.exportCandidate(candidateId);
+            await renderJobPage(root, jobId, `Export started for candidate #${result.id}.`, "success");
+            return;
+          }
+          throw new Error("Unknown action.");
+        } catch (error) {
+          setCardMessage(message, error.message || "Action failed.");
+          event.currentTarget.disabled = false;
+          event.currentTarget.textContent = previousLabel;
+          showInlineBanner(root, error.message || "Action failed.", "error");
+        }
+      });
+    });
+  }
+
+  function renderCandidates(candidates) {
+    if (!candidates.length) {
+      return `<div class="empty-state">No candidates available yet.</div>`;
+    }
+
+    return `
+      <div class="stack">
+        ${candidates.map((candidate) => `
+          <article class="candidate-card" data-candidate-card>
+            <div class="candidate-top">
+              <div>
+                <strong>${timeRange(candidate.startSec, candidate.endSec)}</strong>
+                <div class="muted">Score ${formatScore(candidate.score)}</div>
+              </div>
+              <span class="pill ${statusClass(candidate.moderationStatus)}">${escapeHtml(candidate.moderationStatus)}</span>
+            </div>
+            <div class="candidate-excerpt">${escapeHtml(candidate.transcriptExcerpt || "No transcript excerpt available.")}</div>
+            <div class="candidate-meta">
+              <span>${escapeHtml(candidate.moderatorNote || "No moderator note yet.")}</span>
+              <span>${escapeHtml(candidate.exportedClipPath ? `Exported: ${candidate.exportedClipPath}` : "Not exported")}</span>
+            </div>
+            <div class="candidate-actions">
+              <button class="action-button action-button-approve" type="button" data-candidate-action="approve" data-candidate-id="${escapeHtml(candidate.id)}">Approve</button>
+              <button class="action-button action-button-reject" type="button" data-candidate-action="reject" data-candidate-id="${escapeHtml(candidate.id)}">Reject</button>
+              <button class="action-button action-button-export" type="button" data-candidate-action="export" data-candidate-id="${escapeHtml(candidate.id)}">Export</button>
+            </div>
+            <div class="candidate-message" data-candidate-message></div>
+          </article>
+        `).join("")}
+      </div>
+    `;
+  }
+
+  function setCardMessage(target, message) {
+    if (!target) {
+      return;
+    }
+    target.textContent = message;
+    target.dataset.state = "info";
+  }
+
+  function showInlineBanner(root, message, level) {
+    const banner = root.querySelector("[data-status-banner]");
+    if (!banner) {
+      return;
+    }
+    banner.hidden = false;
+    banner.innerHTML = renderBanner(message, level);
+  }
+
+  function renderBanner(message, level) {
+    return `<div class="banner banner-${level}">${escapeHtml(message)}</div>`;
   }
 
   function renderJobsTable(jobs) {
@@ -214,30 +320,6 @@
               <span class="muted">${escapeHtml(formatDate(event.createdAt))}</span>
             </div>
             <p class="muted" style="margin: 10px 0 0;">${escapeHtml(event.message || "")}</p>
-          </article>
-        `).join("")}
-      </div>
-    `;
-  }
-
-  function renderCandidates(candidates) {
-    if (!candidates.length) {
-      return `<div class="empty-state">No candidates available yet.</div>`;
-    }
-
-    return `
-      <div class="stack">
-        ${candidates.map((candidate) => `
-          <article class="candidate-card">
-            <div class="candidate-top">
-              <div>
-                <strong>${timeRange(candidate.startSec, candidate.endSec)}</strong>
-                <div class="muted">Score ${formatScore(candidate.score)}</div>
-              </div>
-              <span class="pill ${statusClass(candidate.moderationStatus)}">${escapeHtml(candidate.moderationStatus)}</span>
-            </div>
-            <div>${escapeHtml(candidate.transcriptExcerpt || "No transcript excerpt available.")}</div>
-            <div class="muted">Export: ${escapeHtml(candidate.exportedClipPath || "not exported")}</div>
           </article>
         `).join("")}
       </div>
@@ -348,6 +430,20 @@
 
   async function fetchJson(url) {
     const response = await fetch(url, {
+      headers: {
+        Accept: "application/json"
+      }
+    });
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(text || `Request failed with ${response.status}`);
+    }
+    return response.json();
+  }
+
+  async function postJson(url) {
+    const response = await fetch(url, {
+      method: "POST",
       headers: {
         Accept: "application/json"
       }
