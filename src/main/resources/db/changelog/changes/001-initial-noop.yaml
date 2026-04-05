@@ -1,0 +1,8 @@
+databaseChangeLog:
+  - changeSet:
+      id: 001-initial-noop
+      author: codex
+      comment: Initialize Liquibase structure without introducing domain tables.
+      changes:
+        - sql:
+            sql: SELECT 1;

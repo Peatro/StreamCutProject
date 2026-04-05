@@ -1,0 +1,7 @@
+databaseChangeLog:
+  - include:
+      file: changes/001-initial-noop.yaml
+      relativeToChangelogFile: true
+  - include:
+      file: changes/002-create-vod-job.yaml
+      relativeToChangelogFile: true
