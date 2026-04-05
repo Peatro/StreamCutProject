@@ -1,0 +1,66 @@
+databaseChangeLog:
+  - changeSet:
+      id: 007-create-clip-candidate
+      author: codex
+      comment: Create the clip_candidate table for moderated clip candidates.
+      changes:
+        - createTable:
+            tableName: clip_candidate
+            columns:
+              - column:
+                  name: id
+                  type: BIGINT
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: job_id
+                  type: BIGINT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: start_sec
+                  type: DOUBLE PRECISION
+                  constraints:
+                    nullable: false
+              - column:
+                  name: end_sec
+                  type: DOUBLE PRECISION
+                  constraints:
+                    nullable: false
+              - column:
+                  name: score
+                  type: DOUBLE PRECISION
+                  constraints:
+                    nullable: false
+              - column:
+                  name: transcript_excerpt
+                  type: CLOB
+                  constraints:
+                    nullable: false
+              - column:
+                  name: moderation_status
+                  type: VARCHAR(20)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: moderator_note
+                  type: CLOB
+              - column:
+                  name: exported_clip_path
+                  type: VARCHAR(512)
+        - addForeignKeyConstraint:
+            baseTableName: clip_candidate
+            baseColumnNames: job_id
+            referencedTableName: vod_job
+            referencedColumnNames: id
+            constraintName: fk_clip_candidate_job_id
+        - createIndex:
+            tableName: clip_candidate
+            indexName: idx_clip_candidate_job_score
+            columns:
+              - column:
+                  name: job_id
+              - column:
+                  name: score

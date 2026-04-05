@@ -1,5 +1,6 @@
 package com.peatroxd.streamcutproject.vodjob;
 
+import com.peatroxd.streamcutproject.clipcandidate.api.ClipCandidateResponse;
 import com.peatroxd.streamcutproject.vodjob.api.CreateJobByUrlRequest;
 import com.peatroxd.streamcutproject.vodjob.api.JobDetailResponse;
 import com.peatroxd.streamcutproject.vodjob.api.JobEventResponse;
@@ -57,6 +58,11 @@ public class VodJobController {
     @GetMapping("/{id}")
     public JobDetailResponse getJob(@PathVariable Long id) {
         return vodJobService.getJob(id);
+    }
+
+    @GetMapping("/{id}/candidates")
+    public List<ClipCandidateResponse> listCandidates(@PathVariable Long id) {
+        return vodJobService.listCandidates(id);
     }
 
     @GetMapping("/{id}/transcript")

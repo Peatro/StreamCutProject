@@ -17,3 +17,6 @@ databaseChangeLog:
   - include:
       file: changes/006-create-analysis-window.yaml
       relativeToChangelogFile: true
+  - include:
+      file: changes/007-create-clip-candidate.yaml
+      relativeToChangelogFile: true

@@ -1,5 +1,10 @@
 package com.peatroxd.streamcutproject.vodjob;
 
+import com.peatroxd.streamcutproject.clipcandidate.ClipCandidate;
+import com.peatroxd.streamcutproject.clipcandidate.ClipCandidateRepository;
+import com.peatroxd.streamcutproject.clipcandidate.ModerationStatus;
+import com.peatroxd.streamcutproject.clipcandidate.api.ClipCandidateMapper;
+import com.peatroxd.streamcutproject.clipcandidate.api.ClipCandidateResponse;
 import com.peatroxd.streamcutproject.vodjob.api.JobListItemResponse;
 import com.peatroxd.streamcutproject.vodjob.api.JobDetailResponse;
 import com.peatroxd.streamcutproject.vodjob.api.JobEventResponse;
@@ -31,6 +36,7 @@ public class VodJobService {
     private final VodJobRepository vodJobRepository;
     private final JobEventRepository jobEventRepository;
     private final TranscriptSegmentRepository transcriptSegmentRepository;
+    private final ClipCandidateRepository clipCandidateRepository;
     private final WorkerDispatchPort workerDispatchPort;
     private final WorkerDispatchPayloadFactory workerDispatchPayloadFactory;
 
@@ -38,11 +44,13 @@ public class VodJobService {
             VodJobRepository vodJobRepository,
             JobEventRepository jobEventRepository,
             TranscriptSegmentRepository transcriptSegmentRepository,
+            ClipCandidateRepository clipCandidateRepository,
             WorkerDispatchPort workerDispatchPort,
             WorkerDispatchPayloadFactory workerDispatchPayloadFactory) {
         this.vodJobRepository = vodJobRepository;
         this.jobEventRepository = jobEventRepository;
         this.transcriptSegmentRepository = transcriptSegmentRepository;
+        this.clipCandidateRepository = clipCandidateRepository;
         this.workerDispatchPort = workerDispatchPort;
         this.workerDispatchPayloadFactory = workerDispatchPayloadFactory;
     }
@@ -87,6 +95,15 @@ public class VodJobService {
     }
 
     @Transactional(readOnly = true)
+    public List<ClipCandidateResponse> listCandidates(Long jobId) {
+        requireJob(jobId);
+        return clipCandidateRepository.findAllByJobIdOrderByScoreDescStartSecAscIdAsc(jobId)
+                .stream()
+                .map(ClipCandidateMapper::toResponse)
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
     public List<JobEventResponse> listJobEvents(Long jobId) {
         requireJob(jobId);
         return jobEventRepository.findAllByJobIdOrderByCreatedAtAscIdAsc(jobId)
@@ -98,6 +115,16 @@ public class VodJobService {
                         event.getCreatedAt()
                 ))
                 .toList();
+    }
+
+    @Transactional
+    public ClipCandidateResponse approveCandidate(Long candidateId) {
+        return moderateCandidate(candidateId, ModerationStatus.APPROVED);
+    }
+
+    @Transactional
+    public ClipCandidateResponse rejectCandidate(Long candidateId) {
+        return moderateCandidate(candidateId, ModerationStatus.REJECTED);
     }
 
     @Transactional
@@ -141,5 +168,12 @@ public class VodJobService {
 
         VodJob savedJob = vodJobRepository.save(job);
         return JobMapper.toSummaryResponse(savedJob);
+    }
+
+    private ClipCandidateResponse moderateCandidate(Long candidateId, ModerationStatus moderationStatus) {
+        ClipCandidate candidate = clipCandidateRepository.findById(candidateId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Candidate not found: " + candidateId));
+        candidate.setModerationStatus(moderationStatus);
+        return ClipCandidateMapper.toResponse(clipCandidateRepository.save(candidate));
     }
 }

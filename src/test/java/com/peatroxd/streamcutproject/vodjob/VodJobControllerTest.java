@@ -1,5 +1,6 @@
 package com.peatroxd.streamcutproject.vodjob;
 
+import com.peatroxd.streamcutproject.clipcandidate.api.ClipCandidateResponse;
 import com.peatroxd.streamcutproject.vodjob.api.CreateJobByUrlRequest;
 import com.peatroxd.streamcutproject.vodjob.api.JobDetailResponse;
 import com.peatroxd.streamcutproject.vodjob.api.JobEventResponse;
@@ -161,6 +162,29 @@ class VodJobControllerTest {
                 .andExpect(jsonPath("$.sourceType").value("URL"))
                 .andExpect(jsonPath("$.sourceUrl").value("https://example.com/video"))
                 .andExpect(jsonPath("$.originalFilename").value("video.mp4"));
+    }
+
+    @Test
+    void listsCandidates() throws Exception {
+        when(vodJobService.listCandidates(1L)).thenReturn(List.of(
+                new ClipCandidateResponse(
+                        7L,
+                        5.0,
+                        12.0,
+                        0.91,
+                        "A candidate excerpt",
+                        "PENDING",
+                        null,
+                        null
+                )
+        ));
+
+        mockMvc.perform(get("/api/jobs/1/candidates"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$[0].id").value(7))
+                .andExpect(jsonPath("$[0].moderationStatus").value("PENDING"))
+                .andExpect(jsonPath("$[0].transcriptExcerpt").value("A candidate excerpt"));
     }
 
     @Test

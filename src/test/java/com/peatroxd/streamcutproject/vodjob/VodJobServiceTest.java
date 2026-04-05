@@ -1,5 +1,9 @@
 package com.peatroxd.streamcutproject.vodjob;
 
+import com.peatroxd.streamcutproject.clipcandidate.ClipCandidate;
+import com.peatroxd.streamcutproject.clipcandidate.ClipCandidateRepository;
+import com.peatroxd.streamcutproject.clipcandidate.ModerationStatus;
+import com.peatroxd.streamcutproject.clipcandidate.api.ClipCandidateResponse;
 import com.peatroxd.streamcutproject.vodjob.api.JobListItemResponse;
 import com.peatroxd.streamcutproject.vodjob.api.JobDetailResponse;
 import com.peatroxd.streamcutproject.vodjob.api.JobEventResponse;
@@ -42,6 +46,9 @@ class VodJobServiceTest {
     private TranscriptSegmentRepository transcriptSegmentRepository;
 
     @Mock
+    private ClipCandidateRepository clipCandidateRepository;
+
+    @Mock
     private WorkerDispatchPort workerDispatchPort;
 
     @Mock
@@ -55,6 +62,7 @@ class VodJobServiceTest {
                 vodJobRepository,
                 jobEventRepository,
                 transcriptSegmentRepository,
+                clipCandidateRepository,
                 workerDispatchPort,
                 workerDispatchPayloadFactory
         );
@@ -180,6 +188,64 @@ class VodJobServiceTest {
         assertThatThrownBy(() -> vodJobService.listTranscriptSegments(99L))
                 .isInstanceOf(ResponseStatusException.class)
                 .hasMessageContaining("Job not found: 99");
+    }
+
+    @Test
+    void listCandidatesReturnsPersistedCandidatesInStableOrder() {
+        VodJob job = buildJob(1L, "https://example.com/video", Instant.parse("2026-04-05T10:00:00Z"));
+        ClipCandidate higherScore = ClipCandidate.create(job, 10.0, 20.0, 0.93, "second");
+        higherScore.setId(22L);
+        ClipCandidate lowerScore = ClipCandidate.create(job, 5.0, 12.0, 0.91, "first");
+        lowerScore.setId(21L);
+
+        when(vodJobRepository.findById(1L)).thenReturn(java.util.Optional.of(job));
+        when(clipCandidateRepository.findAllByJobIdOrderByScoreDescStartSecAscIdAsc(1L)).thenReturn(List.of(higherScore, lowerScore));
+
+        List<ClipCandidateResponse> candidates = vodJobService.listCandidates(1L);
+
+        assertThat(candidates).hasSize(2);
+        assertThat(candidates.get(0).id()).isEqualTo(22L);
+        assertThat(candidates.get(0).moderationStatus()).isEqualTo("PENDING");
+        assertThat(candidates.get(1).id()).isEqualTo(21L);
+    }
+
+    @Test
+    void listCandidatesThrowsNotFoundForUnknownJob() {
+        when(vodJobRepository.findById(99L)).thenReturn(java.util.Optional.empty());
+
+        assertThatThrownBy(() -> vodJobService.listCandidates(99L))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("Job not found: 99");
+    }
+
+    @Test
+    void approveCandidateUpdatesModerationStatus() {
+        VodJob job = buildJob(1L, "https://example.com/video", Instant.parse("2026-04-05T10:00:00Z"));
+        ClipCandidate candidate = ClipCandidate.create(job, 5.0, 12.0, 0.91, "first");
+        candidate.setId(7L);
+
+        when(clipCandidateRepository.findById(7L)).thenReturn(java.util.Optional.of(candidate));
+        when(clipCandidateRepository.save(candidate)).thenAnswer(invocation -> invocation.getArgument(0));
+
+        ClipCandidateResponse response = vodJobService.approveCandidate(7L);
+
+        assertThat(candidate.getModerationStatus()).isEqualTo(ModerationStatus.APPROVED);
+        assertThat(response.moderationStatus()).isEqualTo("APPROVED");
+    }
+
+    @Test
+    void rejectCandidateUpdatesModerationStatus() {
+        VodJob job = buildJob(1L, "https://example.com/video", Instant.parse("2026-04-05T10:00:00Z"));
+        ClipCandidate candidate = ClipCandidate.create(job, 5.0, 12.0, 0.91, "first");
+        candidate.setId(7L);
+
+        when(clipCandidateRepository.findById(7L)).thenReturn(java.util.Optional.of(candidate));
+        when(clipCandidateRepository.save(candidate)).thenAnswer(invocation -> invocation.getArgument(0));
+
+        ClipCandidateResponse response = vodJobService.rejectCandidate(7L);
+
+        assertThat(candidate.getModerationStatus()).isEqualTo(ModerationStatus.REJECTED);
+        assertThat(response.moderationStatus()).isEqualTo("REJECTED");
     }
 
     @Test
