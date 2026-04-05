@@ -1,0 +1,13 @@
+package com.peatroxd.streamcutproject;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+
+@SpringBootApplication
+public class StreamCutProjectApplication {
+
+    public static void main(String[] args) {
+        SpringApplication.run(StreamCutProjectApplication.class, args);
+    }
+
+}
