@@ -5,6 +5,17 @@
     getTranscript: (id) => fetchJson(`/api/jobs/${id}/transcript`),
     getEvents: (id) => fetchJson(`/api/jobs/${id}/events`),
     getCandidates: (id) => fetchJson(`/api/jobs/${id}/candidates`),
+    createUrlJob: (url) => postJson("/api/jobs/url", {
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ url })
+    }),
+    createUploadJob: (file) => {
+      const formData = new FormData();
+      formData.append("file", file);
+      return postMultipart("/api/jobs/upload", formData);
+    },
     approveCandidate: (id) => postJson(`/api/candidates/${id}/approve`),
     rejectCandidate: (id) => postJson(`/api/candidates/${id}/reject`),
     exportCandidate: (id) => postJson(`/api/candidates/${id}/export`)
@@ -32,26 +43,7 @@
     const root = document.querySelector("[data-page-root]");
     root.innerHTML = renderLoading("Loading jobs...");
 
-    const jobs = await api.listJobs();
-    const summary = summarizeJobs(jobs);
-
-    root.innerHTML = `
-      <section class="stat-grid">
-        <article class="stat-card"><span class="label">Jobs</span><span class="value">${summary.total}</span></article>
-        <article class="stat-card"><span class="label">Active</span><span class="value">${summary.active}</span></article>
-        <article class="stat-card"><span class="label">Ready</span><span class="value">${summary.ready}</span></article>
-        <article class="stat-card"><span class="label">Finished</span><span class="value">${summary.finished}</span></article>
-      </section>
-      <section class="panel">
-        <div class="panel-header">
-          <div>
-            <h2>Job List</h2>
-            <p>Track jobs, source type, duration, and current status.</p>
-          </div>
-        </div>
-        ${renderJobsTable(jobs)}
-      </section>
-    `;
+    await renderJobsPage(root);
   }
 
   async function initJobPage() {
@@ -88,7 +80,10 @@
             <span class="eyebrow">Job Details</span>
             <h2 style="margin-top: 12px; font-size: 1.6rem;">${escapeHtml(labelForJob(job))}</h2>
           </div>
-          <span class="pill ${statusClass(job.status)}">${escapeHtml(job.status)}</span>
+          <div class="header-actions">
+            <button class="action-button action-button-neutral" type="button" data-page-refresh>Refresh</button>
+            <span class="pill ${statusClass(job.status)}">${escapeHtml(job.status)}</span>
+          </div>
         </div>
         <div class="details-grid">
           <div class="info-list">
@@ -158,6 +153,151 @@
     `;
 
     bindCandidateActions(root, jobId);
+    bindJobPageActions(root, jobId);
+  }
+
+  async function renderJobsPage(root, flashMessage = null, flashType = "info") {
+    const jobs = await api.listJobs();
+    const summary = summarizeJobs(jobs);
+
+    root.innerHTML = `
+      <div class="page-status" data-status-banner ${flashMessage ? "" : "hidden"}>
+        ${flashMessage ? renderBanner(flashMessage, flashType) : ""}
+      </div>
+      <section class="panel">
+        <div class="panel-header">
+          <div>
+            <h2>Create Job</h2>
+            <p>Submit a VOD URL or upload a local file.</p>
+          </div>
+          <button class="action-button action-button-neutral" type="button" data-jobs-refresh>Refresh List</button>
+        </div>
+        <div class="control-grid">
+          <form class="action-form" data-url-job-form>
+            <label class="field-label" for="job-url-input">Create from URL</label>
+            <div class="form-row">
+              <input id="job-url-input" class="text-input" name="url" type="url" placeholder="https://example.com/video" required>
+              <button class="action-button action-button-primary" type="submit">Create URL Job</button>
+            </div>
+            <div class="form-message" data-url-job-message></div>
+          </form>
+          <form class="action-form" data-upload-job-form>
+            <label class="field-label" for="job-file-input">Create from File</label>
+            <div class="form-row">
+              <input id="job-file-input" class="file-input" name="file" type="file" required>
+              <button class="action-button action-button-primary" type="submit">Upload Job</button>
+            </div>
+            <div class="form-message" data-upload-job-message></div>
+          </form>
+        </div>
+      </section>
+      <section class="stat-grid">
+        <article class="stat-card"><span class="label">Jobs</span><span class="value">${summary.total}</span></article>
+        <article class="stat-card"><span class="label">Active</span><span class="value">${summary.active}</span></article>
+        <article class="stat-card"><span class="label">Ready</span><span class="value">${summary.ready}</span></article>
+        <article class="stat-card"><span class="label">Finished</span><span class="value">${summary.finished}</span></article>
+      </section>
+      <section class="panel">
+        <div class="panel-header">
+          <div>
+            <h2>Job List</h2>
+            <p>Track jobs, source type, duration, and current status.</p>
+          </div>
+        </div>
+        ${renderJobsTable(jobs)}
+      </section>
+    `;
+
+    bindJobsPageActions(root);
+  }
+
+  function bindJobsPageActions(root) {
+    const refreshButton = root.querySelector("[data-jobs-refresh]");
+    const urlForm = root.querySelector("[data-url-job-form]");
+    const uploadForm = root.querySelector("[data-upload-job-form]");
+
+    refreshButton?.addEventListener("click", async () => {
+      refreshButton.disabled = true;
+      const previousLabel = refreshButton.textContent;
+      refreshButton.textContent = "Refreshing...";
+      try {
+        await renderJobsPage(root, "Job list refreshed.", "info");
+      } catch (error) {
+        showInlineBanner(root, error.message || "Unable to refresh jobs.", "error");
+        refreshButton.disabled = false;
+        refreshButton.textContent = previousLabel;
+      }
+    });
+
+    urlForm?.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const submitButton = urlForm.querySelector("button[type='submit']");
+      const input = urlForm.querySelector("input[name='url']");
+      const message = urlForm.querySelector("[data-url-job-message]");
+      const url = input.value.trim();
+
+      if (!url) {
+        setFormMessage(message, "URL is required.", "error");
+        return;
+      }
+
+      submitButton.disabled = true;
+      const previousLabel = submitButton.textContent;
+      submitButton.textContent = "Creating...";
+      setFormMessage(message, "Submitting URL job...", "info");
+
+      try {
+        const created = await api.createUrlJob(url);
+        await renderJobsPage(root, `Job #${created.id} created from URL.`, "success");
+      } catch (error) {
+        setFormMessage(message, error.message || "Unable to create URL job.", "error");
+        submitButton.disabled = false;
+        submitButton.textContent = previousLabel;
+      }
+    });
+
+    uploadForm?.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const submitButton = uploadForm.querySelector("button[type='submit']");
+      const input = uploadForm.querySelector("input[name='file']");
+      const message = uploadForm.querySelector("[data-upload-job-message]");
+      const file = input.files && input.files[0];
+
+      if (!file) {
+        setFormMessage(message, "Choose a file first.", "error");
+        return;
+      }
+
+      submitButton.disabled = true;
+      const previousLabel = submitButton.textContent;
+      submitButton.textContent = "Uploading...";
+      setFormMessage(message, `Uploading ${file.name}...`, "info");
+
+      try {
+        const created = await api.createUploadJob(file);
+        await renderJobsPage(root, `Job #${created.id} created from file upload.`, "success");
+      } catch (error) {
+        setFormMessage(message, error.message || "Unable to upload job.", "error");
+        submitButton.disabled = false;
+        submitButton.textContent = previousLabel;
+      }
+    });
+  }
+
+  function bindJobPageActions(root, jobId) {
+    const refreshButton = root.querySelector("[data-page-refresh]");
+    refreshButton?.addEventListener("click", async () => {
+      refreshButton.disabled = true;
+      const previousLabel = refreshButton.textContent;
+      refreshButton.textContent = "Refreshing...";
+      try {
+        await renderJobPage(root, jobId, `Job #${jobId} refreshed.`, "info");
+      } catch (error) {
+        showInlineBanner(root, error.message || "Unable to refresh job.", "error");
+        refreshButton.disabled = false;
+        refreshButton.textContent = previousLabel;
+      }
+    });
   }
 
   function bindCandidateActions(root, jobId) {
@@ -249,6 +389,14 @@
     }
     banner.hidden = false;
     banner.innerHTML = renderBanner(message, level);
+  }
+
+  function setFormMessage(target, message, level) {
+    if (!target) {
+      return;
+    }
+    target.textContent = message;
+    target.dataset.state = level || "info";
   }
 
   function renderBanner(message, level) {
@@ -441,12 +589,29 @@
     return response.json();
   }
 
-  async function postJson(url) {
+  async function postJson(url, options = {}) {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        ...(options.headers || {})
+      },
+      body: options.body
+    });
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(text || `Request failed with ${response.status}`);
+    }
+    return response.json();
+  }
+
+  async function postMultipart(url, formData) {
     const response = await fetch(url, {
       method: "POST",
       headers: {
         Accept: "application/json"
-      }
+      },
+      body: formData
     });
     if (!response.ok) {
       const text = await response.text();

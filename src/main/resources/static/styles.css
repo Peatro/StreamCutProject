@@ -188,6 +188,88 @@ a:hover {
   font-size: 0.94rem;
 }
 
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.control-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.action-form {
+  display: grid;
+  gap: 10px;
+  padding: 16px;
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.field-label {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.form-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.text-input,
+.file-input {
+  width: 100%;
+  min-height: 46px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--text);
+  font: inherit;
+}
+
+.text-input {
+  flex: 1 1 320px;
+}
+
+.file-input {
+  flex: 1 1 240px;
+}
+
+.text-input:focus,
+.file-input:focus {
+  outline: 2px solid rgba(15, 118, 110, 0.18);
+  outline-offset: 1px;
+  border-color: rgba(15, 118, 110, 0.36);
+}
+
+.form-message {
+  min-height: 1.2em;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.form-message[data-state="error"] {
+  color: var(--danger);
+}
+
+.form-message[data-state="success"] {
+  color: var(--success);
+}
+
+.form-message[data-state="info"] {
+  color: var(--accent-strong);
+}
+
 .table-wrap {
   overflow-x: auto;
 }
@@ -358,6 +440,25 @@ tbody tr:hover {
   border-color: rgba(15, 118, 110, 0.18);
 }
 
+.action-button-primary,
+.action-button-neutral {
+  border-color: rgba(15, 118, 110, 0.18);
+}
+
+.action-button-primary {
+  background: var(--accent);
+  color: #fff;
+}
+
+.action-button-primary:hover {
+  background: var(--accent-strong);
+}
+
+.action-button-neutral {
+  background: rgba(255, 255, 255, 0.88);
+  color: var(--text);
+}
+
 .candidate-message {
   min-height: 1.2em;
   color: var(--muted);
@@ -506,7 +607,8 @@ tbody tr:hover {
   .hero,
   .details-grid,
   .stat-grid,
-  .summary-grid {
+  .summary-grid,
+  .control-grid {
     grid-template-columns: 1fr;
   }
 
@@ -528,6 +630,16 @@ tbody tr:hover {
 
   .hero h1 {
     font-size: 2rem;
+  }
+
+  .form-row {
+    align-items: stretch;
+  }
+
+  .action-button-primary,
+  .action-button-neutral {
+    width: 100%;
+    justify-content: center;
   }
 
   table {

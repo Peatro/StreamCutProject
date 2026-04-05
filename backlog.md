@@ -17,6 +17,7 @@ Branch snapshot: `develop`
 - `main` is behind `develop` and does not contain the current MVP implementation yet.
 - Docker runtime has been repaired locally and is working on `develop`.
 - Smoke-test on the current Docker stack has been completed without confirmed code defects.
+- The service is still not full-cycle operational because job creation does not yet drive a real backend -> worker -> backend processing loop.
 
 ## DONE
 
@@ -119,12 +120,86 @@ Files currently changed:
 - Decide release path from `develop` to `main`.
 - Add more integration tests around persistence and API flows.
 
+## ROADMAP TO FULL SERVICE
+
+### Phase A. Close The Ingest Gap
+- Persist uploaded source files to storage instead of storing only filenames.
+- Store actual source and audio paths on `vod_job`.
+- Queue jobs automatically at creation time.
+- Record explicit job events for create, queue, start, finish, and failure.
+
+### Phase B. Wire Real Backend <-> Worker Transport
+- Freeze the worker transport strategy for MVP as HTTP polling/callback, not a broker.
+- Add a backend API for worker job claim/poll.
+- Add backend APIs for worker result submission and worker failure reporting.
+- Keep the payloads aligned with `worker-protocol.md`.
+
+### Phase C. Make Worker Execute Real Jobs
+- Implement a real worker polling loop.
+- Build a job runner that executes the current pipeline services in sequence.
+- Support both URL ingest and uploaded-file ingest.
+- Report state transitions and failures back to backend.
+
+### Phase D. Persist Processing Results End-To-End
+- Ingest transcript, silence segments, analysis windows, and clip candidates from worker output.
+- Move jobs to `READY_FOR_REVIEW` once candidate generation is complete.
+- Ensure transcript/candidate/event UI surfaces are driven by real processing output instead of test data.
+
+### Phase E. Complete Export Loop
+- Dispatch export work through the same backend -> worker mechanism.
+- Have worker perform ffmpeg clip export against approved candidates.
+- Report export completion/failure back to backend.
+- Expose download access to exported artifacts in UI/API.
+
+### Phase F. Validate And Release
+- Run a real media-file end-to-end flow.
+- Run URL ingest end-to-end.
+- Verify obvious failure paths and recovery.
+- Merge to `main` only after these checks pass cleanly.
+
+## PLANNED TASK QUEUE
+
+### Ready For Execution
+- `TASK-026` Freeze Worker Transport Contract
+- `TASK-027` Persist Uploaded Source Files
+- `TASK-028` Auto Queue Jobs On Creation
+- `TASK-029` Implement Worker Claim API
+- `TASK-030` Implement Worker Result Ingestion API
+- `TASK-031` Implement Worker Failure Reporting API
+- `TASK-032` Implement Worker Polling Loop
+- `TASK-033` Implement Worker Job Runner
+- `TASK-034` Complete Candidate Generation Pipeline
+- `TASK-035` Implement Export Dispatch And Completion
+- `TASK-036` Add Artifact Access And UI Runtime Controls
+- `TASK-037` Add End-To-End Integration Coverage
+- `TASK-038` Run QA Release Validation
+
+### Execution Order
+1. `TASK-026`
+2. `TASK-027`
+3. `TASK-028`
+4. `TASK-029`
+5. `TASK-030`
+6. `TASK-031`
+7. `TASK-032`
+8. `TASK-033`
+9. `TASK-034`
+10. `TASK-035`
+11. `TASK-036`
+12. `TASK-037`
+13. `TASK-038`
+
+### Parallelism Notes
+- `TASK-027` and `TASK-026` can proceed independently.
+- `TASK-029`, `TASK-030`, and `TASK-031` are separate backend slices but should share the transport decision from `TASK-026`.
+- `TASK-032` can start once `TASK-029` is stable.
+- `TASK-033` depends on `TASK-032` and the existing worker service modules.
+- `TASK-036` should wait until `TASK-035` exposes real artifact state.
+- `TASK-038` is a gate, not a feature task.
+
 ## LATER
 
 ### Product Gaps Still Open
-- Real async job consumption loop between backend and worker is still lightweight and not production-grade.
-- Worker startup is now stable, but queue processing/orchestration still needs a real operational loop.
-- Export workflow exists, but full end-to-end media processing with real assets still needs live validation.
 - Error handling and observability are still MVP-level, not hardened operations-grade.
 
 ### Engineering Follow-Up
