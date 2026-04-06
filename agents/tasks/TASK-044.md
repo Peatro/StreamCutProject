@@ -46,9 +46,23 @@ The happy path already works locally. Release hardening now requires explicit ob
 ## Notes
 Prefer reproducible cases over broad theoretical coverage.
 
-## Observed On 2026-04-06
-- `POST /api/jobs/url` currently accepts invalid-looking input such as `notaurl` and still creates a job.
-- Negative URL ingest cases for malformed URL, connection refusal, and `404` upstream source were reproduced against the live Docker stack.
-- In all observed cases the worker crashed during download handling instead of reporting a structured failure back to the backend.
-- Affected jobs remained stuck in `DOWNLOADING` with no `JOB_FAILED` event and no persisted `errorMessage`.
-- This is a release-blocking defect for URL ingest failure handling and should feed a backend fix task for worker exception reporting and stuck-job recovery.
+## Revalidated On 2026-04-06
+- `POST /api/jobs/url` still accepts malformed-looking input such as `notaurl`, but the worker now reports a clean failure instead of crashing.
+- Test case 1: `notaurl`
+  - Created job `#3`
+  - Status transition observed: `QUEUED -> FAILED`
+  - Final job error: `DOWNLOADING: source download failed for notaurl: unknown url type: 'notaurl'`
+  - Events included `JOB_CREATED`, `JOB_QUEUED`, `JOB_CLAIMED`, `JOB_FAILED`
+- Test case 2: real `404` source
+  - Created job `#4` for `http://backend:8080/does-not-exist`
+  - Status transition observed: `QUEUED -> FAILED`
+  - Final job error: `DOWNLOADING: source download failed for http://backend:8080/does-not-exist: HTTP Error 404: `
+  - Events included `JOB_CREATED`, `JOB_QUEUED`, `JOB_CLAIMED`, `JOB_FAILED`
+- The old blocker no longer reproduces in these cases: jobs do not remain stuck in `DOWNLOADING`, and the backend persists the failure state and message.
+- Residual risk:
+  - unsupported source types were not separately exercised because current API accepts URL/file sources only
+  - a long timeout / slow upstream case was not explicitly re-run in this pass
+
+## Conclusion
+- TASK-044 is satisfied for release-gate purposes for the tested negative URL ingest paths.
+- The doc status should now be read as "fixed for malformed URL and 404 handling, with minor residual QA coverage gaps on timeout/unsupported-source variants."
