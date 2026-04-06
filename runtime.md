@@ -129,8 +129,8 @@ PostgreSQL:
 - The compose setup is intentionally local-first and should remain simple until the MVP stabilizes.
 
 ## Docker Runtime Notes
-- `Dockerfile.backend` now builds the Spring Boot jar in a Gradle build stage and runs it on `eclipse-temurin:21-jre`.
-- `worker/Dockerfile` now runs on `python:3.12-slim` with only the packages it needs for the worker process.
+- `Dockerfile.backend` now builds the Spring Boot jar in a Gradle build stage on `public.ecr.aws/docker/library/gradle:8.14.3-jdk21` and runs it on `public.ecr.aws/amazoncorretto/amazoncorretto:21-al2023-headless`.
+- `worker/Dockerfile` now runs on `public.ecr.aws/docker/library/python:3.12.11-slim-bookworm` with only the extra packages it needs for the worker process.
 - `docker-compose.yml` remains the local full-stack path, while `docker-compose.production.yml` defines the production-oriented package with an explicit edge runtime.
 - `docker-compose.yml` is explicitly the local-runtime path; it should not be treated as a production deploy manifest.
 - `deploy/Caddyfile` defines the minimal production edge runtime and routes public UI/API traffic to `backend:8080`.

@@ -1,4 +1,4 @@
-FROM gradle:8.14.3-jdk21 AS build
+FROM public.ecr.aws/docker/library/gradle:8.14.3-jdk21 AS build
 
 WORKDIR /workspace
 
@@ -8,7 +8,7 @@ COPY src ./src
 
 RUN gradle --no-daemon bootJar
 
-FROM eclipse-temurin:21-jre
+FROM public.ecr.aws/amazoncorretto/amazoncorretto:21-al2023-headless
 
 WORKDIR /app
 
