@@ -40,3 +40,10 @@ The codebase moved forward quickly through `TASK-001` to `TASK-038`. Release har
 
 ## Notes
 This task should update source-of-truth docs, not create parallel status documents unless clearly needed.
+
+## Observed On 2026-04-06
+- `backlog.md` remains the operational source of truth for project status.
+- The status snapshot now reflects the current reality: release hardening is in progress, but `TASK-042` through `TASK-049` are not all complete.
+- `TASK-044` is captured as a release-blocking URL ingest failure mode because jobs can get stuck in `DOWNLOADING` without `JOB_FAILED`.
+- The branch state remains `develop` as the integration branch, with `main` still behind the validated MVP state.
+- No application logic changes were needed for this task.

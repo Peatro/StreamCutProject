@@ -161,6 +161,10 @@ Branch snapshot: `develop`
 - `TASK-052` Document Actual Project Status Against Implemented Task History
 - `TASK-053` Plan And Execute Release Movement From `develop` To `main`
 
+### Release Checklist
+- `release-checklist.md` is the current gate document for moving `develop` to `main`.
+- The checklist is intentionally explicit about `TASK-044` remaining a blocker until the worker failure path is fixed or formally accepted.
+
 ## ROADMAP TO FULL SERVICE
 
 ### Phase A. Full-Cycle MVP Loop
@@ -227,6 +231,7 @@ Status: completed locally on 2026-04-06
 - `main` does not yet represent the current MVP state.
 - Upload ingest is not release-ready for realistic file sizes until the limits defined in `runtime.md` are implemented.
 - Docker image choices are acceptable for the current MVP but remain a deliberate compromise rather than a production recommendation.
+- Release readiness is still blocked by incomplete browser QA and the URL ingest failure mode found in `TASK-044`.
 - Worker cold start depends on external model download and is slower without a configured `HF_TOKEN`.
 - Browser happy-path QA has not yet been completed as a formal release gate.
 - Negative-path recovery behavior is partially known from smoke tests, but not yet documented as release-safe behavior.

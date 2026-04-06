@@ -41,3 +41,9 @@ The project now needs release discipline. A written checklist should define QA g
 
 ## Notes
 This is a process task, not an implementation task.
+
+## Observed On 2026-04-06
+- `release-checklist.md` is now the source-of-truth gate document for `develop` to `main`.
+- The checklist explicitly requires `TASK-042` through `TASK-049` to be addressed before release movement.
+- `TASK-044` remains a blocker until the URL ingest failure path is fixed or formally accepted.
+- No application logic changes were needed for this task.
