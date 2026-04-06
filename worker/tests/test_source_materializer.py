@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from pathlib import Path
+from urllib import error
 import sys
 from tempfile import TemporaryDirectory
 import unittest
@@ -10,7 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from streamcut_worker.models import ClaimedJob
 from streamcut_worker.services import source_materializer as source_materializer_module
-from streamcut_worker.services.source_materializer import SourceMaterializer
+from streamcut_worker.services.source_materializer import SourceMaterializationError, SourceMaterializer
 
 
 class FakePlatformDownloader:
@@ -125,6 +126,34 @@ class SourceMaterializerTests(unittest.TestCase):
                 self.assertEqual(result.read_bytes(), b"video-data")
             finally:
                 source_materializer_module.request.urlopen = original_urlopen
+
+    def test_url_download_errors_are_wrapped_with_stage_context(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            storage_root = Path(temp_dir)
+            materializer = SourceMaterializer(storage_root=storage_root)
+
+            def fake_urlopen(url: str):
+                raise error.URLError("connection refused")
+
+            original_urlopen = source_materializer_module.request.urlopen
+            source_materializer_module.request.urlopen = fake_urlopen
+            try:
+                with self.assertRaises(SourceMaterializationError) as ctx:
+                    materializer.materialize(
+                        ClaimedJob(
+                            job_id=14,
+                            task_type="ANALYZE",
+                            source_type="URL",
+                            video_path=None,
+                            source_url="http://localhost:65534/nope",
+                        )
+                    )
+            finally:
+                source_materializer_module.request.urlopen = original_urlopen
+
+        self.assertEqual(ctx.exception.failed_state, "DOWNLOADING")
+        self.assertIn("source download failed", str(ctx.exception))
+        self.assertIn("connection refused", str(ctx.exception))
 
 
 if __name__ == "__main__":

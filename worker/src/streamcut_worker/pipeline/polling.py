@@ -46,3 +46,12 @@ class WorkerPollingLoop:
                 )
             except BackendTransportError as exc:
                 logging.warning("Worker callback failed for job %s: %s", claimed_job.job_id, exc)
+            except Exception as exc:
+                logging.exception("Worker crashed unexpectedly while running job %s", claimed_job.job_id)
+                self.backend_client.submit_failure(
+                    WorkerFailurePayload(
+                        job_id=claimed_job.job_id,
+                        failed_state="WORKER_INTERNAL",
+                        message=f"Unexpected worker failure: {exc}",
+                    )
+                )

@@ -6,15 +6,17 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from streamcut_worker.models import ClaimedJob, WorkerExportCompletionPayload, WorkerFailurePayload, WorkerProcessingPayload
 from streamcut_worker.pipeline import WorkerPollingLoop, WorkerJobRunnerError
+from streamcut_worker.services.backend_client import BackendTransportError
 
 
 class FakeBackendClient:
-    def __init__(self, claimed_job=None) -> None:
+    def __init__(self, claimed_job=None, result_error=None) -> None:
         self.claimed_job = claimed_job
         self.claim_calls = 0
         self.results = []
         self.export_results = []
         self.failures = []
+        self.result_error = result_error
 
     def claim_next_job(self, worker_id: str):
         self.claim_calls += 1
@@ -23,6 +25,8 @@ class FakeBackendClient:
         return claimed_job
 
     def submit_result(self, payload: WorkerProcessingPayload):
+        if self.result_error is not None:
+            raise self.result_error
         self.results.append(payload)
         return {"status": "READY_FOR_REVIEW"}
 
@@ -88,6 +92,48 @@ class WorkerPollingLoopTests(unittest.TestCase):
         self.assertEqual(len(backend.failures), 1)
         self.assertEqual(backend.failures[0].job_id, 8)
         self.assertEqual(backend.failures[0].failed_state, "DOWNLOADING")
+
+    def test_polling_loop_reports_unexpected_runner_failures(self) -> None:
+        backend = FakeBackendClient(
+            claimed_job=ClaimedJob(10, "ANALYZE", "URL", None, "https://example.com/video.mp4")
+        )
+        runner = FakeJobRunner(error=RuntimeError("boom"))
+        loop = WorkerPollingLoop(backend_client=backend, job_runner=runner, worker_id="worker-1", poll_interval_sec=0)
+
+        iterations = iter([True, False])
+        loop.run_forever(lambda: next(iterations))
+
+        self.assertEqual(len(backend.failures), 1)
+        self.assertEqual(backend.failures[0].job_id, 10)
+        self.assertEqual(backend.failures[0].failed_state, "WORKER_INTERNAL")
+        self.assertIn("Unexpected worker failure: boom", backend.failures[0].message)
+
+    def test_polling_loop_preserves_backend_transport_errors(self) -> None:
+        backend = FakeBackendClient(
+            claimed_job=ClaimedJob(11, "ANALYZE", "URL", None, "https://example.com/video.mp4"),
+            result_error=BackendTransportError("callback failed"),
+        )
+        runner = FakeJobRunner(
+            result=WorkerProcessingPayload(
+                job_id=11,
+                duration_sec=120,
+                language="en",
+                video_path="/tmp/video.mp4",
+                audio_path="/tmp/audio.wav",
+                transcript_segments=[],
+                silence_segments=[],
+                analysis_windows=[],
+                clip_candidates=[],
+            )
+        )
+        loop = WorkerPollingLoop(backend_client=backend, job_runner=runner, worker_id="worker-1", poll_interval_sec=0)
+
+        iterations = iter([True, False])
+        loop.run_forever(lambda: next(iterations))
+
+        self.assertEqual(backend.claim_calls, 1)
+        self.assertEqual(len(backend.results), 0)
+        self.assertEqual(len(backend.failures), 0)
 
     def test_polling_loop_submits_export_result(self) -> None:
         backend = FakeBackendClient(

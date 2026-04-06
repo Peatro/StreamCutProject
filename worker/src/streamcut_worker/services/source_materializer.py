@@ -99,8 +99,13 @@ class SourceMaterializer:
         if self._requires_platform_downloader(job.source_url):
             return self._download_with_platform_extractor(job.source_url, target_path.parent)
 
-        with request.urlopen(job.source_url) as response, target_path.open("wb") as output:
-            output.write(response.read())
+        try:
+            with request.urlopen(job.source_url) as response, target_path.open("wb") as output:
+                output.write(response.read())
+        except Exception as exc:
+            raise SourceMaterializationError(
+                f"source download failed for {job.source_url}: {exc}",
+            ) from exc
 
         if self._looks_like_html(target_path):
             target_path.unlink(missing_ok=True)
