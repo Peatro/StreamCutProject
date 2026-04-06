@@ -23,6 +23,7 @@ This checklist is the release gate for moving the validated MVP from `develop` t
 - `TASK-043` any high-signal browser QA defects are fixed or explicitly accepted.
 - `TASK-044` negative-path URL ingest failure behavior is understood and no release-blocking stuck-job bug remains open.
 - `TASK-045` export and artifact failure behavior is understood.
+- `TASK-054` stale artifact semantics after failed export are either fixed or explicitly accepted.
 - `TASK-046` worker restart behavior is understood.
 - `TASK-047` failure visibility is practical enough for operators to diagnose issues.
 - `TASK-048` runtime logs are traceable enough to follow one job end-to-end.
@@ -32,7 +33,7 @@ This checklist is the release gate for moving the validated MVP from `develop` t
 ## Current Blockers
 - `TASK-042` through `TASK-049` are not all complete yet.
 - Browser QA evidence from `TASK-042` and any follow-up fixes from `TASK-043` still do not exist.
-- The stale-artifact behavior documented in `TASK-045` still needs either a fix or an explicit release acceptance note.
+- `TASK-054` is still open, so stale-artifact behavior is not yet dispositioned for release.
 - `TASK-053` must not proceed until the required gates and evidence above exist.
 
 ## Documentation Gates
@@ -52,4 +53,4 @@ This checklist is the release gate for moving the validated MVP from `develop` t
 - Disposable artifact and storage volumes should be treated as recoverable runtime data, not source-controlled state.
 
 ## Current Status
-As of 2026-04-06 this checklist is not yet satisfied because browser QA is still incomplete and the stale-artifact behavior from `TASK-045` has not been dispositioned for release.
+As of 2026-04-06 this checklist is not yet satisfied because browser QA is still incomplete and `TASK-054` has not yet closed the stale-artifact release blocker.

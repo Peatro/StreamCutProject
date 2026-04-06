@@ -5,10 +5,10 @@ This file is the current source of truth for project progress.
 It tracks:
 - completed work already implemented
 - work currently in progress
-- remaining work required to stabilize and ship the MVP
+- remaining work required to stabilize the MVP and finish the service through `v1.0.0`
 
 Last updated: 2026-04-06
-Branch snapshot: `develop`
+Branch snapshot: `chore/release-hardening-wave-1`
 
 ## Current Status
 - The MVP now runs as a real full-cycle local service on Docker Compose.
@@ -38,6 +38,7 @@ Branch snapshot: `develop`
 - MinIO is the export artifact store in Docker, and the named volumes `streamcut-postgres`, `streamcut-data`, and `streamcut-minio` are part of the runtime contract.
 - Release hardening wave 1 is now complete in source control: upload policy, multipart handling, UI upload guidance, URL/export/restart QA notes, structured runtime logging, integration coverage, Docker runtime notes, release checklist, and status docs have all been updated.
 - `TASK-044` was revalidated on the live Docker stack after the worker-side fix: a bad `404` URL now transitions `QUEUED -> FAILED`, persists `JOB_FAILED`, and stores a readable download error instead of leaving the job stuck in `DOWNLOADING`.
+- The working tree is currently ahead of the last committed release-hardening wave with additional Job page UX/runtime work in progress.
 
 ## DONE
 
@@ -159,6 +160,7 @@ Branch snapshot: `develop`
 ### Immediate
 - `TASK-042` Browser QA Pass For Core Happy Path
 - `TASK-043` Fix Core UI Friction Found During Browser QA
+- `TASK-054` Fix Stale Artifact Semantics After Failed Export
 
 ### Validation
 - Browser happy-path QA remains the next release gate.
@@ -190,38 +192,43 @@ Status: completed locally on 2026-04-06
 
 ## PLANNED TASK QUEUE
 
-### Ready For Execution
-- `TASK-039` Define Upload Size Policy
-- `TASK-040` Implement Backend Multipart Limits And Upload Error Handling
-- `TASK-041` Expose Upload Constraints In UI
+### Current Release Baseline
 - `TASK-042` Browser QA Pass For Core Happy Path
 - `TASK-043` Fix Core UI Friction Found During Browser QA
-- `TASK-044` Negative Path QA: Invalid URL And Download Failure
-- `TASK-045` Negative Path QA: Export Failure And Artifact Failure
-- `TASK-046` Negative Path QA: Worker Restart During Queue Processing
-- `TASK-047` Improve Failure State Visibility In Backend And UI
-- `TASK-048` Add Structured Runtime Logging Around Job Lifecycle
-- `TASK-049` Add Focused Integration Tests Around Critical Persistence And API Flows
-- `TASK-050` Validate Docker Runtime And Image Hygiene
-- `TASK-051` Prepare MVP Release Checklist
-- `TASK-052` Document Actual Project Status Against Implemented Task History
+- `TASK-054` Fix Stale Artifact Semantics After Failed Export
 - `TASK-053` Plan And Execute Release Movement From `develop` To `main`
 
+### v1.0.0 Buildout
+- `TASK-055` Add Authentication And Protected Operator Access
+- `TASK-056` Add Security Baseline And Input Hardening
+- `TASK-057` Introduce Production Runtime Profiles And Secret Handling
+- `TASK-058` Replace MVP Container Strategy And Add Production Edge Runtime
+- `TASK-059` Add Health, Readiness, And Worker Diagnostics
+- `TASK-060` Harden Queue Reliability And Stuck-Job Recovery
+- `TASK-061` Add Operator Recovery Controls
+- `TASK-062` Add Metrics And Alertable Observability
+- `TASK-063` Add Source And Artifact Retention Cleanup
+- `TASK-064` Add Browser E2E Regression And CI Gate
+- `TASK-065` Write Operator Runbook, Backup Restore, And Upgrade Notes
+- `TASK-067` Run Backup Restore And Rollback Drill
+- `TASK-066` Prepare And Execute `v1.0.0` Release
+
 ### Execution Order
-- Release-hardening order should now proceed as:
-1. upload size policy
-2. backend upload handling
-3. browser UI verification and UX fixes
-4. negative-path QA
-5. observability and failure clarity
-6. release prep and `main` merge plan
+1. finish the current MVP release baseline
+2. add authentication and security hardening
+3. replace local-first runtime compromises with deployable runtime packaging
+4. harden recovery, diagnostics, and operator controls
+5. add CI, browser regression coverage, runbooks, and a restore drill before release
 
 ### Parallelism Notes
-- `TASK-039` should complete before `TASK-040` and `TASK-041`.
-- `TASK-042` and `TASK-044` can run in parallel after upload constraints are clarified.
 - `TASK-043` should consume only concrete findings from `TASK-042`.
-- `TASK-051` and `TASK-052` can run in parallel once stabilization work is mostly complete.
-- `TASK-053` must not start until QA and release checklist gates are satisfied.
+- `TASK-054` should close before `TASK-053` and before any production-facing release claim.
+- `TASK-055` should complete before `TASK-056`, because the security baseline depends on the chosen auth model.
+- `TASK-057` and `TASK-058` can run in parallel once runtime secrets and deployment assumptions are clear.
+- `TASK-059` through `TASK-063` can overlap, but `TASK-060` owns recovery semantics and should define the contract for `TASK-061` and parts of `TASK-062`.
+- `TASK-064` should start after the main browser flows and negative paths are already stable enough to avoid flaky E2E coverage.
+- `TASK-067` should consume the concrete procedures written in `TASK-065`, not invent them during the drill.
+- `TASK-066` must not start until every preceding phase has documented evidence.
 
 ## LATER
 
@@ -243,9 +250,67 @@ Status: completed locally on 2026-04-06
 - Worker cold start depends on external model download and is slower without a configured `HF_TOKEN`.
 - Browser happy-path QA has not yet been completed as a formal release gate.
 - Negative-path recovery behavior is partially known from smoke tests, but not yet documented as release-safe behavior.
-- `TASK-045` QA found that export retries are allowed, export failure correctly marks the job `FAILED`, but stale artifact endpoints can still return `200` during a failed retry because an old object remains accessible.
+- `TASK-045` QA found that export retries are allowed, export failure correctly marks the job `FAILED`, but stale artifact endpoints can still return `200` during a failed retry because an old object remains accessible. This is now tracked as `TASK-054`.
 
 ## Recommended Next Sequence
 1. `TASK-042` Browser QA Pass For Core Happy Path.
 2. `TASK-043` Fix Core UI Friction Found During Browser QA.
-3. `TASK-053` Plan And Execute Release Movement From `develop` To `main`.
+3. `TASK-054` Fix Stale Artifact Semantics After Failed Export.
+4. `TASK-053` Plan And Execute Release Movement From `develop` To `main`.
+
+## Path To Service v1.0.0
+
+### v1.0.0 Assumptions
+- `v1.0.0` means a finished operator-facing service for a small authenticated team, not a public consumer app.
+- The supported service shape is single-tenant: one backend, one or more workers, PostgreSQL, and S3-compatible object storage.
+- `v1.0.0` must be deployable outside local Docker, with documented secrets, recovery procedures, and operator diagnostics.
+- `v1.0.0` does not include billing, multi-tenant workspaces, model training loops, or candidate-ranking research.
+
+### v1.0.0 Definition Of Done
+- `main` represents the validated service release rather than a stale MVP branch.
+- The service is authenticated and no longer exposes the operator UI and write APIs without access control.
+- Runtime configuration, container images, and edge/proxy setup are production-credible for a small deployment.
+- Operators can diagnose, retry, cancel, and recover jobs without database surgery.
+- Metrics, health/readiness, cleanup policy, and backup/restore guidance exist.
+- Backup, restore, and rollback behavior have been exercised at least once against the chosen runtime rather than only described on paper.
+- Browser E2E and CI gates protect the main operator flows.
+
+### v1.0.0 Phases
+1. Release the current validated MVP baseline.
+2. Add security and runtime foundations for a real service.
+3. Harden reliability, recovery, and observability for operators.
+4. Add launch-quality automation, runbooks, and final release discipline.
+
+### v1.0.0 Task Queue
+
+#### Phase 0. Release Baseline
+- `TASK-042` Browser QA Pass For Core Happy Path
+- `TASK-043` Fix Core UI Friction Found During Browser QA
+- `TASK-054` Fix Stale Artifact Semantics After Failed Export
+- `TASK-053` Plan And Execute Release Movement From `develop` To `main`
+
+#### Phase 1. Security And Runtime Foundation
+- `TASK-055` Add Authentication And Protected Operator Access
+- `TASK-056` Add Security Baseline And Input Hardening
+- `TASK-057` Introduce Production Runtime Profiles And Secret Handling
+- `TASK-058` Replace MVP Container Strategy And Add Production Edge Runtime
+
+#### Phase 2. Reliability And Operator Controls
+- `TASK-059` Add Health, Readiness, And Worker Diagnostics
+- `TASK-060` Harden Queue Reliability And Stuck-Job Recovery
+- `TASK-061` Add Operator Recovery Controls
+- `TASK-062` Add Metrics And Alertable Observability
+- `TASK-063` Add Source And Artifact Retention Cleanup
+
+#### Phase 3. Quality And Launch
+- `TASK-064` Add Browser E2E Regression And CI Gate
+- `TASK-065` Write Operator Runbook, Backup Restore, And Upgrade Notes
+- `TASK-067` Run Backup Restore And Rollback Drill
+- `TASK-066` Prepare And Execute `v1.0.0` Release
+
+### Critical Path To v1.0.0
+1. Finish the current release baseline and move it intentionally to `main`.
+2. Add auth and security hardening before treating the product as a real service.
+3. Replace local-first runtime compromises with a deployable runtime package.
+4. Close reliability and operator-control gaps so failed jobs are recoverable and diagnosable.
+5. Lock the service down with CI, browser E2E, runbooks, and an actual restore drill before the controlled release.
