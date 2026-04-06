@@ -45,3 +45,10 @@ The happy path already works locally. Release hardening now requires explicit ob
 
 ## Notes
 Prefer reproducible cases over broad theoretical coverage.
+
+## Observed On 2026-04-06
+- `POST /api/jobs/url` currently accepts invalid-looking input such as `notaurl` and still creates a job.
+- Negative URL ingest cases for malformed URL, connection refusal, and `404` upstream source were reproduced against the live Docker stack.
+- In all observed cases the worker crashed during download handling instead of reporting a structured failure back to the backend.
+- Affected jobs remained stuck in `DOWNLOADING` with no `JOB_FAILED` event and no persisted `errorMessage`.
+- This is a release-blocking defect for URL ingest failure handling and should feed a backend fix task for worker exception reporting and stuck-job recovery.
