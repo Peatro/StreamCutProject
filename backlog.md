@@ -8,7 +8,7 @@ It tracks:
 - remaining work required to stabilize the MVP and finish the service through `v1.0.0`
 
 Last updated: 2026-04-06
-Branch snapshot: `main`
+Branch snapshot: `develop`
 
 ## Current Status
 - The MVP now runs as a real full-cycle local service on Docker Compose.
@@ -29,7 +29,8 @@ Branch snapshot: `main`
 - `TASK-042` browser happy-path QA passed in a live browser against the running Docker stack.
 - `TASK-043` and `TASK-054` are merged into the validated MVP baseline.
 - `TASK-053` moved the validated MVP baseline from `develop` to `main` at commit `22f61b4`.
-- `main` and `develop` now point at the same validated MVP baseline before the next `v1.0.0` buildout tasks begin.
+- `TASK-055` is merged into `develop`, and `develop` is now the active branch for `v1.0.0` buildout.
+- `main` remains the validated MVP baseline while `develop` continues service-hardening.
 - The canonical MVP upload policy is defined in `runtime.md`:
   - single-file uploads only
   - supported formats: `video/mp4`, `video/quicktime`, `video/x-matroska`, `video/webm`, `video/x-msvideo`, `video/mpeg`
@@ -90,6 +91,7 @@ Branch snapshot: `main`
 ### Release Hardening
 - `TASK-043` Fix Core UI Friction Found During Browser QA
 - `TASK-054` Fix Stale Artifact Semantics After Failed Export
+- `TASK-055` Add Authentication And Protected Operator Access
 
 ### Backend <-> Worker Full-Cycle Loop
 - `TASK-026` Freeze Worker Transport Contract
@@ -205,7 +207,6 @@ Status: completed locally on 2026-04-06
 - MVP baseline promoted to `main` through `TASK-053`
 
 ### v1.0.0 Buildout
-- `TASK-055` Add Authentication And Protected Operator Access
 - `TASK-056` Add Security Baseline And Input Hardening
 - `TASK-057` Introduce Production Runtime Profiles And Secret Handling
 - `TASK-058` Replace MVP Container Strategy And Add Production Edge Runtime
@@ -257,9 +258,9 @@ Status: completed locally on 2026-04-06
 - `TASK-045` QA found that export retries are allowed, export failure correctly marks the job `FAILED`, and the stale-artifact behavior was addressed in `TASK-054`.
 
 ## Recommended Next Sequence
-1. `TASK-055` Add Authentication And Protected Operator Access.
-2. `TASK-056` Add Security Baseline And Input Hardening.
-3. `TASK-057` Introduce Production Runtime Profiles And Secret Handling.
+1. `TASK-056` Add Security Baseline And Input Hardening.
+2. `TASK-057` Introduce Production Runtime Profiles And Secret Handling.
+3. `TASK-058` Replace MVP Container Strategy And Add Production Edge Runtime.
 
 ## Path To Service v1.0.0
 
