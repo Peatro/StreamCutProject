@@ -176,7 +176,9 @@ class VodJobControllerTest {
                         "A candidate excerpt",
                         "PENDING",
                         null,
-                        null
+                        null,
+                        "NOT_REQUESTED",
+                        false
                 )
         ));
 

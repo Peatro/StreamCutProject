@@ -32,14 +32,15 @@ public interface ClipCandidateRepository extends JpaRepository<ClipCandidate, Lo
     @Query("""
             select c
             from ClipCandidate c
-            where c.vodJob.status = :jobStatus
-              and c.moderationStatus = :moderationStatus
-              and c.exportedClipPath is not null
+            where c.exportStatus = :exportStatus
             order by c.vodJob.updatedAt asc, c.id asc
             """)
     List<ClipCandidate> findPendingExportsForUpdate(
-            @Param("jobStatus") com.peatroxd.streamcutproject.vodjob.JobStatus jobStatus,
-            @Param("moderationStatus") ModerationStatus moderationStatus,
+            @Param("exportStatus") ExportStatus exportStatus,
             Pageable pageable
     );
+
+    boolean existsByVodJobIdAndExportStatus(Long jobId, ExportStatus exportStatus);
+
+    List<ClipCandidate> findAllByVodJobIdAndExportStatus(Long jobId, ExportStatus exportStatus);
 }

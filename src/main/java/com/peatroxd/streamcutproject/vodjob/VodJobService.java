@@ -3,6 +3,7 @@ package com.peatroxd.streamcutproject.vodjob;
 import com.peatroxd.streamcutproject.clipcandidate.ClipCandidate;
 import com.peatroxd.streamcutproject.clipcandidate.ClipCandidatePersistenceMapper;
 import com.peatroxd.streamcutproject.clipcandidate.ClipCandidateRepository;
+import com.peatroxd.streamcutproject.clipcandidate.ExportStatus;
 import com.peatroxd.streamcutproject.clipcandidate.ModerationStatus;
 import com.peatroxd.streamcutproject.clipcandidate.api.ClipCandidateMapper;
 import com.peatroxd.streamcutproject.clipcandidate.api.ClipCandidateResponse;
@@ -21,6 +22,7 @@ import com.peatroxd.streamcutproject.vodjob.event.JobEvent;
 import com.peatroxd.streamcutproject.vodjob.event.JobEventRepository;
 import com.peatroxd.streamcutproject.transcript.TranscriptSegmentRepository;
 import com.peatroxd.streamcutproject.transcript.TranscriptSegmentPersistenceMapper;
+import com.peatroxd.streamcutproject.storage.ArtifactStorageService;
 import com.peatroxd.streamcutproject.storage.StorageService;
 import com.peatroxd.streamcutproject.workerdispatch.WorkerDispatchPayload;
 import com.peatroxd.streamcutproject.workerdispatch.WorkerDispatchPayloadFactory;
@@ -38,7 +40,6 @@ import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.List;
@@ -64,6 +65,7 @@ public class VodJobService {
     private final AnalysisWindowRepository analysisWindowRepository;
     private final ClipCandidateRepository clipCandidateRepository;
     private final StorageService storageService;
+    private final ArtifactStorageService artifactStorageService;
     private final WorkerDispatchPort workerDispatchPort;
     private final WorkerDispatchPayloadFactory workerDispatchPayloadFactory;
 
@@ -75,6 +77,7 @@ public class VodJobService {
             AnalysisWindowRepository analysisWindowRepository,
             ClipCandidateRepository clipCandidateRepository,
             StorageService storageService,
+            ArtifactStorageService artifactStorageService,
             WorkerDispatchPort workerDispatchPort,
             WorkerDispatchPayloadFactory workerDispatchPayloadFactory) {
         this.vodJobRepository = vodJobRepository;
@@ -84,6 +87,7 @@ public class VodJobService {
         this.analysisWindowRepository = analysisWindowRepository;
         this.clipCandidateRepository = clipCandidateRepository;
         this.storageService = storageService;
+        this.artifactStorageService = artifactStorageService;
         this.workerDispatchPort = workerDispatchPort;
         this.workerDispatchPayloadFactory = workerDispatchPayloadFactory;
     }
@@ -155,7 +159,10 @@ public class VodJobService {
         requireJob(jobId);
         return clipCandidateRepository.findAllByJobIdOrderByScoreDescStartSecAscIdAsc(jobId)
                 .stream()
-                .map(ClipCandidateMapper::toResponse)
+                .map(candidate -> ClipCandidateMapper.toResponse(
+                        candidate,
+                        exportReady(candidate)
+                ))
                 .toList();
     }
 
@@ -186,18 +193,31 @@ public class VodJobService {
     @Transactional
     public ExportStatusResponse startExport(Long candidateId) {
         ClipCandidate candidate = requireCandidate(candidateId);
+        VodJob job = candidate.getVodJob();
         if (candidate.getModerationStatus() != ModerationStatus.APPROVED) {
             throw new ResponseStatusException(
                     HttpStatus.CONFLICT,
                     "Candidate must be approved before export: " + candidateId
             );
         }
+        if (candidate.getExportStatus() == ExportStatus.IN_PROGRESS) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "Export already in progress for candidate: " + candidateId
+            );
+        }
+        if (clipCandidateRepository.existsByVodJobIdAndExportStatus(job.getId(), ExportStatus.IN_PROGRESS)) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "Another export is already in progress for job: " + job.getId()
+            );
+        }
 
-        VodJob job = candidate.getVodJob();
         Instant now = Instant.now();
         String artifactPath = resolveExportArtifactPath(candidate);
 
         candidate.setExportedClipPath(artifactPath);
+        candidate.setExportStatus(ExportStatus.IN_PROGRESS);
         job.setStatus(JobStatus.EXPORTING_CLIP);
         job.setUpdatedAt(now);
 
@@ -210,26 +230,26 @@ public class VodJobService {
                 now
         ));
 
-        return toExportStatusResponse(candidate, artifactPath, JobStatus.EXPORTING_CLIP);
+        return toExportStatusResponse(candidate, artifactPath, exportReady(candidate));
     }
 
     @Transactional(readOnly = true)
     public ExportStatusResponse getExportStatus(Long exportId) {
         ClipCandidate candidate = requireCandidate(exportId);
-        return toExportStatusResponse(candidate, resolveExportArtifactPath(candidate), candidate.getVodJob().getStatus());
+        return toExportStatusResponse(candidate, resolveExportArtifactPath(candidate), exportReady(candidate));
     }
 
     @Transactional(readOnly = true)
-    public Path getExportArtifactPath(Long exportId) {
+    public String getExportArtifactReference(Long exportId) {
         ClipCandidate candidate = requireCandidate(exportId);
-        Path artifactPath = Path.of(resolveExportArtifactPath(candidate)).normalize();
-        if (!Files.exists(artifactPath)) {
+        String reference = resolveExportArtifactPath(candidate);
+        if (!artifactStorageService.exists(reference)) {
             throw new ResponseStatusException(
                     HttpStatus.NOT_FOUND,
                     "Export artifact not found for candidate: " + exportId
             );
         }
-        return artifactPath;
+        return reference;
     }
 
     @Transactional
@@ -258,8 +278,7 @@ public class VodJobService {
     @Transactional
     public Optional<WorkerDispatchPayload> claimNextQueuedJob(String workerId) {
         List<ClipCandidate> pendingExports = clipCandidateRepository.findPendingExportsForUpdate(
-                JobStatus.EXPORTING_CLIP,
-                ModerationStatus.APPROVED,
+                ExportStatus.IN_PROGRESS,
                 PageRequest.of(0, 1)
         );
         if (!pendingExports.isEmpty()) {
@@ -361,8 +380,22 @@ public class VodJobService {
         Instant now = Instant.now();
 
         if (payload.artifactPath() != null && !payload.artifactPath().isBlank()) {
-            candidate.setExportedClipPath(normalizeArtifactPath(payload.artifactPath()));
+            try {
+                String storedReference = artifactStorageService.storeCompletedExport(
+                        job.getId(),
+                        candidate.getId(),
+                        Path.of(payload.artifactPath())
+                );
+                candidate.setExportedClipPath(storedReference);
+            } catch (IOException ex) {
+                throw new ResponseStatusException(
+                        HttpStatus.INTERNAL_SERVER_ERROR,
+                        "Failed to persist export artifact",
+                        ex
+                );
+            }
         }
+        candidate.setExportStatus(ExportStatus.COMPLETED);
         job.setStatus(JobStatus.COMPLETED);
         job.setUpdatedAt(now);
         job.setFinishedAt(now);
@@ -382,6 +415,14 @@ public class VodJobService {
     public WorkerTransportAck reportWorkerFailure(WorkerFailureReportPayload payload) {
         VodJob job = requireJob(payload.jobId());
         Instant now = Instant.now();
+
+        if ("EXPORTING_CLIP".equals(payload.failedState())) {
+            clipCandidateRepository.findAllByVodJobIdAndExportStatus(job.getId(), ExportStatus.IN_PROGRESS)
+                    .forEach(candidate -> {
+                        candidate.setExportStatus(ExportStatus.FAILED);
+                        clipCandidateRepository.save(candidate);
+                    });
+        }
 
         job.setStatus(JobStatus.FAILED);
         job.setErrorMessage(payload.message());
@@ -442,7 +483,11 @@ public class VodJobService {
         ClipCandidate candidate = clipCandidateRepository.findById(candidateId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Candidate not found: " + candidateId));
         candidate.setModerationStatus(moderationStatus);
-        return ClipCandidateMapper.toResponse(clipCandidateRepository.save(candidate));
+        ClipCandidate savedCandidate = clipCandidateRepository.save(candidate);
+        return ClipCandidateMapper.toResponse(
+                savedCandidate,
+                exportReady(savedCandidate)
+        );
     }
 
     private ClipCandidate requireCandidate(Long candidateId) {
@@ -468,15 +513,21 @@ public class VodJobService {
     private ExportStatusResponse toExportStatusResponse(
             ClipCandidate candidate,
             String artifactPath,
-            JobStatus jobStatus
+            boolean exportReady
     ) {
         return new ExportStatusResponse(
                 candidate.getId(),
                 candidate.getVodJob().getId(),
-                jobStatus.name(),
+                candidate.getExportStatus().name(),
                 artifactPath,
-                candidate.getModerationStatus().name()
+                candidate.getModerationStatus().name(),
+                exportReady
         );
+    }
+
+    private boolean exportReady(ClipCandidate candidate) {
+        return candidate.getExportStatus() == ExportStatus.COMPLETED
+                && artifactStorageService.exists(candidate.getExportedClipPath());
     }
 
     private static <T> List<T> safeList(List<T> values) {

@@ -3,6 +3,7 @@ package com.peatroxd.streamcutproject.vodjob;
 import com.peatroxd.streamcutproject.clipcandidate.ClipCandidate;
 import com.peatroxd.streamcutproject.clipcandidate.ClipCandidateWorkerPayload;
 import com.peatroxd.streamcutproject.clipcandidate.ClipCandidateRepository;
+import com.peatroxd.streamcutproject.clipcandidate.ExportStatus;
 import com.peatroxd.streamcutproject.clipcandidate.ModerationStatus;
 import com.peatroxd.streamcutproject.clipcandidate.api.ClipCandidateResponse;
 import com.peatroxd.streamcutproject.clipcandidate.api.ExportStatusResponse;
@@ -16,6 +17,7 @@ import com.peatroxd.streamcutproject.vodjob.event.JobEvent;
 import com.peatroxd.streamcutproject.vodjob.event.JobEventRepository;
 import com.peatroxd.streamcutproject.silence.SilenceSegmentRepository;
 import com.peatroxd.streamcutproject.silence.SilenceSegmentWorkerPayload;
+import com.peatroxd.streamcutproject.storage.ArtifactStorageService;
 import com.peatroxd.streamcutproject.storage.StorageService;
 import com.peatroxd.streamcutproject.transcript.TranscriptSegment;
 import com.peatroxd.streamcutproject.transcript.TranscriptSegmentRepository;
@@ -30,6 +32,7 @@ import com.peatroxd.streamcutproject.workerdispatch.WorkerTransportAck;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.api.io.TempDir;
 import org.mockito.Mock;
 import org.mockito.Mockito;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -38,6 +41,7 @@ import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.http.MediaType;
 import org.springframework.data.domain.Pageable;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.List;
@@ -51,6 +55,9 @@ import org.springframework.web.server.ResponseStatusException;
 
 @ExtendWith(MockitoExtension.class)
 class VodJobServiceTest {
+
+    @TempDir
+    Path tempDir;
 
     @Mock
     private VodJobRepository vodJobRepository;
@@ -74,6 +81,9 @@ class VodJobServiceTest {
     private StorageService storageService;
 
     @Mock
+    private ArtifactStorageService artifactStorageService;
+
+    @Mock
     private WorkerDispatchPort workerDispatchPort;
 
     @Mock
@@ -91,6 +101,7 @@ class VodJobServiceTest {
                 analysisWindowRepository,
                 clipCandidateRepository,
                 storageService,
+                artifactStorageService,
                 workerDispatchPort,
                 workerDispatchPayloadFactory
         );
@@ -266,13 +277,38 @@ class VodJobServiceTest {
 
         when(vodJobRepository.findById(1L)).thenReturn(java.util.Optional.of(job));
         when(clipCandidateRepository.findAllByJobIdOrderByScoreDescStartSecAscIdAsc(1L)).thenReturn(List.of(higherScore, lowerScore));
-
         List<ClipCandidateResponse> candidates = vodJobService.listCandidates(1L);
 
         assertThat(candidates).hasSize(2);
         assertThat(candidates.get(0).id()).isEqualTo(22L);
         assertThat(candidates.get(0).moderationStatus()).isEqualTo("PENDING");
+        assertThat(candidates.get(0).exportReady()).isFalse();
         assertThat(candidates.get(1).id()).isEqualTo(21L);
+    }
+
+    @Test
+    void listCandidatesMarksExportReadyOnlyWhenArtifactExists() throws Exception {
+        VodJob job = buildJob(1L, "https://example.com/video", Instant.parse("2026-04-05T10:00:00Z"));
+        ClipCandidate ready = ClipCandidate.create(job, 10.0, 20.0, 0.93, "second");
+        ready.setId(22L);
+        Path readyArtifact = tempDir.resolve("candidate-22.mp4");
+        Files.writeString(readyArtifact, "video");
+        ready.setExportedClipPath(readyArtifact.toString());
+        ready.setExportStatus(ExportStatus.COMPLETED);
+
+        ClipCandidate pending = ClipCandidate.create(job, 5.0, 12.0, 0.91, "first");
+        pending.setId(21L);
+        pending.setExportedClipPath(tempDir.resolve("candidate-21.mp4").toString());
+
+        when(vodJobRepository.findById(1L)).thenReturn(java.util.Optional.of(job));
+        when(clipCandidateRepository.findAllByJobIdOrderByScoreDescStartSecAscIdAsc(1L)).thenReturn(List.of(ready, pending));
+        when(artifactStorageService.exists(readyArtifact.toString())).thenReturn(true);
+
+        List<ClipCandidateResponse> candidates = vodJobService.listCandidates(1L);
+
+        assertThat(candidates).hasSize(2);
+        assertThat(candidates.get(0).exportReady()).isTrue();
+        assertThat(candidates.get(1).exportReady()).isFalse();
     }
 
     @Test
@@ -292,7 +328,6 @@ class VodJobServiceTest {
 
         when(clipCandidateRepository.findById(7L)).thenReturn(java.util.Optional.of(candidate));
         when(clipCandidateRepository.save(candidate)).thenAnswer(invocation -> invocation.getArgument(0));
-
         ClipCandidateResponse response = vodJobService.approveCandidate(7L);
 
         assertThat(candidate.getModerationStatus()).isEqualTo(ModerationStatus.APPROVED);
@@ -307,7 +342,6 @@ class VodJobServiceTest {
 
         when(clipCandidateRepository.findById(7L)).thenReturn(java.util.Optional.of(candidate));
         when(clipCandidateRepository.save(candidate)).thenAnswer(invocation -> invocation.getArgument(0));
-
         ClipCandidateResponse response = vodJobService.rejectCandidate(7L);
 
         assertThat(candidate.getModerationStatus()).isEqualTo(ModerationStatus.REJECTED);
@@ -344,10 +378,12 @@ class VodJobServiceTest {
 
         assertThat(response.id()).isEqualTo(7L);
         assertThat(response.jobId()).isEqualTo(1L);
-        assertThat(response.status()).isEqualTo("EXPORTING_CLIP");
+        assertThat(response.status()).isEqualTo("IN_PROGRESS");
         assertThat(response.artifactPath()).isEqualTo("/var/lib/streamcut/jobs/1/exports/candidate-7.mp4");
+        assertThat(response.exportReady()).isFalse();
         assertThat(job.getStatus()).isEqualTo(JobStatus.EXPORTING_CLIP);
         assertThat(candidate.getExportedClipPath()).isEqualTo("/var/lib/streamcut/jobs/1/exports/candidate-7.mp4");
+        assertThat(candidate.getExportStatus()).isEqualTo(ExportStatus.IN_PROGRESS);
         verify(jobEventRepository).save(any(JobEvent.class));
     }
 
@@ -364,9 +400,10 @@ class VodJobServiceTest {
 
         ExportStatusResponse response = vodJobService.getExportStatus(7L);
 
-        assertThat(response.status()).isEqualTo("EXPORTING_CLIP");
+        assertThat(response.status()).isEqualTo("NOT_REQUESTED");
         assertThat(response.artifactPath()).isEqualTo("/var/lib/streamcut/jobs/1/exports/candidate-7.mp4");
         assertThat(response.moderationStatus()).isEqualTo("APPROVED");
+        assertThat(response.exportReady()).isFalse();
     }
 
     @Test
@@ -507,7 +544,7 @@ class VodJobServiceTest {
     }
 
     @Test
-    void ingestWorkerExportResultMarksJobCompletedAndPersistsArtifactPath() {
+    void ingestWorkerExportResultMarksJobCompletedAndPersistsArtifactPath() throws Exception {
         VodJob job = buildJob(1L, "https://example.com/video", Instant.parse("2026-04-05T10:00:00Z"));
         job.setStatus(JobStatus.EXPORTING_CLIP);
         ClipCandidate candidate = ClipCandidate.create(job, 5.0, 12.0, 0.91, "first");
@@ -515,6 +552,11 @@ class VodJobServiceTest {
         candidate.setModerationStatus(ModerationStatus.APPROVED);
         candidate.setExportedClipPath("/var/lib/streamcut/jobs/1/exports/candidate-7.mp4");
         when(clipCandidateRepository.findById(7L)).thenReturn(java.util.Optional.of(candidate));
+        when(artifactStorageService.storeCompletedExport(
+                Mockito.eq(1L),
+                Mockito.eq(7L),
+                Mockito.eq(Path.of("/var/lib/streamcut/jobs/1/exports/candidate-7.mp4"))
+        )).thenReturn("s3://streamcut-artifacts/exports/jobs/1/candidate-7.mp4");
 
         WorkerTransportAck ack = vodJobService.ingestWorkerExportResult(
                 new WorkerExportResultPayload(1L, 7L, "/var/lib/streamcut/jobs/1/exports/candidate-7.mp4")
@@ -523,7 +565,7 @@ class VodJobServiceTest {
         assertThat(ack.jobId()).isEqualTo(1L);
         assertThat(ack.status()).isEqualTo("COMPLETED");
         assertThat(job.getStatus()).isEqualTo(JobStatus.COMPLETED);
-        assertThat(candidate.getExportedClipPath()).isEqualTo("/var/lib/streamcut/jobs/1/exports/candidate-7.mp4");
+        assertThat(candidate.getExportedClipPath()).isEqualTo("s3://streamcut-artifacts/exports/jobs/1/candidate-7.mp4");
         verify(clipCandidateRepository).save(candidate);
         verify(vodJobRepository).save(job);
         verify(jobEventRepository).save(any(JobEvent.class));

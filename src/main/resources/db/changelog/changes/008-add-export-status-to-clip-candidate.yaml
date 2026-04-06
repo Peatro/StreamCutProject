@@ -1,0 +1,21 @@
+databaseChangeLog:
+  - changeSet:
+      id: 008-add-export-status-to-clip-candidate
+      author: codex
+      comment: Add candidate-scoped export status to decouple export lifecycle from job status.
+      changes:
+        - addColumn:
+            tableName: clip_candidate
+            columns:
+              - column:
+                  name: export_status
+                  type: VARCHAR(20)
+                  defaultValue: NOT_REQUESTED
+                  constraints:
+                    nullable: false
+        - createIndex:
+            tableName: clip_candidate
+            indexName: idx_clip_candidate_export_status
+            columns:
+              - column:
+                  name: export_status

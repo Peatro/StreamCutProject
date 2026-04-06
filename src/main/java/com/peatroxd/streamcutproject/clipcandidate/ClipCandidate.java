@@ -47,6 +47,10 @@ public class ClipCandidate {
     @Column(name = "exported_clip_path", length = 512)
     private String exportedClipPath;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "export_status", nullable = false, length = 20)
+    private ExportStatus exportStatus;
+
     protected ClipCandidate() {
     }
 
@@ -64,6 +68,7 @@ public class ClipCandidate {
         candidate.setScore(score);
         candidate.setTranscriptExcerpt(transcriptExcerpt);
         candidate.setModerationStatus(ModerationStatus.PENDING);
+        candidate.setExportStatus(ExportStatus.NOT_REQUESTED);
         return candidate;
     }
 
@@ -137,5 +142,13 @@ public class ClipCandidate {
 
     public void setExportedClipPath(String exportedClipPath) {
         this.exportedClipPath = exportedClipPath;
+    }
+
+    public ExportStatus getExportStatus() {
+        return exportStatus;
+    }
+
+    public void setExportStatus(ExportStatus exportStatus) {
+        this.exportStatus = exportStatus;
     }
 }
