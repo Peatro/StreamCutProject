@@ -5,15 +5,21 @@ import com.peatroxd.streamcutproject.clipcandidate.api.ExportStatusResponse;
 import com.peatroxd.streamcutproject.vodjob.VodJobService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.mockito.Mockito;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
+
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -102,5 +108,16 @@ class ClipCandidateControllerTest {
                 .andExpect(jsonPath("$.id").value(7))
                 .andExpect(jsonPath("$.status").value("EXPORTING_CLIP"))
                 .andExpect(jsonPath("$.artifactPath").value("/var/lib/streamcut/jobs/1/exports/candidate-7.mp4"));
+    }
+
+    @Test
+    void downloadsExportArtifact(@TempDir Path tempDir) throws Exception {
+        Path artifact = tempDir.resolve("candidate-7.mp4");
+        Files.writeString(artifact, "video");
+        when(vodJobService.getExportArtifactPath(anyLong())).thenReturn(artifact);
+
+        mockMvc.perform(get("/api/exports/7/file"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Content-Disposition", "attachment; filename=\"candidate-7.mp4\""));
     }
 }

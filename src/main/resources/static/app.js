@@ -360,7 +360,9 @@
             <div class="candidate-excerpt">${escapeHtml(candidate.transcriptExcerpt || "No transcript excerpt available.")}</div>
             <div class="candidate-meta">
               <span>${escapeHtml(candidate.moderatorNote || "No moderator note yet.")}</span>
-              <span>${escapeHtml(candidate.exportedClipPath ? `Exported: ${candidate.exportedClipPath}` : "Not exported")}</span>
+              <span>${candidate.exportedClipPath
+                ? `<a href="/api/exports/${encodeURIComponent(candidate.id)}/file">Download clip</a>`
+                : "Not exported"}</span>
             </div>
             <div class="candidate-actions">
               <button class="action-button action-button-approve" type="button" data-candidate-action="approve" data-candidate-id="${escapeHtml(candidate.id)}">Approve</button>
