@@ -59,3 +59,14 @@ PostgreSQL:
 - PostgreSQL is a named volume, so local data persists across `docker compose down` and only resets with `-v`.
 - The worker container is isolated from the backend process and is expected to communicate through future integration points, not direct code coupling.
 - The compose setup is intentionally local-first and should remain simple until the MVP stabilizes.
+
+## Docker Runtime Notes
+- The current Docker image strategy is acceptable for the MVP, but it is intentionally not production-grade.
+- `Dockerfile.backend` and `worker/Dockerfile` currently use `postgres:15` as a base image and layer the runtime they need on top of it.
+- That choice is a convenience compromise for the current MVP. It keeps the stack reproducible and already validated locally, but it should be revisited before any real deployment hardening.
+- MinIO is the artifact store for exports in the local Docker stack, and the backend is configured to talk to it via the internal service endpoint while serving public artifact URLs back through `localhost:9000`.
+- Named volumes are part of the runtime contract:
+  - `streamcut-postgres` holds the database state
+  - `streamcut-data` holds shared media and export files
+  - `streamcut-minio` holds MinIO object storage data
+- Contributors should treat `docker compose down -v` as the explicit cleanup/reset path when they need a clean slate.

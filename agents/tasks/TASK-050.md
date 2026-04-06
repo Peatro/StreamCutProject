@@ -45,3 +45,11 @@ The local Docker stack works, but release prep still needs clearer runtime decis
 
 ## Notes
 This task can produce only docs if runtime choices are acceptable as-is.
+
+## Observed On 2026-04-06
+- The current Docker runtime is release-credible for the MVP and does not require a structural refactor before the current hardening batch continues.
+- `Dockerfile.backend` and `worker/Dockerfile` both inherit from `postgres:15` and layer their runtime dependencies on top. That is a deliberate convenience compromise, not a long-term recommendation.
+- MinIO is the export artifact store in compose, and backend artifact URLs are expected to flow through the MinIO service internally while using `localhost:9000` as the public endpoint in local developer flows.
+- `streamcut-postgres`, `streamcut-data`, and `streamcut-minio` are named volumes that contributors should treat as part of the runtime contract.
+- `docker compose down -v` remains the explicit reset path for a clean local slate.
+- No application logic changes were needed for this task.
