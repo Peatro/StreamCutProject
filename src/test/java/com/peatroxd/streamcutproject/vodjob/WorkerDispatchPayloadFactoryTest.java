@@ -27,6 +27,7 @@ class WorkerDispatchPayloadFactoryTest {
         WorkerDispatchPayload payload = factory.fromJob(job);
 
         assertThat(payload.jobId()).isEqualTo(42L);
+        assertThat(payload.taskType()).isEqualTo("ANALYZE");
         assertThat(payload.videoPath()).isEqualTo("/var/lib/streamcut/jobs/42/source/video.mp4");
         assertThat(payload.sourceType()).isEqualTo("URL");
         assertThat(payload.sourceUrl()).isEqualTo("https://example.com/video");
@@ -36,9 +37,25 @@ class WorkerDispatchPayloadFactoryTest {
     void rejectsJobsWithoutStorageVideoPath() {
         VodJob job = new VodJob();
         job.setId(42L);
+        job.setSourceType("FILE");
 
         assertThatThrownBy(() -> factory.fromJob(job))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("has no storage video path");
+    }
+
+    @Test
+    void allowsUrlJobsWithoutStorageVideoPath() {
+        VodJob job = new VodJob();
+        job.setId(42L);
+        job.setSourceType("URL");
+        job.setSourceUrl("https://example.com/video");
+
+        WorkerDispatchPayload payload = factory.fromJob(job);
+
+        assertThat(payload.jobId()).isEqualTo(42L);
+        assertThat(payload.taskType()).isEqualTo("ANALYZE");
+        assertThat(payload.videoPath()).isNull();
+        assertThat(payload.sourceUrl()).isEqualTo("https://example.com/video");
     }
 }
