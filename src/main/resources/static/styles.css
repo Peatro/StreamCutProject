@@ -390,6 +390,18 @@ th,
   letter-spacing: -0.13px;
 }
 
+.upload-hint {
+  padding: 12px 14px;
+  border: 1px solid var(--line-subtle);
+  border-radius: var(--radius-md);
+  background:
+    linear-gradient(180deg, rgba(113, 112, 255, 0.06), rgba(255, 255, 255, 0.015));
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.6;
+  letter-spacing: -0.13px;
+}
+
 .form-message[data-state="error"],
 .banner-error,
 .error-state {

@@ -184,8 +184,12 @@
           <form class="action-form" data-upload-job-form>
             <label class="field-label" for="job-file-input">Create from File</label>
             <div class="form-row">
-              <input id="job-file-input" class="file-input" name="file" type="file" required>
+              <input id="job-file-input" class="file-input" name="file" type="file" accept=".mp4,.mov,.mkv,.webm,.avi,.mpeg,.mpg,video/mp4,video/quicktime,video/x-matroska,video/webm,video/x-msvideo,video/mpeg" required>
               <button class="action-button action-button-primary" type="submit">Upload Job</button>
+            </div>
+            <div class="upload-hint" aria-live="polite">
+              Single file only. Supported formats: MP4, MOV, MKV, WEBM, AVI, MPEG/MPG.
+              Max file size: 512 MB. Max request size: 520 MB.
             </div>
             <div class="form-message" data-upload-job-message></div>
           </form>
@@ -277,7 +281,7 @@
         const created = await api.createUploadJob(file);
         await renderJobsPage(root, `Job #${created.id} created from file upload.`, "success");
       } catch (error) {
-        setFormMessage(message, error.message || "Unable to upload job.", "error");
+        setFormMessage(message, formatUploadErrorMessage(error), "error");
         submitButton.disabled = false;
         submitButton.textContent = previousLabel;
       }
@@ -410,6 +414,14 @@
     }
     target.textContent = message;
     target.dataset.state = level || "info";
+  }
+
+  function formatUploadErrorMessage(error) {
+    const baseMessage = error?.message || "Unable to upload job.";
+    if (baseMessage.includes("Upload exceeds the")) {
+      return `${baseMessage} Choose a smaller supported file and try again.`;
+    }
+    return baseMessage;
   }
 
   function renderBanner(message, level) {
