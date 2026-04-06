@@ -47,6 +47,7 @@ If repeated export attempts are not supported, document actual current behavior 
 
 ## Observed On 2026-04-06
 - Repeated export attempts are currently allowed by the backend when a candidate is `APPROVED` and not already `IN_PROGRESS`.
-- Export-stage failures can be reproduced by corrupting or removing the source asset before the worker runs the export.
-- If the export source is missing or invalid, the worker reports `EXPORTING_CLIP` failure and the backend persists `JOB_FAILED` plus an `EXPORT_STARTED` event before failure.
-- Artifact retrieval for missing exports returns `404` and does not create a fake artifact path.
+- Export-stage failure was reproduced on `candidate 2` by truncating the FILE source asset before export. The worker reported `EXPORTING_CLIP` failure, the backend persisted `JOB_FAILED`, and the job ended in `FAILED` with `errorMessage = "ffmpeg failed while exporting clip"`.
+- Export transitions observed on the failed retry were `EXPORT_STARTED -> JOB_CLAIMED -> JOB_FAILED`.
+- During the failed retry, `/api/exports/2/file` and `/api/exports/2/stream` still returned `200` because the previous artifact remained on disk. That is a stale-artifact behavior worth follow-up, not clean failure semantics.
+- After restoring the source file, a repeated export attempt on the same candidate succeeded again and moved back to `COMPLETED`.
