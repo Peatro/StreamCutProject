@@ -24,6 +24,8 @@ import com.peatroxd.streamcutproject.transcript.TranscriptSegmentRepository;
 import com.peatroxd.streamcutproject.transcript.TranscriptSegmentPersistenceMapper;
 import com.peatroxd.streamcutproject.storage.ArtifactStorageService;
 import com.peatroxd.streamcutproject.storage.StorageService;
+import com.peatroxd.streamcutproject.storage.StorageProperties;
+import com.peatroxd.streamcutproject.storage.PathSafety;
 import com.peatroxd.streamcutproject.workerdispatch.WorkerDispatchPayload;
 import com.peatroxd.streamcutproject.workerdispatch.WorkerDispatchPayloadFactory;
 import com.peatroxd.streamcutproject.workerdispatch.WorkerExportResultPayload;
@@ -43,7 +45,9 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
+import java.net.URI;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -71,6 +75,7 @@ public class VodJobService {
     private final ClipCandidateRepository clipCandidateRepository;
     private final StorageService storageService;
     private final ArtifactStorageService artifactStorageService;
+    private final StorageProperties storageProperties;
     private final WorkerDispatchPort workerDispatchPort;
     private final WorkerDispatchPayloadFactory workerDispatchPayloadFactory;
 
@@ -83,6 +88,7 @@ public class VodJobService {
             ClipCandidateRepository clipCandidateRepository,
             StorageService storageService,
             ArtifactStorageService artifactStorageService,
+            StorageProperties storageProperties,
             WorkerDispatchPort workerDispatchPort,
             WorkerDispatchPayloadFactory workerDispatchPayloadFactory) {
         this.vodJobRepository = vodJobRepository;
@@ -93,13 +99,15 @@ public class VodJobService {
         this.clipCandidateRepository = clipCandidateRepository;
         this.storageService = storageService;
         this.artifactStorageService = artifactStorageService;
+        this.storageProperties = storageProperties;
         this.workerDispatchPort = workerDispatchPort;
         this.workerDispatchPayloadFactory = workerDispatchPayloadFactory;
     }
 
     @Transactional
     public JobSummaryResponse createUrlJob(String url) {
-        VodJob savedJob = createJob(SOURCE_TYPE_URL, url, null);
+        String normalizedUrl = validateHttpUrl(url);
+        VodJob savedJob = createJob(SOURCE_TYPE_URL, normalizedUrl, null);
         VodJob queuedJob = queueCreatedJob(savedJob);
         log.info("job_created jobId={} sourceType={} status={}", queuedJob.getId(), queuedJob.getSourceType(), queuedJob.getStatus());
         return JobMapper.toSummaryResponse(queuedJob);
@@ -397,10 +405,10 @@ public class VodJobService {
         job.setDurationSec(payload.durationSec());
         job.setLanguage(payload.language());
         if (payload.videoPath() != null && !payload.videoPath().isBlank()) {
-            job.setStorageVideoPath(normalizeArtifactPath(payload.videoPath()));
+            job.setStorageVideoPath(normalizeWorkerPath(payload.videoPath(), "worker video path"));
         }
         if (payload.audioPath() != null && !payload.audioPath().isBlank()) {
-            job.setStorageAudioPath(normalizeArtifactPath(payload.audioPath()));
+            job.setStorageAudioPath(normalizeWorkerPath(payload.audioPath(), "worker audio path"));
         }
         job.setStatus(JobStatus.READY_FOR_REVIEW);
         job.setUpdatedAt(now);
@@ -434,10 +442,15 @@ public class VodJobService {
 
         if (payload.artifactPath() != null && !payload.artifactPath().isBlank()) {
             try {
+                Path sourceArtifactPath = PathSafety.requireWithinRoot(
+                        storageProperties.getLocalRoot(),
+                        Path.of(payload.artifactPath()),
+                        "worker export artifact path"
+                );
                 String storedReference = artifactStorageService.storeCompletedExport(
                         job.getId(),
                         candidate.getId(),
-                        Path.of(payload.artifactPath())
+                        sourceArtifactPath
                 );
                 candidate.setExportedClipPath(storedReference);
             } catch (IOException ex) {
@@ -576,6 +589,36 @@ public class VodJobService {
 
     private static String normalizeArtifactPath(String path) {
         return path.replace('\\', '/');
+    }
+
+    private static String validateHttpUrl(String rawUrl) {
+        String trimmed = rawUrl == null ? "" : rawUrl.trim();
+        URI parsed;
+        try {
+            parsed = URI.create(trimmed);
+        } catch (IllegalArgumentException ex) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "url must be a valid http or https URL", ex);
+        }
+        String scheme = parsed.getScheme();
+        if (scheme == null || (!"http".equalsIgnoreCase(scheme) && !"https".equalsIgnoreCase(scheme))) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "url must use http or https");
+        }
+        if (parsed.getHost() == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "url must include a host");
+        }
+        return parsed.toString();
+    }
+
+    private String normalizeWorkerPath(String rawPath, String description) {
+        try {
+            return normalizeArtifactPath(PathSafety.requireWithinRoot(
+                    storageProperties.getLocalRoot(),
+                    Path.of(rawPath),
+                    description
+            ).toString());
+        } catch (InvalidPathException ex) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, description + " is invalid", ex);
+        }
     }
 
     private ExportStatusResponse toExportStatusResponse(

@@ -18,6 +18,7 @@ import com.peatroxd.streamcutproject.vodjob.event.JobEventRepository;
 import com.peatroxd.streamcutproject.silence.SilenceSegmentRepository;
 import com.peatroxd.streamcutproject.silence.SilenceSegmentWorkerPayload;
 import com.peatroxd.streamcutproject.storage.ArtifactStorageService;
+import com.peatroxd.streamcutproject.storage.StorageProperties;
 import com.peatroxd.streamcutproject.storage.StorageService;
 import com.peatroxd.streamcutproject.transcript.TranscriptSegment;
 import com.peatroxd.streamcutproject.transcript.TranscriptSegmentRepository;
@@ -59,6 +60,8 @@ class VodJobServiceTest {
     @TempDir
     Path tempDir;
 
+    private final StorageProperties storageProperties = new StorageProperties();
+
     @Mock
     private VodJobRepository vodJobRepository;
 
@@ -93,6 +96,7 @@ class VodJobServiceTest {
 
     @BeforeEach
     void setUp() {
+        storageProperties.setLocalRoot(Path.of("/var/lib/streamcut"));
         vodJobService = new VodJobService(
                 vodJobRepository,
                 jobEventRepository,
@@ -102,6 +106,7 @@ class VodJobServiceTest {
                 clipCandidateRepository,
                 storageService,
                 artifactStorageService,
+                storageProperties,
                 workerDispatchPort,
                 workerDispatchPayloadFactory
         );
@@ -125,6 +130,20 @@ class VodJobServiceTest {
         assertThat(response.sourceUrl()).isEqualTo("https://example.com/video");
         verify(vodJobRepository, Mockito.times(2)).save(any(VodJob.class));
         verify(jobEventRepository, Mockito.times(2)).save(any(JobEvent.class));
+    }
+
+    @Test
+    void createUrlJobRejectsNonHttpUrls() {
+        assertThatThrownBy(() -> vodJobService.createUrlJob("ftp://example.com/video"))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("url must use http or https");
+    }
+
+    @Test
+    void createUrlJobRejectsMalformedUrls() {
+        assertThatThrownBy(() -> vodJobService.createUrlJob("http://[broken"))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("url must be a valid http or https URL");
     }
 
     @Test
@@ -531,6 +550,28 @@ class VodJobServiceTest {
     }
 
     @Test
+    void ingestWorkerResultRejectsVideoPathOutsideStorageRoot() {
+        VodJob job = buildJob(1L, "https://example.com/video", Instant.parse("2026-04-05T10:00:00Z"));
+        when(vodJobRepository.findById(1L)).thenReturn(java.util.Optional.of(job));
+
+        WorkerProcessingResultPayload payload = new WorkerProcessingResultPayload(
+                1L,
+                120L,
+                "en",
+                "/tmp/outside/video.mp4",
+                "/var/lib/streamcut/jobs/1/audio/audio.wav",
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of()
+        );
+
+        assertThatThrownBy(() -> vodJobService.ingestWorkerResult(payload))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("worker video path must stay within the configured storage root");
+    }
+
+    @Test
     void reportWorkerFailureMarksJobFailedAndStoresErrorMessage() {
         VodJob job = buildJob(1L, "https://example.com/video", Instant.parse("2026-04-05T10:00:00Z"));
         job.setStatus(JobStatus.TRANSCRIBING);
@@ -588,6 +629,23 @@ class VodJobServiceTest {
         verify(clipCandidateRepository).save(candidate);
         verify(vodJobRepository).save(job);
         verify(jobEventRepository).save(any(JobEvent.class));
+    }
+
+    @Test
+    void ingestWorkerExportResultRejectsArtifactPathOutsideStorageRoot() {
+        VodJob job = buildJob(1L, "https://example.com/video", Instant.parse("2026-04-05T10:00:00Z"));
+        job.setStatus(JobStatus.EXPORTING_CLIP);
+        ClipCandidate candidate = ClipCandidate.create(job, 5.0, 12.0, 0.91, "first");
+        candidate.setId(7L);
+        candidate.setModerationStatus(ModerationStatus.APPROVED);
+        candidate.setExportedClipPath("/var/lib/streamcut/jobs/1/exports/candidate-7.mp4");
+        when(clipCandidateRepository.findById(7L)).thenReturn(java.util.Optional.of(candidate));
+
+        assertThatThrownBy(() -> vodJobService.ingestWorkerExportResult(
+                new WorkerExportResultPayload(1L, 7L, "/tmp/outside/candidate-7.mp4")
+        ))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("worker export artifact path must stay within the configured storage root");
     }
 
     @Test

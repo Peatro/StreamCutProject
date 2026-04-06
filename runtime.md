@@ -65,6 +65,12 @@ PostgreSQL:
 - `/api/internal/worker/**` stays public for now so worker transport is not blocked in `TASK-055`; machine auth can be handled in `TASK-056`.
 - The static frontend sends `X-XSRF-TOKEN` on operator POST requests after bootstrapping the CSRF token from `/csrf`.
 
+## Input Hardening
+- URL ingest only accepts absolute `http` or `https` URLs.
+- Worker callback paths for local video, audio, and export artifacts must stay under the configured local storage root.
+- Local storage path helpers reject outside-root paths instead of silently normalizing them into acceptance.
+- Worker namespace machine auth is still intentionally deferred; if that changes, document it before tightening the public worker routes.
+
 ## Cleanup Policy
 - Temporary build artifacts must stay out of git. The existing `.dockerignore` files already exclude common caches and build outputs.
 - Runtime data lives under the shared `/data` volume. If you need a clean slate, run `docker compose down -v` to remove volumes and then start again.
