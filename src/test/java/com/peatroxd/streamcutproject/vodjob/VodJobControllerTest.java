@@ -16,6 +16,7 @@ import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.validation.beanvalidation.LocalValidatorFactoryBean;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 import java.time.Instant;
@@ -49,7 +50,7 @@ class VodJobControllerTest {
     void createsUrlJobWithNewStatus() throws Exception {
         when(vodJobService.createUrlJob(anyString())).thenReturn(new JobSummaryResponse(
                 1L,
-                "NEW",
+                "QUEUED",
                 "URL",
                 "https://example.com/video",
                 null,
@@ -67,7 +68,7 @@ class VodJobControllerTest {
                 .andExpect(status().isCreated())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
                 .andExpect(jsonPath("$.id").value(1))
-                .andExpect(jsonPath("$.status").value("NEW"))
+                .andExpect(jsonPath("$.status").value("QUEUED"))
                 .andExpect(jsonPath("$.sourceType").value("URL"))
                 .andExpect(jsonPath("$.sourceUrl").value("https://example.com/video"));
 
@@ -78,9 +79,9 @@ class VodJobControllerTest {
 
     @Test
     void createsUploadJobWithFileSourceType() throws Exception {
-        when(vodJobService.createFileJob("video.mp4")).thenReturn(new JobSummaryResponse(
+        when(vodJobService.createFileJob(any(MultipartFile.class))).thenReturn(new JobSummaryResponse(
                 2L,
-                "NEW",
+                "QUEUED",
                 "FILE",
                 null,
                 "video.mp4",
@@ -100,14 +101,14 @@ class VodJobControllerTest {
                 .andExpect(status().isCreated())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
                 .andExpect(jsonPath("$.id").value(2))
-                .andExpect(jsonPath("$.status").value("NEW"))
+                .andExpect(jsonPath("$.status").value("QUEUED"))
                 .andExpect(jsonPath("$.sourceType").value("FILE"))
                 .andExpect(jsonPath("$.sourceUrl").isEmpty())
                 .andExpect(jsonPath("$.originalFilename").value("video.mp4"));
 
-        ArgumentCaptor<String> originalFilenameCaptor = ArgumentCaptor.forClass(String.class);
-        verify(vodJobService).createFileJob(originalFilenameCaptor.capture());
-        assertThat(originalFilenameCaptor.getValue()).isEqualTo("video.mp4");
+        ArgumentCaptor<MultipartFile> fileCaptor = ArgumentCaptor.forClass(MultipartFile.class);
+        verify(vodJobService).createFileJob(fileCaptor.capture());
+        assertThat(fileCaptor.getValue().getOriginalFilename()).isEqualTo("video.mp4");
     }
 
     @Test

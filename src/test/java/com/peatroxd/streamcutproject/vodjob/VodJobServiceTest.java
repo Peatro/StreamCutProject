@@ -1,22 +1,32 @@
 package com.peatroxd.streamcutproject.vodjob;
 
 import com.peatroxd.streamcutproject.clipcandidate.ClipCandidate;
+import com.peatroxd.streamcutproject.clipcandidate.ClipCandidateWorkerPayload;
 import com.peatroxd.streamcutproject.clipcandidate.ClipCandidateRepository;
 import com.peatroxd.streamcutproject.clipcandidate.ModerationStatus;
 import com.peatroxd.streamcutproject.clipcandidate.api.ClipCandidateResponse;
 import com.peatroxd.streamcutproject.clipcandidate.api.ExportStatusResponse;
+import com.peatroxd.streamcutproject.analysiswindow.AnalysisWindowRepository;
+import com.peatroxd.streamcutproject.analysiswindow.AnalysisWindowWorkerPayload;
 import com.peatroxd.streamcutproject.vodjob.api.JobListItemResponse;
 import com.peatroxd.streamcutproject.vodjob.api.JobDetailResponse;
 import com.peatroxd.streamcutproject.vodjob.api.JobEventResponse;
 import com.peatroxd.streamcutproject.vodjob.api.TranscriptSegmentResponse;
 import com.peatroxd.streamcutproject.vodjob.event.JobEvent;
 import com.peatroxd.streamcutproject.vodjob.event.JobEventRepository;
+import com.peatroxd.streamcutproject.silence.SilenceSegmentRepository;
+import com.peatroxd.streamcutproject.silence.SilenceSegmentWorkerPayload;
 import com.peatroxd.streamcutproject.storage.StorageService;
 import com.peatroxd.streamcutproject.transcript.TranscriptSegment;
 import com.peatroxd.streamcutproject.transcript.TranscriptSegmentRepository;
+import com.peatroxd.streamcutproject.transcript.TranscriptSegmentWorkerPayload;
 import com.peatroxd.streamcutproject.workerdispatch.WorkerDispatchPayload;
 import com.peatroxd.streamcutproject.workerdispatch.WorkerDispatchPayloadFactory;
 import com.peatroxd.streamcutproject.workerdispatch.WorkerDispatchPort;
+import com.peatroxd.streamcutproject.workerdispatch.WorkerExportResultPayload;
+import com.peatroxd.streamcutproject.workerdispatch.WorkerFailureReportPayload;
+import com.peatroxd.streamcutproject.workerdispatch.WorkerProcessingResultPayload;
+import com.peatroxd.streamcutproject.workerdispatch.WorkerTransportAck;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -24,6 +34,9 @@ import org.mockito.Mock;
 import org.mockito.Mockito;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.Sort;
+import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.http.MediaType;
+import org.springframework.data.domain.Pageable;
 
 import java.nio.file.Path;
 import java.time.Instant;
@@ -49,6 +62,12 @@ class VodJobServiceTest {
     private TranscriptSegmentRepository transcriptSegmentRepository;
 
     @Mock
+    private SilenceSegmentRepository silenceSegmentRepository;
+
+    @Mock
+    private AnalysisWindowRepository analysisWindowRepository;
+
+    @Mock
     private ClipCandidateRepository clipCandidateRepository;
 
     @Mock
@@ -68,6 +87,8 @@ class VodJobServiceTest {
                 vodJobRepository,
                 jobEventRepository,
                 transcriptSegmentRepository,
+                silenceSegmentRepository,
+                analysisWindowRepository,
                 clipCandidateRepository,
                 storageService,
                 workerDispatchPort,
@@ -76,38 +97,76 @@ class VodJobServiceTest {
     }
 
     @Test
-    void createUrlJobUsesNewStatus() {
+    void createUrlJobQueuesJobAndWritesEvents() {
         when(vodJobRepository.save(any())).thenAnswer(invocation -> {
             VodJob job = invocation.getArgument(0);
-            job.setId(1L);
+            if (job.getId() == null) {
+                job.setId(1L);
+            }
             return job;
         });
 
         var response = vodJobService.createUrlJob("https://example.com/video");
 
         assertThat(response.id()).isEqualTo(1L);
-        assertThat(response.status()).isEqualTo("NEW");
+        assertThat(response.status()).isEqualTo("QUEUED");
         assertThat(response.sourceType()).isEqualTo("URL");
         assertThat(response.sourceUrl()).isEqualTo("https://example.com/video");
-        verify(vodJobRepository).save(any(VodJob.class));
+        verify(vodJobRepository, Mockito.times(2)).save(any(VodJob.class));
+        verify(jobEventRepository, Mockito.times(2)).save(any(JobEvent.class));
     }
 
     @Test
-    void createFileJobUsesFileStatusAndOriginalFilename() {
+    void createFileJobUsesFileStatusOriginalFilenameAndStoragePath() throws Exception {
+        when(vodJobRepository.save(any())).thenAnswer(invocation -> {
+            VodJob job = invocation.getArgument(0);
+            if (job.getId() == null) {
+                job.setId(2L);
+            }
+            return job;
+        });
+        when(storageService.storeSourceVideo(Mockito.eq(2L), Mockito.eq("video.mp4"), any()))
+                .thenReturn(Path.of("/var/lib/streamcut/jobs/2/source/video.mp4"));
+
+        MockMultipartFile file = new MockMultipartFile(
+                "file",
+                "video.mp4",
+                MediaType.APPLICATION_OCTET_STREAM_VALUE,
+                "test-content".getBytes()
+        );
+
+        var response = vodJobService.createFileJob(file);
+
+        assertThat(response.id()).isEqualTo(2L);
+        assertThat(response.status()).isEqualTo("QUEUED");
+        assertThat(response.sourceType()).isEqualTo("FILE");
+        assertThat(response.sourceUrl()).isNull();
+        assertThat(response.originalFilename()).isEqualTo("video.mp4");
+        verify(vodJobRepository, Mockito.times(3)).save(any(VodJob.class));
+        verify(storageService).storeSourceVideo(Mockito.eq(2L), Mockito.eq("video.mp4"), any());
+        verify(jobEventRepository, Mockito.times(2)).save(any(JobEvent.class));
+    }
+
+    @Test
+    void createFileJobThrowsServerErrorWhenStorageFails() throws Exception {
         when(vodJobRepository.save(any())).thenAnswer(invocation -> {
             VodJob job = invocation.getArgument(0);
             job.setId(2L);
             return job;
         });
+        when(storageService.storeSourceVideo(Mockito.eq(2L), Mockito.eq("video.mp4"), any()))
+                .thenThrow(new java.io.IOException("disk full"));
 
-        var response = vodJobService.createFileJob("video.mp4");
+        MockMultipartFile file = new MockMultipartFile(
+                "file",
+                "video.mp4",
+                MediaType.APPLICATION_OCTET_STREAM_VALUE,
+                "test-content".getBytes()
+        );
 
-        assertThat(response.id()).isEqualTo(2L);
-        assertThat(response.status()).isEqualTo("NEW");
-        assertThat(response.sourceType()).isEqualTo("FILE");
-        assertThat(response.sourceUrl()).isNull();
-        assertThat(response.originalFilename()).isEqualTo("video.mp4");
-        verify(vodJobRepository).save(any(VodJob.class));
+        assertThatThrownBy(() -> vodJobService.createFileJob(file))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("Failed to store uploaded file");
     }
 
     @Test
@@ -318,9 +377,14 @@ class VodJobServiceTest {
 
         WorkerDispatchPayload payload = new WorkerDispatchPayload(
                 1L,
+                "ANALYZE",
                 "/var/lib/streamcut/jobs/1/source/video.mp4",
                 "URL",
-                "https://example.com/video"
+                "https://example.com/video",
+                null,
+                null,
+                null,
+                null
         );
         when(workerDispatchPayloadFactory.fromJob(job)).thenReturn(payload);
 
@@ -344,6 +408,125 @@ class VodJobServiceTest {
         assertThatThrownBy(() -> vodJobService.dispatchJob(1L))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("has no storage video path");
+    }
+
+    @Test
+    void claimNextQueuedJobReturnsEmptyWhenQueueIsEmpty() {
+        when(vodJobRepository.findAllByStatusForUpdate(Mockito.eq(JobStatus.QUEUED), any(Pageable.class)))
+                .thenReturn(List.of());
+
+        var result = vodJobService.claimNextQueuedJob("worker-1");
+
+        assertThat(result).isEmpty();
+    }
+
+    @Test
+    void claimNextQueuedJobMarksJobDownloadingAndWritesClaimEvent() {
+        VodJob job = buildJob(1L, "https://example.com/video", Instant.parse("2026-04-05T10:00:00Z"));
+        job.setStatus(JobStatus.QUEUED);
+        job.setStorageVideoPath("/var/lib/streamcut/jobs/1/source/video.mp4");
+        when(vodJobRepository.findAllByStatusForUpdate(Mockito.eq(JobStatus.QUEUED), any(Pageable.class)))
+                .thenReturn(List.of(job));
+        WorkerDispatchPayload payload = new WorkerDispatchPayload(
+                1L,
+                "ANALYZE",
+                "/var/lib/streamcut/jobs/1/source/video.mp4",
+                "URL",
+                "https://example.com/video",
+                null,
+                null,
+                null,
+                null
+        );
+        when(workerDispatchPayloadFactory.fromJob(job)).thenReturn(payload);
+
+        var result = vodJobService.claimNextQueuedJob("worker-1");
+
+        assertThat(result).contains(payload);
+        assertThat(job.getStatus()).isEqualTo(JobStatus.DOWNLOADING);
+        assertThat(job.getStartedAt()).isNotNull();
+        assertThat(job.getUpdatedAt()).isNotNull();
+        verify(vodJobRepository).save(job);
+        verify(jobEventRepository).save(any(JobEvent.class));
+    }
+
+    @Test
+    void ingestWorkerResultReplacesGeneratedDataAndMarksReadyForReview() {
+        VodJob job = buildJob(1L, "https://example.com/video", Instant.parse("2026-04-05T10:00:00Z"));
+        job.setStatus(JobStatus.TRANSCRIBING);
+        when(vodJobRepository.findById(1L)).thenReturn(java.util.Optional.of(job));
+
+        WorkerProcessingResultPayload payload = new WorkerProcessingResultPayload(
+                1L,
+                120L,
+                "en",
+                "/var/lib/streamcut/jobs/1/source/video.mp4",
+                "/var/lib/streamcut/jobs/1/audio/audio.wav",
+                List.of(new TranscriptSegmentWorkerPayload(0.0, 2.0, "hello", 1)),
+                List.of(new SilenceSegmentWorkerPayload(2.0, 3.0, 1.0)),
+                List.of(new AnalysisWindowWorkerPayload(0.0, 20.0, 1.0, 0.1, 0, 0.8, 0.9)),
+                List.of(new ClipCandidateWorkerPayload(5.0, 15.0, 0.95, "hello"))
+        );
+
+        WorkerTransportAck ack = vodJobService.ingestWorkerResult(payload);
+
+        assertThat(ack.jobId()).isEqualTo(1L);
+        assertThat(ack.status()).isEqualTo("READY_FOR_REVIEW");
+        assertThat(job.getStatus()).isEqualTo(JobStatus.READY_FOR_REVIEW);
+        assertThat(job.getDurationSec()).isEqualTo(120L);
+        assertThat(job.getLanguage()).isEqualTo("en");
+        assertThat(job.getStorageVideoPath()).isEqualTo("/var/lib/streamcut/jobs/1/source/video.mp4");
+        assertThat(job.getStorageAudioPath()).isEqualTo("/var/lib/streamcut/jobs/1/audio/audio.wav");
+        verify(transcriptSegmentRepository).deleteAllByJobId(1L);
+        verify(silenceSegmentRepository).deleteAllByJobId(1L);
+        verify(analysisWindowRepository).deleteAllByJobId(1L);
+        verify(clipCandidateRepository).deleteAllByJobId(1L);
+        verify(transcriptSegmentRepository).saveAll(any());
+        verify(silenceSegmentRepository).saveAll(any());
+        verify(analysisWindowRepository).saveAll(any());
+        verify(clipCandidateRepository).saveAll(any());
+        verify(jobEventRepository).save(any(JobEvent.class));
+    }
+
+    @Test
+    void reportWorkerFailureMarksJobFailedAndStoresErrorMessage() {
+        VodJob job = buildJob(1L, "https://example.com/video", Instant.parse("2026-04-05T10:00:00Z"));
+        job.setStatus(JobStatus.TRANSCRIBING);
+        when(vodJobRepository.findById(1L)).thenReturn(java.util.Optional.of(job));
+
+        WorkerTransportAck ack = vodJobService.reportWorkerFailure(
+                new WorkerFailureReportPayload(1L, "TRANSCRIBING", "transcription failed")
+        );
+
+        assertThat(ack.jobId()).isEqualTo(1L);
+        assertThat(ack.status()).isEqualTo("FAILED");
+        assertThat(job.getStatus()).isEqualTo(JobStatus.FAILED);
+        assertThat(job.getErrorMessage()).isEqualTo("transcription failed");
+        verify(vodJobRepository).save(job);
+        verify(jobEventRepository).save(any(JobEvent.class));
+    }
+
+    @Test
+    void ingestWorkerExportResultMarksJobCompletedAndPersistsArtifactPath() {
+        VodJob job = buildJob(1L, "https://example.com/video", Instant.parse("2026-04-05T10:00:00Z"));
+        job.setStatus(JobStatus.EXPORTING_CLIP);
+        ClipCandidate candidate = ClipCandidate.create(job, 5.0, 12.0, 0.91, "first");
+        candidate.setId(7L);
+        candidate.setModerationStatus(ModerationStatus.APPROVED);
+        candidate.setExportedClipPath("/var/lib/streamcut/jobs/1/exports/candidate-7.mp4");
+        when(clipCandidateRepository.findById(7L)).thenReturn(java.util.Optional.of(candidate));
+
+        WorkerTransportAck ack = vodJobService.ingestWorkerExportResult(
+                new WorkerExportResultPayload(1L, 7L, "/var/lib/streamcut/jobs/1/exports/candidate-7.mp4")
+        );
+
+        assertThat(ack.jobId()).isEqualTo(1L);
+        assertThat(ack.status()).isEqualTo("COMPLETED");
+        assertThat(job.getStatus()).isEqualTo(JobStatus.COMPLETED);
+        assertThat(candidate.getExportedClipPath()).isEqualTo("/var/lib/streamcut/jobs/1/exports/candidate-7.mp4");
+        verify(clipCandidateRepository).save(candidate);
+        verify(vodJobRepository).save(job);
+        verify(jobEventRepository).save(any(JobEvent.class));
     }
 
     @Test

@@ -2,9 +2,13 @@ package com.peatroxd.streamcutproject.storage;
 
 import org.springframework.stereotype.Service;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 
 @Service
 public class LocalFileSystemStorageService implements StorageService {
@@ -25,6 +29,14 @@ public class LocalFileSystemStorageService implements StorageService {
         return resolveJobRoot(jobId)
                 .resolve("source")
                 .resolve(sanitizeFilename(originalFilename, "source-video"));
+    }
+
+    @Override
+    public Path storeSourceVideo(long jobId, String originalFilename, InputStream content) throws IOException {
+        Path targetPath = resolveSourceVideoPath(jobId, originalFilename);
+        Files.createDirectories(targetPath.getParent());
+        Files.copy(content, targetPath, StandardCopyOption.REPLACE_EXISTING);
+        return targetPath;
     }
 
     @Override
