@@ -8,7 +8,7 @@ It tracks:
 - remaining work required to stabilize the MVP and finish the service through `v1.0.0`
 
 Last updated: 2026-04-06
-Branch snapshot: `develop`
+Branch snapshot: `main`
 
 ## Current Status
 - The MVP now runs as a real full-cycle local service on Docker Compose.
@@ -27,8 +27,9 @@ Branch snapshot: `develop`
   - upload ingest completed end-to-end on a valid small file
   - export artifact download and stream endpoints returned `200`
 - `TASK-042` browser happy-path QA passed in a live browser against the running Docker stack.
-- `TASK-043` and `TASK-054` are merged into `develop`.
-- `main` is still behind the current delivery state.
+- `TASK-043` and `TASK-054` are merged into the validated MVP baseline.
+- `TASK-053` moved the validated MVP baseline from `develop` to `main` at commit `22f61b4`.
+- `main` and `develop` now point at the same validated MVP baseline before the next `v1.0.0` buildout tasks begin.
 - The canonical MVP upload policy is defined in `runtime.md`:
   - single-file uploads only
   - supported formats: `video/mp4`, `video/quicktime`, `video/x-matroska`, `video/webm`, `video/x-msvideo`, `video/mpeg`
@@ -117,6 +118,7 @@ Branch snapshot: `develop`
 - `TASK-050` Validate Docker Runtime And Image Hygiene
 - `TASK-051` Prepare MVP Release Checklist
 - `TASK-052` Document Actual Project Status Against Implemented Task History
+- `TASK-053` Plan And Execute Release Movement From `develop` To `main`
 
 ### Important Corrections Already Applied
 - Removed accidental Java-side worker audio implementation to preserve architecture boundaries.
@@ -165,18 +167,20 @@ Branch snapshot: `develop`
 ## NEXT
 
 ### Immediate
-- `TASK-053` Plan And Execute Release Movement From `develop` To `main`
+- `TASK-055` Add Authentication And Protected Operator Access
 
 ### Validation
-- Browser happy-path QA passed in a live browser on the running Docker stack.
+- The MVP release baseline has been promoted to `main`.
 
 ### Stabilization
-- `TASK-053` Plan And Execute Release Movement From `develop` To `main`
+- `TASK-055` Add Authentication And Protected Operator Access
+- `TASK-056` Add Security Baseline And Input Hardening
+- `TASK-057` Introduce Production Runtime Profiles And Secret Handling
 
 ### Release Checklist
 - `release-checklist.md` is the current gate document for moving `develop` to `main`.
-- Release movement is a hard `no-go` until the checklist evidence is complete.
-- `TASK-053` should not execute until `release-checklist.md` is satisfied.
+- The current MVP gate was satisfied and executed through `TASK-053`.
+- Future release movement should continue to treat `release-checklist.md` as the gate document.
 
 ## ROADMAP TO FULL SERVICE
 
@@ -198,7 +202,7 @@ Status: completed locally on 2026-04-06
 ## PLANNED TASK QUEUE
 
 ### Current Release Baseline
-- `TASK-053` Plan And Execute Release Movement From `develop` To `main`
+- MVP baseline promoted to `main` through `TASK-053`
 
 ### v1.0.0 Buildout
 - `TASK-055` Add Authentication And Protected Operator Access
@@ -242,8 +246,7 @@ Status: completed locally on 2026-04-06
 - Add decision logging for infrastructure and architecture choices.
 
 ## Risks
-- The codebase and backlog are now aligned better, but `main` still lags behind current delivery.
-- `main` does not yet represent the current MVP state.
+- The MVP baseline is now aligned on both `main` and `develop`, but the service is still not at the `v1.0.0` operating standard.
 - Upload ingest now uses the explicit multipart limits from `TASK-040`, and oversized files fail with stable `413` semantics.
 - Docker image choices are acceptable for the current MVP but remain a deliberate compromise rather than a production recommendation.
 - `TASK-044` has been revalidated for malformed URL and `404` cases; residual coverage gaps remain only for timeout and unsupported-source variants, and they are not release blockers for the current gate.
@@ -254,7 +257,9 @@ Status: completed locally on 2026-04-06
 - `TASK-045` QA found that export retries are allowed, export failure correctly marks the job `FAILED`, and the stale-artifact behavior was addressed in `TASK-054`.
 
 ## Recommended Next Sequence
-1. `TASK-053` Plan And Execute Release Movement From `develop` To `main`.
+1. `TASK-055` Add Authentication And Protected Operator Access.
+2. `TASK-056` Add Security Baseline And Input Hardening.
+3. `TASK-057` Introduce Production Runtime Profiles And Secret Handling.
 
 ## Path To Service v1.0.0
 
@@ -282,7 +287,7 @@ Status: completed locally on 2026-04-06
 ### v1.0.0 Task Queue
 
 #### Phase 0. Release Baseline
-- `TASK-053` Plan And Execute Release Movement From `develop` To `main`
+- completed through `TASK-053`
 
 #### Phase 1. Security And Runtime Foundation
 - `TASK-055` Add Authentication And Protected Operator Access

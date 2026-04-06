@@ -44,3 +44,9 @@ Prepare and execute the controlled movement of the validated MVP state from `dev
 
 ## Notes
 If release gates are not met, this task should produce a merge-blocking plan instead of forcing the move.
+
+## Observed On 2026-04-06
+- `release-checklist.md` was satisfied from local evidence after `TASK-042` browser QA pass and `TASK-044` negative-path revalidation were recorded.
+- `main` was fast-forwarded to the validated MVP baseline from `develop` at commit `22f61b4`.
+- The move did not require a `release/*` branch because the project workflow still treats that as optional for the first stable milestone.
+- The remaining follow-up work now starts at `TASK-055` and continues the roadmap toward `v1.0.0` from the aligned `main` and `develop` baseline.

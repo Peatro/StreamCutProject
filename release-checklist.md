@@ -31,7 +31,7 @@ This checklist is the release gate for moving the validated MVP from `develop` t
 
 ## Current Blockers
 - No current blockers remain from local evidence for the required gates listed above.
-- `TASK-053` may proceed with the documented residual risk that timeout and unsupported-source variants were not separately re-run in `TASK-044`.
+- `TASK-053` executed after the required gates were satisfied, with a documented residual QA note that timeout and unsupported-source variants were not separately re-run in `TASK-044`.
 
 ## Documentation Gates
 - `backlog.md` reflects the current branch state and known limitations.
@@ -50,4 +50,4 @@ This checklist is the release gate for moving the validated MVP from `develop` t
 - Disposable artifact and storage volumes should be treated as recoverable runtime data, not source-controlled state.
 
 ## Current Status
-As of 2026-04-06 this checklist is satisfied enough for `TASK-053` to proceed from local evidence, with a narrow residual QA note for timeout and unsupported-source variants in `TASK-044`.
+As of 2026-04-06 this checklist was satisfied and used to promote the validated MVP baseline from `develop` to `main`, with a narrow residual QA note for timeout and unsupported-source variants in `TASK-044`.
