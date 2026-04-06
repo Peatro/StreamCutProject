@@ -45,3 +45,10 @@ After authentication exists, the service still needs predictable rejection of ma
 
 ## Notes
 If any important gap is intentionally deferred, it must be written down as a known limitation rather than left implicit.
+
+## Implementation Notes
+- URL ingest is expected to reject malformed and non-`http(s)` URLs before a job is queued.
+- Local source and export paths are validated against the configured storage root.
+- Worker callback payloads are expected to fail fast if they point outside the local storage root.
+- Operator auth remains session-based from `TASK-055`.
+- Worker namespace machine-secret auth is intentionally deferred for this task and should only be added if it stays small and self-contained; otherwise roll it into `TASK-057`.

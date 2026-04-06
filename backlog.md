@@ -8,7 +8,7 @@ It tracks:
 - remaining work required to stabilize the MVP and finish the service through `v1.0.0`
 
 Last updated: 2026-04-06
-Branch snapshot: `develop`
+Branch snapshot: `feature/TASK-056-security-baseline-and-input-hardening`
 
 ## Current Status
 - The MVP now runs as a real full-cycle local service on Docker Compose.
@@ -30,6 +30,7 @@ Branch snapshot: `develop`
 - `TASK-043` and `TASK-054` are merged into the validated MVP baseline.
 - `TASK-053` moved the validated MVP baseline from `develop` to `main` at commit `22f61b4`.
 - `TASK-055` is merged into `develop`, and `develop` is now the active branch for `v1.0.0` buildout.
+- `TASK-056` is currently in progress on `feature/TASK-056-security-baseline-and-input-hardening`.
 - `main` remains the validated MVP baseline while `develop` continues service-hardening.
 - The canonical MVP upload policy is defined in `runtime.md`:
   - single-file uploads only
@@ -42,7 +43,7 @@ Branch snapshot: `develop`
 - MinIO is the export artifact store in Docker, and the named volumes `streamcut-postgres`, `streamcut-data`, and `streamcut-minio` are part of the runtime contract.
 - Release hardening wave 1 is now complete in source control: upload policy, multipart handling, UI upload guidance, URL/export/restart QA notes, structured runtime logging, integration coverage, Docker runtime notes, release checklist, and status docs have all been updated.
 - `TASK-044` was revalidated on the live Docker stack: malformed URL and `404` cases now transition `QUEUED -> FAILED`, persist `JOB_FAILED`, and store readable failure messages instead of leaving jobs stuck in `DOWNLOADING`.
-- The working tree is currently ahead of the last committed release-hardening wave with additional Job page UX/runtime work in progress.
+- The active task branch is currently ahead of `develop` with `TASK-056` security baseline work in progress: URL boundary validation, storage-root path enforcement, and worker callback path hardening are being implemented but are not merged yet.
 
 ## DONE
 
@@ -163,21 +164,25 @@ Branch snapshot: `develop`
   - `/api/exports/{id}/file` and `/api/exports/{id}/stream` served artifacts correctly
 
 ## IN_PROGRESS
-- No active implementation task is currently open in this backlog snapshot.
-- Next work should be chosen from release hardening, stabilization, and release preparation.
+- `TASK-056` Add Security Baseline And Input Hardening
+- Current implementation focus:
+  - reject malformed and non-`http(s)` URL ingest before queueing
+  - enforce configured storage-root containment for local source and export paths
+  - fail worker callback payloads cleanly when they reference outside-root paths
+  - sync runtime/task docs to the actual hardened posture
 
 ## NEXT
 
 ### Immediate
-- `TASK-055` Add Authentication And Protected Operator Access
+- `TASK-056` Add Security Baseline And Input Hardening
 
 ### Validation
 - The MVP release baseline has been promoted to `main`.
 
 ### Stabilization
-- `TASK-055` Add Authentication And Protected Operator Access
 - `TASK-056` Add Security Baseline And Input Hardening
 - `TASK-057` Introduce Production Runtime Profiles And Secret Handling
+- `TASK-058` Replace MVP Container Strategy And Add Production Edge Runtime
 
 ### Release Checklist
 - `release-checklist.md` is the current gate document for moving `develop` to `main`.
@@ -248,6 +253,7 @@ Status: completed locally on 2026-04-06
 
 ## Risks
 - The MVP baseline is now aligned on both `main` and `develop`, but the service is still not at the `v1.0.0` operating standard.
+- `TASK-056` is not merged or verified yet, so the current task branch still carries unreviewed security-hardening changes ahead of `develop`.
 - Upload ingest now uses the explicit multipart limits from `TASK-040`, and oversized files fail with stable `413` semantics.
 - Docker image choices are acceptable for the current MVP but remain a deliberate compromise rather than a production recommendation.
 - `TASK-044` has been revalidated for malformed URL and `404` cases; residual coverage gaps remain only for timeout and unsupported-source variants, and they are not release blockers for the current gate.
@@ -291,7 +297,7 @@ Status: completed locally on 2026-04-06
 - completed through `TASK-053`
 
 #### Phase 1. Security And Runtime Foundation
-- `TASK-055` Add Authentication And Protected Operator Access
+- completed: `TASK-055` Add Authentication And Protected Operator Access
 - `TASK-056` Add Security Baseline And Input Hardening
 - `TASK-057` Introduce Production Runtime Profiles And Secret Handling
 - `TASK-058` Replace MVP Container Strategy And Add Production Edge Runtime
