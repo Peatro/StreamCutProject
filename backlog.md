@@ -37,6 +37,7 @@ Branch snapshot: `develop`
 - The Docker image strategy is intentionally MVP-only: backend and worker both inherit from `postgres:15` and layer their own runtimes on top.
 - MinIO is the export artifact store in Docker, and the named volumes `streamcut-postgres`, `streamcut-data`, and `streamcut-minio` are part of the runtime contract.
 - Release hardening wave 1 is now complete in source control: upload policy, multipart handling, UI upload guidance, URL/export/restart QA notes, structured runtime logging, integration coverage, Docker runtime notes, release checklist, and status docs have all been updated.
+- `TASK-044` was revalidated on the live Docker stack after the worker-side fix: a bad `404` URL now transitions `QUEUED -> FAILED`, persists `JOB_FAILED`, and stores a readable download error instead of leaving the job stuck in `DOWNLOADING`.
 
 ## DONE
 
@@ -163,13 +164,11 @@ Branch snapshot: `develop`
 - Browser happy-path QA remains the next release gate.
 
 ### Stabilization
-- `TASK-047` Improve Failure State Visibility In Backend And UI
 - `TASK-053` Plan And Execute Release Movement From `develop` To `main`
 
 ### Release Checklist
 - `release-checklist.md` is the current gate document for moving `develop` to `main`.
 - Release movement is a hard `no-go` until the checklist evidence is complete.
-- `TASK-044` has a code fix in place, but it still needs final release revalidation before `TASK-053`.
 - `TASK-053` should not execute until `release-checklist.md` is satisfied.
 
 ## ROADMAP TO FULL SERVICE
@@ -239,7 +238,6 @@ Status: completed locally on 2026-04-06
 - Upload ingest now uses the explicit multipart limits from `TASK-040`, and oversized files fail with stable `413` semantics.
 - Docker image choices are acceptable for the current MVP but remain a deliberate compromise rather than a production recommendation.
 - Release readiness is still blocked by incomplete browser QA and the remaining stabilization gates.
-- The URL ingest failure path from `TASK-044` has a code fix, but it still needs final release revalidation.
 - Restart resilience on export looks acceptable from `TASK-046`: a worker bounce mid-export recovered and completed instead of ghosting the job.
 - `TASK-046` also showed that restart recovery is not very observable: file-backed work and exports can continue, but the API may sit on `DOWNLOADING` or `IN_PROGRESS` without an explicit progress signal.
 - Worker cold start depends on external model download and is slower without a configured `HF_TOKEN`.
@@ -250,5 +248,4 @@ Status: completed locally on 2026-04-06
 ## Recommended Next Sequence
 1. `TASK-042` Browser QA Pass For Core Happy Path.
 2. `TASK-043` Fix Core UI Friction Found During Browser QA.
-3. `TASK-047` Improve Failure State Visibility In Backend And UI.
-4. `TASK-053` Plan And Execute Release Movement From `develop` To `main`.
+3. `TASK-053` Plan And Execute Release Movement From `develop` To `main`.

@@ -140,7 +140,7 @@ class VodJobLifecycleIntegrationTest {
 
         VodJob failedJob = vodJobRepository.findById(job.getId()).orElseThrow();
         assertThat(failedJob.getStatus()).isEqualTo(JobStatus.FAILED);
-        assertThat(failedJob.getErrorMessage()).isEqualTo("transcription failed");
+        assertThat(failedJob.getErrorMessage()).isEqualTo("TRANSCRIBING: transcription failed");
         assertThat(jobEventRepository.findAllByJobIdOrderByCreatedAtAscIdAsc(job.getId()))
                 .extracting(event -> event.getEventType())
                 .contains("JOB_FAILED");

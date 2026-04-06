@@ -538,7 +538,7 @@ class VodJobServiceTest {
         assertThat(ack.jobId()).isEqualTo(1L);
         assertThat(ack.status()).isEqualTo("FAILED");
         assertThat(job.getStatus()).isEqualTo(JobStatus.FAILED);
-        assertThat(job.getErrorMessage()).isEqualTo("transcription failed");
+        assertThat(job.getErrorMessage()).isEqualTo("TRANSCRIBING: transcription failed");
         verify(vodJobRepository).save(job);
         verify(jobEventRepository).save(any(JobEvent.class));
     }

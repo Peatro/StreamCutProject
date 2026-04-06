@@ -453,6 +453,7 @@ public class VodJobService {
     public WorkerTransportAck reportWorkerFailure(WorkerFailureReportPayload payload) {
         VodJob job = requireJob(payload.jobId());
         Instant now = Instant.now();
+        String failureSummary = payload.failedState() + ": " + payload.message();
 
         if ("EXPORTING_CLIP".equals(payload.failedState())) {
             clipCandidateRepository.findAllByVodJobIdAndExportStatus(job.getId(), ExportStatus.IN_PROGRESS)
@@ -463,7 +464,7 @@ public class VodJobService {
         }
 
         job.setStatus(JobStatus.FAILED);
-        job.setErrorMessage(payload.message());
+        job.setErrorMessage(failureSummary);
         job.setUpdatedAt(now);
         job.setFinishedAt(now);
         vodJobRepository.save(job);

@@ -185,6 +185,33 @@ textarea {
   margin-bottom: 16px;
 }
 
+.failure-summary {
+  margin-bottom: 18px;
+  padding: 18px 20px;
+  border: 1px solid rgba(240, 106, 106, 0.28);
+  border-radius: var(--radius-lg);
+  background: linear-gradient(180deg, rgba(240, 106, 106, 0.12), rgba(255, 255, 255, 0.02));
+  box-shadow: var(--shadow-ring);
+}
+
+.failure-summary-kicker {
+  color: var(--danger);
+  font-size: 12px;
+  font-weight: 510;
+  text-transform: uppercase;
+}
+
+.failure-summary h2 {
+  margin: 10px 0 8px;
+  font-size: 22px;
+}
+
+.failure-summary p {
+  margin: 0;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
 .breadcrumbs {
   margin-bottom: 18px;
   color: var(--text-faint);

@@ -44,3 +44,9 @@ The current MVP exposes statuses and events, but failure visibility is still too
 
 ## Notes
 If UI and backend work split naturally during execution, keep backend as the primary owner and scope UI changes tightly.
+
+## Observed On 2026-04-06
+- Backend now persists failure reasons in a stage-qualified form such as `DOWNLOADING: ...` or `EXPORTING_CLIP: ...` instead of storing only a raw message.
+- The job details UI now renders a dedicated failure summary block when a job is `FAILED`, so the current issue is visible before an operator reads storage paths or raw event history.
+- The UI distinguishes export failures from ingest failures by checking candidate export state, which reduces operator guesswork during QA and support.
+- Existing event history remains available, but the current failure reason is now readable as the primary summary instead of a secondary detail.

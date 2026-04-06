@@ -74,6 +74,7 @@
         ${flashMessage ? renderBanner(flashMessage, flashType) : ""}
       </div>
       <div class="breadcrumbs"><a href="/index.html">Jobs</a> / Job #${escapeHtml(job.id)}</div>
+      ${renderJobFailureSummary(job, candidates)}
       <section class="panel">
         <div class="panel-header">
           <div>
@@ -426,6 +427,24 @@
 
   function renderBanner(message, level) {
     return `<div class="banner banner-${level}">${escapeHtml(message)}</div>`;
+  }
+
+  function renderJobFailureSummary(job, candidates) {
+    if (job.status !== "FAILED" || !job.errorMessage) {
+      return "";
+    }
+
+    const failureKind = candidates.some((candidate) => candidate.exportStatus === "FAILED")
+      ? "Export failure"
+      : "Ingest failure";
+
+    return `
+      <section class="failure-summary">
+        <div class="failure-summary-kicker">${escapeHtml(failureKind)}</div>
+        <h2>Job requires attention</h2>
+        <p>${escapeHtml(job.errorMessage)}</p>
+      </section>
+    `;
   }
 
   function renderCandidateRuntimeState(candidate) {

@@ -31,7 +31,8 @@ This checklist is the release gate for moving the validated MVP from `develop` t
 
 ## Current Blockers
 - `TASK-042` through `TASK-049` are not all complete yet.
-- `TASK-044` has a code fix in place, but it still requires final release revalidation before `TASK-053`.
+- Browser QA evidence from `TASK-042` and any follow-up fixes from `TASK-043` still do not exist.
+- The stale-artifact behavior documented in `TASK-045` still needs either a fix or an explicit release acceptance note.
 - `TASK-053` must not proceed until the required gates and evidence above exist.
 
 ## Documentation Gates
@@ -51,4 +52,4 @@ This checklist is the release gate for moving the validated MVP from `develop` t
 - Disposable artifact and storage volumes should be treated as recoverable runtime data, not source-controlled state.
 
 ## Current Status
-As of 2026-04-06 this checklist is not yet satisfied because `TASK-042` through `TASK-049` are not all complete and `TASK-044` still requires final release revalidation.
+As of 2026-04-06 this checklist is not yet satisfied because browser QA is still incomplete and the stale-artifact behavior from `TASK-045` has not been dispositioned for release.
