@@ -47,7 +47,7 @@ The Docker MVP works locally, but release hardening still requires observed beha
 This task is about resilience clarity, not about reaching perfect recovery semantics in one pass.
 
 ## Observed On 2026-04-06
-- A restart during an export job did not ghost the job. Candidate `3` stayed in `EXPORTING_CLIP` after the worker bounce and later recovered to `COMPLETED`.
-- The observed terminal sequence for the restart test was `EXPORT_STARTED -> JOB_CLAIMED -> EXPORT_COMPLETED`, with the worker container restarted in the middle.
-- No manual recovery step was required for the export job after the restart.
-- Worker restart behavior still needs to be interpreted together with the poisoned URL failure findings from `TASK-044`, because the worker logs contain unrelated crash noise.
+- Restarting the worker while a queued job was being claimed did not lose the job; the worker came back and resumed processing the claimed work.
+- A file-backed job restarted during `DOWNLOADING` continued after the worker bounce, but the backend job record stayed visually stuck in `DOWNLOADING` for the whole observation window.
+- A candidate export restarted while `IN_PROGRESS` remained in progress after the worker bounce. No immediate failure or ghosting was observed, but the API did not surface any explicit recovery signal either.
+- The main risk is silent progress: the system keeps working after restart, but operator-visible state does not clearly show whether recovery is underway or stalled.
