@@ -163,7 +163,8 @@ Branch snapshot: `develop`
 
 ### Release Checklist
 - `release-checklist.md` is the current gate document for moving `develop` to `main`.
-- The checklist is intentionally explicit about `TASK-044` remaining a blocker until the worker failure path is fixed or formally accepted.
+- Release movement is a hard `no-go` until the checklist evidence is complete and the `TASK-044` URL ingest blocker is fixed or explicitly accepted.
+- `TASK-053` should not execute until `release-checklist.md` is satisfied.
 
 ## ROADMAP TO FULL SERVICE
 
@@ -235,6 +236,7 @@ Status: completed locally on 2026-04-06
 - Worker cold start depends on external model download and is slower without a configured `HF_TOKEN`.
 - Browser happy-path QA has not yet been completed as a formal release gate.
 - Negative-path recovery behavior is partially known from smoke tests, but not yet documented as release-safe behavior.
+- `TASK-045` QA found that export retries are allowed, export failure correctly marks the job `FAILED`, but stale artifact endpoints can still return `200` during a failed retry because an old object remains accessible.
 
 ## Recommended Next Sequence
 1. `TASK-039` Define Upload Size Policy.

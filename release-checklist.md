@@ -3,6 +3,18 @@
 ## Purpose
 This checklist is the release gate for moving the validated MVP from `develop` to `main`.
 
+## Release Decision
+- Merge to `main` only when every required gate below is satisfied.
+- If any required gate is incomplete or ambiguous, the answer is `no-go`.
+- If a blocker is accepted intentionally, record that acceptance in `backlog.md` before merging.
+
+## Required Evidence
+- `TASK-042` browser QA report or equivalent note from a live Docker run.
+- `TASK-044` through `TASK-046` negative-path QA notes with observed behavior and risks.
+- `TASK-049` integration test coverage for release-sensitive persistence and API flows.
+- A current green `./gradlew test` result.
+- A current `docker compose` validation note if runtime behavior changed.
+
 ## Required Gates
 - `TASK-039` upload policy is documented in `runtime.md`.
 - `TASK-040` multipart limits and stable upload error handling are implemented and tested.
@@ -16,6 +28,11 @@ This checklist is the release gate for moving the validated MVP from `develop` t
 - `TASK-048` runtime logs are traceable enough to follow one job end-to-end.
 - `TASK-049` release-sensitive persistence and API paths have focused integration coverage.
 - `TASK-050` Docker runtime and image choices are documented as MVP compromises.
+
+## Current Blockers
+- `TASK-042` through `TASK-049` are not all complete yet.
+- `TASK-044` exposed a release-blocking URL ingest failure mode until the worker failure path is fixed or explicitly accepted.
+- `TASK-053` must not proceed until the required gates and evidence above exist.
 
 ## Documentation Gates
 - `backlog.md` reflects the current branch state and known limitations.
