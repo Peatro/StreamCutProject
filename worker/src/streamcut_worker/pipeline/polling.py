@@ -30,13 +30,41 @@ class WorkerPollingLoop:
                 time.sleep(self.poll_interval_sec)
                 continue
 
+            logging.info(
+                "job_claimed jobId=%s taskType=%s sourceType=%s workerId=%s",
+                claimed_job.job_id,
+                claimed_job.task_type,
+                claimed_job.source_type,
+                self.worker_id,
+            )
+
             try:
                 result = self.job_runner.run(claimed_job)
                 if isinstance(result, WorkerExportCompletionPayload):
+                    logging.info(
+                        "export_result_ready jobId=%s candidateId=%s artifactPath=%s",
+                        result.job_id,
+                        result.candidate_id,
+                        result.artifact_path,
+                    )
                     self.backend_client.submit_export_result(result)
                 else:
+                    logging.info(
+                        "job_result_ready jobId=%s transcriptSegments=%s silenceSegments=%s analysisWindows=%s clipCandidates=%s",
+                        result.job_id,
+                        len(result.transcript_segments),
+                        len(result.silence_segments),
+                        len(result.analysis_windows),
+                        len(result.clip_candidates),
+                    )
                     self.backend_client.submit_result(result)
             except WorkerJobRunnerError as exc:
+                logging.warning(
+                    "job_failed jobId=%s failedState=%s message=%s",
+                    claimed_job.job_id,
+                    exc.failed_state,
+                    exc,
+                )
                 self.backend_client.submit_failure(
                     WorkerFailurePayload(
                         job_id=claimed_job.job_id,
