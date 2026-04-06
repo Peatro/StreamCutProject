@@ -31,6 +31,8 @@ import com.peatroxd.streamcutproject.workerdispatch.WorkerFailureReportPayload;
 import com.peatroxd.streamcutproject.workerdispatch.WorkerProcessingResultPayload;
 import com.peatroxd.streamcutproject.workerdispatch.WorkerDispatchPort;
 import com.peatroxd.streamcutproject.workerdispatch.WorkerTransportAck;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.domain.PageRequest;
@@ -47,6 +49,8 @@ import java.util.Optional;
 
 @Service
 public class VodJobService {
+
+    private static final Logger log = LoggerFactory.getLogger(VodJobService.class);
 
     private static final String SOURCE_TYPE_URL = "URL";
     private static final String SOURCE_TYPE_FILE = "FILE";
@@ -96,6 +100,7 @@ public class VodJobService {
     public JobSummaryResponse createUrlJob(String url) {
         VodJob savedJob = createJob(SOURCE_TYPE_URL, url, null);
         VodJob queuedJob = queueCreatedJob(savedJob);
+        log.info("job_created jobId={} sourceType={} status={}", queuedJob.getId(), queuedJob.getSourceType(), queuedJob.getStatus());
         return JobMapper.toSummaryResponse(queuedJob);
     }
 
@@ -122,6 +127,13 @@ public class VodJobService {
 
         VodJob persistedJob = vodJobRepository.save(savedJob);
         VodJob queuedJob = queueCreatedJob(persistedJob);
+        log.info(
+                "job_created jobId={} sourceType={} status={} originalFilename={}",
+                queuedJob.getId(),
+                queuedJob.getSourceType(),
+                queuedJob.getStatus(),
+                queuedJob.getOriginalFilename()
+        );
         return JobMapper.toSummaryResponse(queuedJob);
     }
 
@@ -229,6 +241,7 @@ public class VodJobService {
                 "Export started for candidate " + candidateId,
                 now
         ));
+        log.info("export_started jobId={} candidateId={} artifactPath={}", job.getId(), candidateId, artifactPath);
 
         return toExportStatusResponse(candidate, artifactPath, exportReady(candidate));
     }
@@ -271,6 +284,7 @@ public class VodJobService {
                 "Job queued for worker dispatch",
                 now
         ));
+        log.info("job_queued jobId={} sourceType={} status={}", job.getId(), job.getSourceType(), job.getStatus());
 
         return payload;
     }
@@ -292,6 +306,13 @@ public class VodJobService {
                     "Export claimed by worker " + workerId + " for candidate " + candidate.getId(),
                     now
             ));
+            log.info(
+                    "export_claimed jobId={} candidateId={} workerId={} status={}",
+                    candidate.getVodJob().getId(),
+                    candidate.getId(),
+                    workerId,
+                    candidate.getVodJob().getStatus()
+            );
             return Optional.of(workerDispatchPayloadFactory.fromExportCandidate(candidate));
         }
 
@@ -319,6 +340,7 @@ public class VodJobService {
                 "Job claimed by worker " + workerId,
                 now
         ));
+        log.info("job_claimed jobId={} workerId={} status={}", job.getId(), workerId, job.getStatus());
 
         return Optional.of(payload);
     }
@@ -369,6 +391,15 @@ public class VodJobService {
                 "Worker processing completed and job is ready for review",
                 now
         ));
+        log.info(
+                "job_result_ingested jobId={} status={} transcriptSegments={} silenceSegments={} analysisWindows={} clipCandidates={}",
+                job.getId(),
+                job.getStatus(),
+                safeList(payload.transcriptSegments()).size(),
+                safeList(payload.silenceSegments()).size(),
+                safeList(payload.analysisWindows()).size(),
+                safeList(payload.clipCandidates()).size()
+        );
 
         return new WorkerTransportAck(job.getId(), JobStatus.READY_FOR_REVIEW.name());
     }
@@ -407,6 +438,13 @@ public class VodJobService {
                 "Export completed for candidate " + candidate.getId(),
                 now
         ));
+        log.info(
+                "export_completed jobId={} candidateId={} status={} artifactPath={}",
+                job.getId(),
+                candidate.getId(),
+                job.getStatus(),
+                candidate.getExportedClipPath()
+        );
 
         return new WorkerTransportAck(job.getId(), JobStatus.COMPLETED.name());
     }
@@ -435,6 +473,13 @@ public class VodJobService {
                 "Worker reported failure in state " + payload.failedState() + ": " + payload.message(),
                 now
         ));
+        log.warn(
+                "job_failed jobId={} failedState={} status={} message={}",
+                job.getId(),
+                payload.failedState(),
+                job.getStatus(),
+                payload.message()
+        );
 
         return new WorkerTransportAck(job.getId(), JobStatus.FAILED.name());
     }

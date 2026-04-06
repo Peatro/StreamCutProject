@@ -47,6 +47,10 @@ PostgreSQL:
 - Keep log output plain and readable; no file-based logging is required for MVP.
 - Startup logs should make it obvious which service is running and whether dependencies are ready.
 - PostgreSQL readiness is verified through its healthcheck, not through ad-hoc manual checks.
+- Job lifecycle logs should be structured enough to trace one job end-to-end by `jobId` and stage without reading every line of output.
+- Failure logs should include the affected stage or `failedState` where applicable so QA can correlate backend state with worker output.
+- Use `jobId=` in backend and worker logs as the primary trace key for one pipeline run.
+- Expected lifecycle markers include `job_created`, `job_queued`, `job_claimed`, `job_result_ingested`, `export_started`, `export_completed`, and `job_failed`.
 
 ## Cleanup Policy
 - Temporary build artifacts must stay out of git. The existing `.dockerignore` files already exclude common caches and build outputs.

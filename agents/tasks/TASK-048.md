@@ -48,3 +48,8 @@ The MVP currently works, but debugging still depends too much on scattered log o
 
 ## Notes
 Worker and backend logs only need enough structure for local ops and release validation.
+
+## Observed On 2026-04-06
+- Backend logs now emit structured `jobId`-keyed events for job creation, queueing, claim, result ingestion, export start, export completion, and failure.
+- Worker logs now preserve backend transport failures and crash paths with stage context so release QA can trace what happened without reading stack traces only.
+- The logging pass is intentionally lightweight and stdout-first; no external observability stack was introduced.
