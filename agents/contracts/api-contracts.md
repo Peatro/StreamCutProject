@@ -24,6 +24,7 @@ Response:
 
 Creates a job from an uploaded file.
 The MVP upload policy for file size, request size, supported formats, and oversize behavior is defined in `runtime.md`.
+Oversize uploads should return `413 Payload Too Large` with a JSON error body that includes a user-facing `message`.
 
 ### GET /api/jobs
 

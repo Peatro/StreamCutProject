@@ -1,6 +1,7 @@
 package com.peatroxd.streamcutproject.vodjob;
 
 import com.peatroxd.streamcutproject.clipcandidate.api.ClipCandidateResponse;
+import com.peatroxd.streamcutproject.config.ApiExceptionHandler;
 import com.peatroxd.streamcutproject.vodjob.api.CreateJobByUrlRequest;
 import com.peatroxd.streamcutproject.vodjob.api.JobDetailResponse;
 import com.peatroxd.streamcutproject.vodjob.api.JobEventResponse;
@@ -42,6 +43,7 @@ class VodJobControllerTest {
     void setUp() {
         vodJobService = Mockito.mock(VodJobService.class);
         mockMvc = MockMvcBuilders.standaloneSetup(new VodJobController(vodJobService))
+                .setControllerAdvice(new ApiExceptionHandler("512MB"))
                 .setValidator(new LocalValidatorFactoryBean())
                 .build();
     }
@@ -238,6 +240,10 @@ class VodJobControllerTest {
     @Test
     void rejectsMissingUploadFile() throws Exception {
         mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart("/api/jobs/upload"))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isBadRequest())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.message").value("Upload file is required."))
+                .andExpect(jsonPath("$.status").value(400))
+                .andExpect(jsonPath("$.path").value("/api/jobs/upload"));
     }
 }
