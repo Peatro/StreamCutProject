@@ -44,3 +44,9 @@ The export path now works on the happy path. Release hardening still requires ob
 
 ## Notes
 If repeated export attempts are not supported, document actual current behavior explicitly.
+
+## Observed On 2026-04-06
+- Repeated export attempts are currently allowed by the backend when a candidate is `APPROVED` and not already `IN_PROGRESS`.
+- Export-stage failures can be reproduced by corrupting or removing the source asset before the worker runs the export.
+- If the export source is missing or invalid, the worker reports `EXPORTING_CLIP` failure and the backend persists `JOB_FAILED` plus an `EXPORT_STARTED` event before failure.
+- Artifact retrieval for missing exports returns `404` and does not create a fake artifact path.
