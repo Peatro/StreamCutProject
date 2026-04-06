@@ -46,3 +46,9 @@ The critical MVP loop works locally, but release-sensitive paths should be bette
 
 ## Notes
 Prefer a smaller number of high-signal tests over a wide but shallow matrix.
+
+## Observed On 2026-04-06
+- Added a focused Spring/H2 integration test that exercises URL job creation plus worker claim through the HTTP APIs.
+- Added a second integration test that exercises candidate approval, export start, export completion, and export-status reads through the real controller/service stack.
+- The test slice covers the critical persistence transitions and event history that matter for release review.
+- The new coverage is intentionally small and high-signal rather than exhaustive.
