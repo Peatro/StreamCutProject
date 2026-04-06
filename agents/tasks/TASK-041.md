@@ -4,10 +4,10 @@
 frontend-agent
 
 ## Summary
-Surface upload constraints and oversize upload errors clearly in the UI so users do not discover them only after failure.
+Surface the upload policy from `runtime.md` and oversize upload errors clearly in the UI so users do not discover them only after failure.
 
 ## Context
-The upload path needs explicit user guidance once backend multipart limits are defined. The current MVP should make limits visible before submit and should explain oversize failures without generic error noise.
+The upload path needs explicit user guidance once backend multipart limits are defined. The current MVP should make limits visible before submit and should explain oversize failures without generic error noise. The policy target is `512 MB` files, `520 MB` request size, and the media formats documented in `runtime.md`.
 
 ## Scope
 - show allowed file size and supported formats in upload UI
@@ -23,6 +23,7 @@ The upload path needs explicit user guidance once backend multipart limits are d
 ## Inputs
 - TASK-039.md
 - TASK-040.md
+- runtime.md
 - src/main/resources/static/index.html
 - src/main/resources/static/app.js
 - src/main/resources/static/styles.css
@@ -43,3 +44,4 @@ The upload path needs explicit user guidance once backend multipart limits are d
 
 ## Notes
 Prefer concise copy over verbose instructional text.
+Use the upload policy defined in `runtime.md` as the only source of truth for size, format, and oversize messaging.

@@ -1,5 +1,25 @@
 # Runtime
 
+## Upload Policy
+This is the explicit MVP upload policy for `POST /api/jobs/upload`.
+
+- Upload mode: single-file upload only.
+- Maximum file size: `512 MB`.
+- Maximum request size: `520 MB` to allow multipart overhead.
+- Supported upload formats:
+  - `video/mp4` (`.mp4`)
+  - `video/quicktime` (`.mov`)
+  - `video/x-matroska` (`.mkv`)
+  - `video/webm` (`.webm`)
+  - `video/x-msvideo` (`.avi`)
+  - `video/mpeg` (`.mpeg`, `.mpg`)
+- User-facing behavior when the limit is exceeded:
+  - the backend should return a stable `413 Payload Too Large` response
+  - the error body should say that the upload exceeds the `512 MB` limit
+  - the UI should keep the current form state, show the message inline, and avoid creating a job
+- Policy status: this limit set is MVP-intended, not temporary. It is the release policy until a later explicit policy change.
+- If future release work changes the upload envelope, update this section first and keep backend config, API docs, backlog notes, and UI copy aligned with it.
+
 ## Local Startup
 1. Build and start everything with `docker compose up --build`.
 2. Wait for PostgreSQL health checks to pass.

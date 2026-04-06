@@ -4,10 +4,10 @@
 backend-agent
 
 ## Summary
-Fix the known `413` upload failure by configuring explicit multipart limits and stable backend error handling.
+Implement the upload policy from `runtime.md` by configuring explicit multipart limits and stable backend error handling.
 
 ## Context
-Realistic MVP uploads currently fail at default framework limits. Release hardening requires explicit limits, predictable error semantics, and test coverage for both accepted and rejected uploads.
+Realistic MVP uploads currently fail at default framework limits. Release hardening requires explicit limits, predictable error semantics, and test coverage for both accepted and rejected uploads. The policy target is `512 MB` file size, `520 MB` request size, and the media formats documented in `runtime.md`.
 
 ## Scope
 - configure Spring multipart limits explicitly
@@ -23,6 +23,7 @@ Realistic MVP uploads currently fail at default framework limits. Release harden
 
 ## Inputs
 - TASK-039.md
+- runtime.md
 - agents/contracts/api-contracts.md
 - src/main/resources/application.yaml
 - src/main/java/com/peatroxd/streamcutproject/vodjob
@@ -47,3 +48,4 @@ Realistic MVP uploads currently fail at default framework limits. Release harden
 
 ## Notes
 Coordinate with `TASK-041` only through stable error semantics, not through ad hoc UI assumptions.
+Follow the limits and behaviors defined in `runtime.md`; do not invent a second policy here.

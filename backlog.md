@@ -27,8 +27,13 @@ Branch snapshot: `develop`
   - upload ingest completed end-to-end on a valid small file
   - export artifact download and stream endpoints returned `200`
 - `main` is still behind the current delivery state.
-- One runtime limitation is now confirmed locally:
-  - upload requests above the default multipart limit currently return `413 Maximum upload size exceeded`
+- The canonical MVP upload policy is defined in `runtime.md`:
+  - single-file uploads only
+  - supported formats: `video/mp4`, `video/quicktime`, `video/x-matroska`, `video/webm`, `video/x-msvideo`, `video/mpeg`
+  - max file size `512 MB`
+  - max request size `520 MB`
+  - oversize uploads should surface `413 Payload Too Large`
+- The current runtime still uses framework defaults until `TASK-040` lands, so oversized uploads are still expected to fail in local testing.
 
 ## DONE
 
@@ -165,7 +170,7 @@ Status: completed locally on 2026-04-06
 - backend persists processing results and serves exported artifacts
 
 ### Phase B. Release Hardening
-- Define and implement realistic upload size handling.
+- Define and implement realistic upload size handling from the policy in `runtime.md`.
 - Verify UI flows in a real browser against the live stack.
 - Verify failure and recovery paths on the live stack.
 - Improve failure visibility and log traceability.
@@ -218,7 +223,7 @@ Status: completed locally on 2026-04-06
 ## Risks
 - The codebase and backlog are now aligned better, but `main` still lags behind current delivery.
 - `main` does not yet represent the current MVP state.
-- Upload ingest is not release-ready for realistic file sizes until multipart limits are configured explicitly.
+- Upload ingest is not release-ready for realistic file sizes until the limits defined in `runtime.md` are implemented.
 - Worker cold start depends on external model download and is slower without a configured `HF_TOKEN`.
 - Browser happy-path QA has not yet been completed as a formal release gate.
 - Negative-path recovery behavior is partially known from smoke tests, but not yet documented as release-safe behavior.

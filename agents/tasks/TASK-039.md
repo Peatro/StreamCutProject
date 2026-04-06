@@ -4,7 +4,7 @@
 infra-agent
 
 ## Summary
-Define a release-safe MVP upload policy so backend and UI work against one explicit set of constraints.
+Define the canonical MVP upload policy in `runtime.md` so backend and UI work against one explicit set of constraints.
 
 ## Context
 The local full-cycle MVP works, but realistic uploads currently fail at framework defaults with `413 Maximum upload size exceeded`. Release hardening must start by defining the intended policy instead of guessing.
@@ -16,6 +16,7 @@ The local full-cycle MVP works, but realistic uploads currently fail at framewor
 - define supported media formats for upload
 - define expected user-facing behavior when limits are exceeded
 - define whether current limits are temporary or intended
+- write the policy into the single source of truth doc
 
 ## Out of Scope
 - implementing backend multipart handling
@@ -40,9 +41,11 @@ The local full-cycle MVP works, but realistic uploads currently fail at framewor
 - keep policy practical for MVP local runtime
 
 ## Acceptance Criteria
-- there is a single written source of truth for upload policy
+- `runtime.md` contains the single written source of truth for upload policy
+- policy covers file size, request size, supported format, oversize behavior, and whether the limits are temporary
 - backend and UI work can proceed without guessing
 - no ambiguous wording remains around upload size behavior
 
 ## Notes
 This task should complete before backend and UI upload-limit implementation work begins.
+The source of truth for the policy is `runtime.md`.

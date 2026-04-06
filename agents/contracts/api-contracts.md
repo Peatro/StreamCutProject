@@ -23,6 +23,7 @@ Response:
 ### POST /api/jobs/upload
 
 Creates a job from an uploaded file.
+The MVP upload policy for file size, request size, supported formats, and oversize behavior is defined in `runtime.md`.
 
 ### GET /api/jobs
 
