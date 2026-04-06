@@ -29,7 +29,7 @@ Branch snapshot: `develop`
 - `TASK-042` browser happy-path QA passed in a live browser against the running Docker stack.
 - `TASK-043` and `TASK-054` are merged into the validated MVP baseline.
 - `TASK-053` moved the validated MVP baseline from `develop` to `main` at commit `22f61b4`.
-- `TASK-055`, `TASK-056`, and `TASK-057` are merged into `develop`, and `develop` is now the active branch for `v1.0.0` buildout.
+- `TASK-055`, `TASK-056`, `TASK-057`, and `TASK-058` are merged into `develop`, and `develop` is now the active branch for `v1.0.0` buildout.
 - `main` remains the validated MVP baseline while `develop` continues service-hardening.
 - The canonical MVP upload policy is defined in `runtime.md`:
   - single-file uploads only
@@ -43,7 +43,10 @@ Branch snapshot: `develop`
   - `application-prod.yaml` requires explicit runtime inputs
   - `docker-compose.yml` runs the backend under `SPRING_PROFILES_ACTIVE=local`
   - `env.production.example` documents the production env contract without checked-in secrets
-- The Docker image strategy is intentionally MVP-only: backend and worker both inherit from `postgres:15` and layer their own runtimes on top.
+- The container/runtime package is now split between:
+  - `docker-compose.yml` for the local full stack
+  - `docker-compose.production.yml` for the production-oriented package behind the `edge` reverse proxy
+  - purpose-fit backend and worker images that no longer inherit from `postgres:15`
 - MinIO is the export artifact store in Docker, and the named volumes `streamcut-postgres`, `streamcut-data`, and `streamcut-minio` are part of the runtime contract.
 - Release hardening wave 1 is now complete in source control: upload policy, multipart handling, UI upload guidance, URL/export/restart QA notes, structured runtime logging, integration coverage, Docker runtime notes, release checklist, and status docs have all been updated.
 - `TASK-044` was revalidated on the live Docker stack: malformed URL and `404` cases now transition `QUEUED -> FAILED`, persist `JOB_FAILED`, and store readable failure messages instead of leaving jobs stuck in `DOWNLOADING`.
@@ -99,6 +102,7 @@ Branch snapshot: `develop`
 - `TASK-055` Add Authentication And Protected Operator Access
 - `TASK-056` Add Security Baseline And Input Hardening
 - `TASK-057` Introduce Production Runtime Profiles And Secret Handling
+- `TASK-058` Replace MVP Container Strategy And Add Production Edge Runtime
 
 ### Backend <-> Worker Full-Cycle Loop
 - `TASK-026` Freeze Worker Transport Contract
@@ -171,20 +175,20 @@ Branch snapshot: `develop`
 
 ## IN_PROGRESS
 - No active implementation task is currently open in this backlog snapshot.
-- The next bounded runtime slice should branch from `develop` and start at `TASK-058`.
+- The next bounded runtime slice should branch from `develop` and start at `TASK-059`.
 
 ## NEXT
 
 ### Immediate
-- `TASK-058` Replace MVP Container Strategy And Add Production Edge Runtime
+- `TASK-059` Add Health, Readiness, And Worker Diagnostics
 
 ### Validation
 - The MVP release baseline has been promoted to `main`.
 
 ### Stabilization
-- `TASK-057` Introduce Production Runtime Profiles And Secret Handling
 - `TASK-058` Replace MVP Container Strategy And Add Production Edge Runtime
 - `TASK-059` Add Health, Readiness, And Worker Diagnostics
+- `TASK-060` Harden Queue Reliability And Stuck-Job Recovery
 
 ### Release Checklist
 - `release-checklist.md` is the current gate document for moving `develop` to `main`.
@@ -256,7 +260,7 @@ Status: completed locally on 2026-04-06
 ## Risks
 - The MVP baseline is now aligned on both `main` and `develop`, but the service is still not at the `v1.0.0` operating standard.
 - Upload ingest now uses the explicit multipart limits from `TASK-040`, and oversized files fail with stable `413` semantics.
-- Docker image choices are acceptable for the current MVP but remain a deliberate compromise rather than a production recommendation.
+- `TASK-058` replaced the old `postgres:15` image inheritance and added a production-oriented compose package, but local image-build verification was only partial because Docker Hub base-image pulls hit an external TLS handshake failure during validation.
 - `TASK-044` has been revalidated for malformed URL and `404` cases; residual coverage gaps remain only for timeout and unsupported-source variants, and they are not release blockers for the current gate.
 - Restart resilience on export looks acceptable from `TASK-046`: a worker bounce mid-export recovered and completed instead of ghosting the job.
 - `TASK-046` also showed that restart recovery is not very observable: file-backed work and exports can continue, but the API may sit on `DOWNLOADING` or `IN_PROGRESS` without an explicit progress signal.
@@ -265,9 +269,9 @@ Status: completed locally on 2026-04-06
 - `TASK-045` QA found that export retries are allowed, export failure correctly marks the job `FAILED`, and the stale-artifact behavior was addressed in `TASK-054`.
 
 ## Recommended Next Sequence
-1. `TASK-058` Replace MVP Container Strategy And Add Production Edge Runtime.
-2. `TASK-059` Add Health, Readiness, And Worker Diagnostics.
-3. `TASK-060` Harden Queue Reliability And Stuck-Job Recovery.
+1. `TASK-059` Add Health, Readiness, And Worker Diagnostics.
+2. `TASK-060` Harden Queue Reliability And Stuck-Job Recovery.
+3. `TASK-061` Add Operator Recovery Controls.
 
 ## Path To Service v1.0.0
 
@@ -301,7 +305,7 @@ Status: completed locally on 2026-04-06
 - completed: `TASK-055` Add Authentication And Protected Operator Access
 - completed: `TASK-056` Add Security Baseline And Input Hardening
 - completed: `TASK-057` Introduce Production Runtime Profiles And Secret Handling
-- `TASK-058` Replace MVP Container Strategy And Add Production Edge Runtime
+- completed: `TASK-058` Replace MVP Container Strategy And Add Production Edge Runtime
 
 #### Phase 2. Reliability And Operator Controls
 - `TASK-059` Add Health, Readiness, And Worker Diagnostics
