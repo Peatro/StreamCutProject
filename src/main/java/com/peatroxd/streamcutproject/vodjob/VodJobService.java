@@ -256,6 +256,12 @@ public class VodJobService {
     public String getExportArtifactReference(Long exportId) {
         ClipCandidate candidate = requireCandidate(exportId);
         String reference = resolveExportArtifactPath(candidate);
+        if (candidate.getExportStatus() != ExportStatus.COMPLETED) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "Export artifact is not ready for candidate: " + exportId
+            );
+        }
         if (!artifactStorageService.exists(reference)) {
             throw new ResponseStatusException(
                     HttpStatus.NOT_FOUND,

@@ -544,6 +544,20 @@ class VodJobServiceTest {
     }
 
     @Test
+    void getExportArtifactReferenceRejectsNonCompletedExport() {
+        VodJob job = buildJob(1L, "https://example.com/video", Instant.parse("2026-04-05T10:00:00Z"));
+        ClipCandidate candidate = ClipCandidate.create(job, 5.0, 12.0, 0.91, "first");
+        candidate.setId(7L);
+        candidate.setExportedClipPath("/var/lib/streamcut/jobs/1/exports/candidate-7.mp4");
+        candidate.setExportStatus(ExportStatus.FAILED);
+        when(clipCandidateRepository.findById(7L)).thenReturn(java.util.Optional.of(candidate));
+
+        assertThatThrownBy(() -> vodJobService.getExportArtifactReference(7L))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("Export artifact is not ready for candidate: 7");
+    }
+
+    @Test
     void ingestWorkerExportResultMarksJobCompletedAndPersistsArtifactPath() throws Exception {
         VodJob job = buildJob(1L, "https://example.com/video", Instant.parse("2026-04-05T10:00:00Z"));
         job.setStatus(JobStatus.EXPORTING_CLIP);
