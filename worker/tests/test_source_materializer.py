@@ -1,0 +1,131 @@
+from __future__ import annotations
+
+from contextlib import contextmanager
+from pathlib import Path
+import sys
+from tempfile import TemporaryDirectory
+import unittest
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+
+from streamcut_worker.models import ClaimedJob
+from streamcut_worker.services import source_materializer as source_materializer_module
+from streamcut_worker.services.source_materializer import SourceMaterializer
+
+
+class FakePlatformDownloader:
+    def __init__(self, downloaded_name: str = "source-video.mp4") -> None:
+        self.downloaded_name = downloaded_name
+        self.calls: list[str] = []
+
+    def download(self, source_url: str, target_dir: Path, filename_stem: str) -> Path:
+        self.calls.append(source_url)
+        target_dir.mkdir(parents=True, exist_ok=True)
+        output_path = target_dir / self.downloaded_name
+        output_path.write_bytes(b"video-data")
+        return output_path
+
+
+class FakeResponse:
+    def __init__(self, payload: bytes) -> None:
+        self.payload = payload
+
+    def read(self) -> bytes:
+        return self.payload
+
+    def __enter__(self) -> "FakeResponse":
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        return None
+
+
+class SourceMaterializerTests(unittest.TestCase):
+    def test_url_direct_media_download_is_stored_without_platform_extractor(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            storage_root = Path(temp_dir)
+            downloader = FakePlatformDownloader()
+
+            @contextmanager
+            def fake_urlopen(url: str):
+                yield FakeResponse(b"\x00\x00\x00\x18ftypmp42video")
+
+            materializer = SourceMaterializer(
+                storage_root=storage_root,
+                platform_downloader=downloader,
+            )
+            original_urlopen = source_materializer_module.request.urlopen
+            source_materializer_module.request.urlopen = fake_urlopen
+            try:
+                result = materializer.materialize(
+                    ClaimedJob(
+                        job_id=11,
+                        task_type="ANALYZE",
+                        source_type="URL",
+                        video_path=None,
+                        source_url="https://example.com/video.mp4",
+                    )
+                )
+                self.assertTrue(result.exists())
+                self.assertEqual(result.name, "source-video.mp4")
+                self.assertEqual(downloader.calls, [])
+            finally:
+                source_materializer_module.request.urlopen = original_urlopen
+
+    def test_twitch_url_uses_platform_extractor(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            storage_root = Path(temp_dir)
+            downloader = FakePlatformDownloader()
+            materializer = SourceMaterializer(
+                storage_root=storage_root,
+                platform_downloader=downloader,
+            )
+
+            result = materializer.materialize(
+                ClaimedJob(
+                    job_id=12,
+                    task_type="ANALYZE",
+                    source_type="URL",
+                    video_path=None,
+                    source_url="https://www.twitch.tv/videos/2735588522",
+                )
+            )
+
+            self.assertEqual(downloader.calls, ["https://www.twitch.tv/videos/2735588522"])
+            self.assertTrue(result.exists())
+            self.assertEqual(result.name, "source-video.mp4")
+
+    def test_html_download_falls_back_to_platform_extractor(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            storage_root = Path(temp_dir)
+            downloader = FakePlatformDownloader()
+
+            @contextmanager
+            def fake_urlopen(url: str):
+                yield FakeResponse(b"<!DOCTYPE html><html><body>not a video</body></html>")
+
+            materializer = SourceMaterializer(
+                storage_root=storage_root,
+                platform_downloader=downloader,
+            )
+            original_urlopen = source_materializer_module.request.urlopen
+            source_materializer_module.request.urlopen = fake_urlopen
+            try:
+                result = materializer.materialize(
+                    ClaimedJob(
+                        job_id=13,
+                        task_type="ANALYZE",
+                        source_type="URL",
+                        video_path=None,
+                        source_url="https://example.com/watch?v=123",
+                    )
+                )
+                self.assertEqual(downloader.calls, ["https://example.com/watch?v=123"])
+                self.assertTrue(result.exists())
+                self.assertEqual(result.read_bytes(), b"video-data")
+            finally:
+                source_materializer_module.request.urlopen = original_urlopen
+
+
+if __name__ == "__main__":
+    unittest.main()

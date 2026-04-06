@@ -5,6 +5,7 @@ public record ExportStatusResponse(
         Long jobId,
         String status,
         String artifactPath,
-        String moderationStatus
+        String moderationStatus,
+        boolean exportReady
 ) {
 }

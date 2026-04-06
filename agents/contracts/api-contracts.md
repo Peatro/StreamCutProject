@@ -61,3 +61,103 @@ Starts clip export.
 ### GET /api/exports/{id}
 
 Returns export status and artifact reference.
+
+## Internal Worker Transport
+
+### POST /api/internal/worker/claims/next
+
+Claims the next queued job for one worker.
+
+Request:
+```json
+{
+  "workerId": "string"
+}
+```
+
+Response `200`:
+```json
+{
+  "jobId": 0,
+  "taskType": "ANALYZE_OR_EXPORT",
+  "videoPath": "string or null",
+  "sourceType": "URL_OR_FILE",
+  "sourceUrl": "string or null",
+  "candidateId": "number or null",
+  "clipStartSec": "number or null",
+  "clipEndSec": "number or null",
+  "artifactPath": "string or null"
+}
+```
+
+Response `204`:
+No queued job is currently available.
+
+### POST /api/internal/worker/results
+
+Accepts one successful worker processing result.
+
+Request:
+```json
+{
+  "jobId": 0,
+  "durationSec": 0,
+  "language": "string",
+  "videoPath": "string or null",
+  "audioPath": "string or null",
+  "transcriptSegments": [],
+  "silenceSegments": [],
+  "analysisWindows": [],
+  "clipCandidates": []
+}
+```
+
+Response:
+```json
+{
+  "jobId": 0,
+  "status": "READY_FOR_REVIEW"
+}
+```
+
+### POST /api/internal/worker/exports/results
+
+Accepts one successful worker export completion payload.
+
+Request:
+```json
+{
+  "jobId": 0,
+  "candidateId": 0,
+  "artifactPath": "string"
+}
+```
+
+Response:
+```json
+{
+  "jobId": 0,
+  "status": "COMPLETED"
+}
+```
+
+### POST /api/internal/worker/failures
+
+Accepts one worker processing failure report.
+
+Request:
+```json
+{
+  "jobId": 0,
+  "failedState": "DOWNLOADING",
+  "message": "string"
+}
+```
+
+Response:
+```json
+{
+  "jobId": 0,
+  "status": "FAILED"
+}
+```

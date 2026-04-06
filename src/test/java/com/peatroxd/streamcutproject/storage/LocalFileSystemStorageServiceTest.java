@@ -1,7 +1,11 @@
 package com.peatroxd.streamcutproject.storage;
 
+import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.Test;
 
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -49,5 +53,21 @@ class LocalFileSystemStorageServiceTest {
 
         assertThat(storageService.resolveExportedClipPath(42L, 7L, "mkv"))
                 .isEqualTo(Path.of("/var/lib/streamcut/jobs/42/exports/candidate-7.mkv"));
+    }
+
+    @Test
+    void storesUploadedSourceVideoInResolvedLocation(@TempDir Path tempDir) throws IOException {
+        storageProperties.setLocalRoot(tempDir);
+
+        Path storedPath = storageService.storeSourceVideo(
+                42L,
+                "../my clip.mp4",
+                new ByteArrayInputStream("video-bytes".getBytes())
+        );
+
+        assertThat(storedPath)
+                .isEqualTo(tempDir.resolve("jobs/42/source/my_clip.mp4"));
+        assertThat(Files.readString(storedPath))
+                .isEqualTo("video-bytes");
     }
 }

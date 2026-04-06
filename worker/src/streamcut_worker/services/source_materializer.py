@@ -1,0 +1,134 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Protocol
+from urllib import parse, request
+
+from streamcut_worker.models import ClaimedJob
+
+
+class SourceMaterializationError(RuntimeError):
+    def __init__(self, message: str, *, failed_state: str = "DOWNLOADING") -> None:
+        super().__init__(message)
+        self.failed_state = failed_state
+
+
+class PlatformVideoDownloader(Protocol):
+    def download(self, source_url: str, target_dir: Path, filename_stem: str) -> Path: ...
+
+
+class YtDlpPlatformDownloader:
+    def download(self, source_url: str, target_dir: Path, filename_stem: str) -> Path:
+        try:
+            from yt_dlp import YoutubeDL
+        except ImportError as exc:
+            raise SourceMaterializationError(
+                "yt-dlp is required to download platform video URLs",
+            ) from exc
+
+        target_dir.mkdir(parents=True, exist_ok=True)
+        output_template = str(target_dir / f"{filename_stem}.%(ext)s")
+        options = {
+            "outtmpl": output_template,
+            "quiet": True,
+            "no_warnings": True,
+            "format": "bestvideo*+bestaudio/best",
+            "merge_output_format": "mp4",
+            "restrictfilenames": True,
+            "noplaylist": True,
+        }
+
+        try:
+            with YoutubeDL(options) as ydl:
+                ydl.extract_info(source_url, download=True)
+        except Exception as exc:
+            raise SourceMaterializationError(
+                f"platform download failed for {source_url}: {exc}",
+            ) from exc
+
+        candidates = sorted(
+            (
+                path
+                for path in target_dir.iterdir()
+                if path.is_file() and path.suffix.lower() not in {".part", ".ytdl", ".tmp"}
+            ),
+            key=lambda path: (path.stat().st_mtime, path.stat().st_size),
+            reverse=True,
+        )
+        if not candidates:
+            raise SourceMaterializationError(
+                f"platform download did not produce a media file for {source_url}",
+            )
+        return candidates[0]
+
+
+@dataclass(slots=True)
+class SourceMaterializer:
+    storage_root: Path
+    platform_downloader: PlatformVideoDownloader | None = None
+
+    def materialize(self, job: ClaimedJob) -> Path:
+        if job.source_type == "FILE":
+            if job.video_path is None:
+                raise SourceMaterializationError(
+                    f"FILE job {job.job_id} is missing videoPath",
+                )
+            if not job.video_path.exists():
+                raise SourceMaterializationError(
+                    f"Input video does not exist: {job.video_path}",
+                )
+            return job.video_path
+
+        if job.source_type == "URL":
+            if not job.source_url:
+                raise SourceMaterializationError(
+                    f"URL job {job.job_id} is missing sourceUrl",
+                )
+            return self._materialize_url(job)
+
+        raise SourceMaterializationError(
+            f"Unsupported source type for job {job.job_id}: {job.source_type}",
+        )
+
+    def _materialize_url(self, job: ClaimedJob) -> Path:
+        assert job.source_url is not None
+        target_path = self._resolve_download_path(job)
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+
+        if self._requires_platform_downloader(job.source_url):
+            return self._download_with_platform_extractor(job.source_url, target_path.parent)
+
+        with request.urlopen(job.source_url) as response, target_path.open("wb") as output:
+            output.write(response.read())
+
+        if self._looks_like_html(target_path):
+            target_path.unlink(missing_ok=True)
+            return self._download_with_platform_extractor(job.source_url, target_path.parent)
+
+        return target_path
+
+    def _resolve_download_path(self, job: ClaimedJob) -> Path:
+        parsed = parse.urlparse(job.source_url or "")
+        suffix = Path(parsed.path).suffix or ".mp4"
+        return self.storage_root / "jobs" / str(job.job_id) / "source" / f"source-video{suffix}"
+
+    def _requires_platform_downloader(self, source_url: str) -> bool:
+        hostname = (parse.urlparse(source_url).hostname or "").lower()
+        return any(
+            host in hostname
+            for host in (
+                "twitch.tv",
+                "youtube.com",
+                "youtu.be",
+                "vimeo.com",
+            )
+        )
+
+    def _download_with_platform_extractor(self, source_url: str, target_dir: Path) -> Path:
+        downloader = self.platform_downloader or YtDlpPlatformDownloader()
+        return downloader.download(source_url, target_dir, "source-video")
+
+    def _looks_like_html(self, path: Path) -> bool:
+        prefix = path.read_bytes()[:512].lstrip().lower()
+        return prefix.startswith(b"<!doctype html") or prefix.startswith(b"<html")

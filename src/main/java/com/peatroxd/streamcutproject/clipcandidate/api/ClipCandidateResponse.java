@@ -8,6 +8,8 @@ public record ClipCandidateResponse(
         String transcriptExcerpt,
         String moderationStatus,
         String moderatorNote,
-        String exportedClipPath
+        String exportedClipPath,
+        String exportStatus,
+        boolean exportReady
 ) {
 }

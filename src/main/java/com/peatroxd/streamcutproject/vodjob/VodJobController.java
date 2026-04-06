@@ -47,7 +47,7 @@ public class VodJobController {
                     "uploaded file must not be empty"
             );
         }
-        return vodJobService.createFileJob(file.getOriginalFilename());
+        return vodJobService.createFileJob(file);
     }
 
     @GetMapping

@@ -350,6 +350,16 @@
       <div class="stack">
         ${candidates.map((candidate) => `
           <article class="candidate-card" data-candidate-card>
+            ${candidate.exportReady ? `
+              <div class="candidate-preview-shell">
+                <video
+                  class="candidate-preview"
+                  controls
+                  preload="metadata"
+                  playsinline
+                  src="/api/exports/${encodeURIComponent(candidate.id)}/stream"></video>
+              </div>
+            ` : ""}
             <div class="candidate-top">
               <div>
                 <strong>${timeRange(candidate.startSec, candidate.endSec)}</strong>
@@ -360,12 +370,15 @@
             <div class="candidate-excerpt">${escapeHtml(candidate.transcriptExcerpt || "No transcript excerpt available.")}</div>
             <div class="candidate-meta">
               <span>${escapeHtml(candidate.moderatorNote || "No moderator note yet.")}</span>
-              <span>${escapeHtml(candidate.exportedClipPath ? `Exported: ${candidate.exportedClipPath}` : "Not exported")}</span>
+              <span>${candidate.exportReady
+                ? `<a href="/api/exports/${encodeURIComponent(candidate.id)}/file">Download clip</a>`
+                : (candidate.exportedClipPath ? "Export in progress" : "Not exported")}</span>
             </div>
+            ${renderCandidateRuntimeState(candidate)}
             <div class="candidate-actions">
-              <button class="action-button action-button-approve" type="button" data-candidate-action="approve" data-candidate-id="${escapeHtml(candidate.id)}">Approve</button>
-              <button class="action-button action-button-reject" type="button" data-candidate-action="reject" data-candidate-id="${escapeHtml(candidate.id)}">Reject</button>
-              <button class="action-button action-button-export" type="button" data-candidate-action="export" data-candidate-id="${escapeHtml(candidate.id)}">Export</button>
+              <button class="action-button action-button-approve" type="button" data-candidate-action="approve" data-candidate-id="${escapeHtml(candidate.id)}" ${candidate.moderationStatus === "APPROVED" ? "disabled" : ""}>Approve</button>
+              <button class="action-button action-button-reject" type="button" data-candidate-action="reject" data-candidate-id="${escapeHtml(candidate.id)}" ${candidate.moderationStatus === "REJECTED" ? "disabled" : ""}>Reject</button>
+              <button class="action-button action-button-export" type="button" data-candidate-action="export" data-candidate-id="${escapeHtml(candidate.id)}" ${candidate.moderationStatus !== "APPROVED" || candidate.exportedClipPath ? "disabled" : ""}>Export</button>
             </div>
             <div class="candidate-message" data-candidate-message></div>
           </article>
@@ -401,6 +414,33 @@
 
   function renderBanner(message, level) {
     return `<div class="banner banner-${level}">${escapeHtml(message)}</div>`;
+  }
+
+  function renderCandidateRuntimeState(candidate) {
+    if (candidate.exportReady) {
+      return `
+        <div class="runtime-state runtime-state-ready">
+          <span class="runtime-dot"></span>
+          <span>Export artifact is ready.</span>
+        </div>
+      `;
+    }
+
+    if (candidate.exportedClipPath) {
+      return `
+        <div class="runtime-progress" aria-label="Export in progress">
+          <div class="runtime-progress-head">
+            <div class="runtime-spinner" aria-hidden="true"></div>
+            <span>Worker is exporting this clip</span>
+          </div>
+          <div class="runtime-progress-track" aria-hidden="true">
+            <div class="runtime-progress-bar"></div>
+          </div>
+        </div>
+      `;
+    }
+
+    return "";
   }
 
   function renderJobsTable(jobs) {
@@ -583,8 +623,7 @@
       }
     });
     if (!response.ok) {
-      const text = await response.text();
-      throw new Error(text || `Request failed with ${response.status}`);
+      throw new Error(await readErrorMessage(response));
     }
     return response.json();
   }
@@ -599,8 +638,7 @@
       body: options.body
     });
     if (!response.ok) {
-      const text = await response.text();
-      throw new Error(text || `Request failed with ${response.status}`);
+      throw new Error(await readErrorMessage(response));
     }
     return response.json();
   }
@@ -614,10 +652,30 @@
       body: formData
     });
     if (!response.ok) {
-      const text = await response.text();
-      throw new Error(text || `Request failed with ${response.status}`);
+      throw new Error(await readErrorMessage(response));
     }
     return response.json();
+  }
+
+  async function readErrorMessage(response) {
+    const text = await response.text();
+    if (!text) {
+      return `Request failed with ${response.status}`;
+    }
+
+    try {
+      const payload = JSON.parse(text);
+      if (payload.message) {
+        return payload.message;
+      }
+      if (payload.error && payload.path) {
+        return `${payload.error} (${payload.path})`;
+      }
+    } catch (error) {
+      void error;
+    }
+
+    return text;
   }
 
   function renderLoading(message) {
