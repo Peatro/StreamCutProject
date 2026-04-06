@@ -8,7 +8,7 @@ It tracks:
 - remaining work required to stabilize and ship the MVP
 
 Last updated: 2026-04-06
-Branch snapshot: `feature/orchestrator-current-tasks`
+Branch snapshot: `develop`
 
 ## Current Status
 - The MVP now runs as a real full-cycle local service on Docker Compose.
@@ -22,6 +22,10 @@ Branch snapshot: `feature/orchestrator-current-tasks`
   - export completion
   - artifact download
 - Upload ingest was validated on 2026-04-06 through create -> queue -> worker claim -> `READY_FOR_REVIEW`.
+- Clean-slate Docker validation was executed on 2026-04-06 after volume reset:
+  - URL ingest completed end-to-end
+  - upload ingest completed end-to-end on a valid small file
+  - export artifact download and stream endpoints returned `200`
 - `main` is still behind the current delivery state.
 - One runtime limitation is now confirmed locally:
   - upload requests above the default multipart limit currently return `413 Maximum upload size exceeded`
@@ -118,30 +122,37 @@ Branch snapshot: `feature/orchestrator-current-tasks`
   - export artifact was downloadable from backend
   - upload ingest reached `READY_FOR_REVIEW`
   - larger upload sample hit `413 Maximum upload size exceeded`
+- Clean-slate release-hardening validation on Docker volumes reset confirmed:
+  - URL ingest reached `COMPLETED`
+  - file upload ingest reached `COMPLETED` on a small valid media sample
+  - export artifacts were stored in MinIO-backed object storage
+  - `/api/exports/{id}/file` and `/api/exports/{id}/stream` served artifacts correctly
 
 ## IN_PROGRESS
 - No active implementation task is currently open in this backlog snapshot.
-- Next work should be chosen from stabilization and release hardening, not from the former transport-loop gap.
+- Next work should be chosen from release hardening, stabilization, and release preparation.
 
 ## NEXT
 
 ### Immediate
-- Fix or intentionally configure multipart upload size limits for realistic source media files.
-- Review whether `postgres:15` in compose is intentional long-term or only a local compatibility workaround.
-- Decide whether backend Docker image should stay jar-based or be rebuilt as a cleaner multi-stage image later.
+- `TASK-039` Define Upload Size Policy
+- `TASK-040` Implement Backend Multipart Limits And Upload Error Handling
+- `TASK-041` Expose Upload Constraints In UI
 
 ### Validation
-- Manually verify UI flows in a real browser.
-- Verify obvious negative paths on the live stack:
-  - invalid URL
-  - failed download
-  - failed ffmpeg export
-  - worker restart during queue processing
+- `TASK-042` Browser QA Pass For Core Happy Path
+- `TASK-044` Negative Path QA: Invalid URL And Download Failure
+- `TASK-045` Negative Path QA: Export Failure And Artifact Failure
+- `TASK-046` Negative Path QA: Worker Restart During Queue Processing
 
 ### Stabilization
-- Document current actual delivery status against `TASK-001` ... `TASK-038`.
-- Decide release path from `develop` to `main`.
-- Add more integration tests around persistence and API flows.
+- `TASK-047` Improve Failure State Visibility In Backend And UI
+- `TASK-048` Add Structured Runtime Logging Around Job Lifecycle
+- `TASK-049` Add Focused Integration Tests Around Critical Persistence And API Flows
+- `TASK-050` Validate Docker Runtime And Image Hygiene
+- `TASK-051` Prepare MVP Release Checklist
+- `TASK-052` Document Actual Project Status Against Implemented Task History
+- `TASK-053` Plan And Execute Release Movement From `develop` To `main`
 
 ## ROADMAP TO FULL SERVICE
 
@@ -154,26 +165,46 @@ Status: completed locally on 2026-04-06
 - backend persists processing results and serves exported artifacts
 
 ### Phase B. Release Hardening
-- Fix realistic upload size handling.
+- Define and implement realistic upload size handling.
 - Verify UI flows in a real browser against the live stack.
 - Verify failure and recovery paths on the live stack.
-- Merge to `main` only after these checks pass cleanly.
+- Improve failure visibility and log traceability.
+- Prepare release checklist and merge path to `main`.
 
 ## PLANNED TASK QUEUE
 
 ### Ready For Execution
-- No queued implementation tasks in this block.
+- `TASK-039` Define Upload Size Policy
+- `TASK-040` Implement Backend Multipart Limits And Upload Error Handling
+- `TASK-041` Expose Upload Constraints In UI
+- `TASK-042` Browser QA Pass For Core Happy Path
+- `TASK-043` Fix Core UI Friction Found During Browser QA
+- `TASK-044` Negative Path QA: Invalid URL And Download Failure
+- `TASK-045` Negative Path QA: Export Failure And Artifact Failure
+- `TASK-046` Negative Path QA: Worker Restart During Queue Processing
+- `TASK-047` Improve Failure State Visibility In Backend And UI
+- `TASK-048` Add Structured Runtime Logging Around Job Lifecycle
+- `TASK-049` Add Focused Integration Tests Around Critical Persistence And API Flows
+- `TASK-050` Validate Docker Runtime And Image Hygiene
+- `TASK-051` Prepare MVP Release Checklist
+- `TASK-052` Document Actual Project Status Against Implemented Task History
+- `TASK-053` Plan And Execute Release Movement From `develop` To `main`
 
 ### Execution Order
-- Release-hardening order should now start from:
+- Release-hardening order should now proceed as:
 1. upload size policy
-2. browser UI verification
-3. negative-path QA
-4. merge planning to `main`
+2. backend upload handling
+3. browser UI verification and UX fixes
+4. negative-path QA
+5. observability and failure clarity
+6. release prep and `main` merge plan
 
 ### Parallelism Notes
-- Runtime negative-path QA and browser UI verification can proceed in parallel.
-- Upload size policy should be decided before calling the ingest path release-ready.
+- `TASK-039` should complete before `TASK-040` and `TASK-041`.
+- `TASK-042` and `TASK-044` can run in parallel after upload constraints are clarified.
+- `TASK-043` should consume only concrete findings from `TASK-042`.
+- `TASK-051` and `TASK-052` can run in parallel once stabilization work is mostly complete.
+- `TASK-053` must not start until QA and release checklist gates are satisfied.
 
 ## LATER
 
@@ -189,9 +220,15 @@ Status: completed locally on 2026-04-06
 - `main` does not yet represent the current MVP state.
 - Upload ingest is not release-ready for realistic file sizes until multipart limits are configured explicitly.
 - Worker cold start depends on external model download and is slower without a configured `HF_TOKEN`.
+- Browser happy-path QA has not yet been completed as a formal release gate.
+- Negative-path recovery behavior is partially known from smoke tests, but not yet documented as release-safe behavior.
 
 ## Recommended Next Sequence
-1. Fix or define the multipart upload size policy.
-2. Manually verify the UI in a real browser.
-3. Run negative-path QA on the live Docker stack.
-4. Plan release movement from `develop` to `main`.
+1. `TASK-039` Define Upload Size Policy.
+2. `TASK-040` Implement Backend Multipart Limits And Upload Error Handling.
+3. `TASK-041` Expose Upload Constraints In UI.
+4. `TASK-042` Browser QA Pass For Core Happy Path.
+5. `TASK-043` Fix Core UI Friction Found During Browser QA.
+6. `TASK-044` through `TASK-046` negative-path QA.
+7. `TASK-047` through `TASK-050` stabilization and runtime clarity.
+8. `TASK-051` through `TASK-053` release preparation and movement to `main`.
