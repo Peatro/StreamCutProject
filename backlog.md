@@ -33,9 +33,10 @@ Branch snapshot: `develop`
   - max file size `512 MB`
   - max request size `520 MB`
   - oversize uploads should surface `413 Payload Too Large`
-- The current runtime still uses framework defaults until `TASK-040` lands, so oversized uploads are still expected to fail in local testing.
+- The current runtime now enforces the explicit multipart limits from `TASK-040`, and oversize uploads fail with stable `413` semantics.
 - The Docker image strategy is intentionally MVP-only: backend and worker both inherit from `postgres:15` and layer their own runtimes on top.
 - MinIO is the export artifact store in Docker, and the named volumes `streamcut-postgres`, `streamcut-data`, and `streamcut-minio` are part of the runtime contract.
+- Release hardening wave 1 is now complete in source control: upload policy, multipart handling, UI upload guidance, URL/export/restart QA notes, structured runtime logging, integration coverage, Docker runtime notes, release checklist, and status docs have all been updated.
 
 ## DONE
 
@@ -95,6 +96,19 @@ Branch snapshot: `develop`
 - `TASK-033` Implement Worker Job Runner
 - `TASK-034` Complete Candidate Generation Pipeline
 
+### Release Hardening Wave 1
+- `TASK-039` Define Upload Size Policy
+- `TASK-040` Implement Backend Multipart Limits And Upload Error Handling
+- `TASK-041` Expose Upload Constraints In UI
+- `TASK-044` Negative Path QA: Invalid URL And Download Failure
+- `TASK-045` Negative Path QA: Export Failure And Artifact Failure
+- `TASK-046` Negative Path QA: Worker Restart During Queue Processing
+- `TASK-048` Add Structured Runtime Logging Around Job Lifecycle
+- `TASK-049` Add Focused Integration Tests Around Critical Persistence And API Flows
+- `TASK-050` Validate Docker Runtime And Image Hygiene
+- `TASK-051` Prepare MVP Release Checklist
+- `TASK-052` Document Actual Project Status Against Implemented Task History
+
 ### Important Corrections Already Applied
 - Removed accidental Java-side worker audio implementation to preserve architecture boundaries.
 - Merged MVP feature branch into `develop`.
@@ -142,28 +156,20 @@ Branch snapshot: `develop`
 ## NEXT
 
 ### Immediate
-- `TASK-039` Define Upload Size Policy
-- `TASK-040` Implement Backend Multipart Limits And Upload Error Handling
-- `TASK-041` Expose Upload Constraints In UI
+- `TASK-042` Browser QA Pass For Core Happy Path
+- `TASK-043` Fix Core UI Friction Found During Browser QA
 
 ### Validation
-- `TASK-042` Browser QA Pass For Core Happy Path
-- `TASK-044` Negative Path QA: Invalid URL And Download Failure
-- `TASK-045` Negative Path QA: Export Failure And Artifact Failure
-- `TASK-046` Negative Path QA: Worker Restart During Queue Processing
+- Browser happy-path QA remains the next release gate.
 
 ### Stabilization
 - `TASK-047` Improve Failure State Visibility In Backend And UI
-- `TASK-048` Add Structured Runtime Logging Around Job Lifecycle
-- `TASK-049` Add Focused Integration Tests Around Critical Persistence And API Flows
-- `TASK-050` Validate Docker Runtime And Image Hygiene
-- `TASK-051` Prepare MVP Release Checklist
-- `TASK-052` Document Actual Project Status Against Implemented Task History
 - `TASK-053` Plan And Execute Release Movement From `develop` To `main`
 
 ### Release Checklist
 - `release-checklist.md` is the current gate document for moving `develop` to `main`.
-- Release movement is a hard `no-go` until the checklist evidence is complete and the `TASK-044` URL ingest blocker is fixed or explicitly accepted.
+- Release movement is a hard `no-go` until the checklist evidence is complete.
+- `TASK-044` has a code fix in place, but it still needs final release revalidation before `TASK-053`.
 - `TASK-053` should not execute until `release-checklist.md` is satisfied.
 
 ## ROADMAP TO FULL SERVICE
@@ -230,21 +236,19 @@ Status: completed locally on 2026-04-06
 ## Risks
 - The codebase and backlog are now aligned better, but `main` still lags behind current delivery.
 - `main` does not yet represent the current MVP state.
-- Upload ingest is not release-ready for realistic file sizes until the limits defined in `runtime.md` are implemented.
+- Upload ingest now uses the explicit multipart limits from `TASK-040`, and oversized files fail with stable `413` semantics.
 - Docker image choices are acceptable for the current MVP but remain a deliberate compromise rather than a production recommendation.
-- Release readiness is still blocked by incomplete browser QA and the URL ingest failure mode found in `TASK-044`.
+- Release readiness is still blocked by incomplete browser QA and the remaining stabilization gates.
+- The URL ingest failure path from `TASK-044` has a code fix, but it still needs final release revalidation.
 - Restart resilience on export looks acceptable from `TASK-046`: a worker bounce mid-export recovered and completed instead of ghosting the job.
+- `TASK-046` also showed that restart recovery is not very observable: file-backed work and exports can continue, but the API may sit on `DOWNLOADING` or `IN_PROGRESS` without an explicit progress signal.
 - Worker cold start depends on external model download and is slower without a configured `HF_TOKEN`.
 - Browser happy-path QA has not yet been completed as a formal release gate.
 - Negative-path recovery behavior is partially known from smoke tests, but not yet documented as release-safe behavior.
 - `TASK-045` QA found that export retries are allowed, export failure correctly marks the job `FAILED`, but stale artifact endpoints can still return `200` during a failed retry because an old object remains accessible.
 
 ## Recommended Next Sequence
-1. `TASK-039` Define Upload Size Policy.
-2. `TASK-040` Implement Backend Multipart Limits And Upload Error Handling.
-3. `TASK-041` Expose Upload Constraints In UI.
-4. `TASK-042` Browser QA Pass For Core Happy Path.
-5. `TASK-043` Fix Core UI Friction Found During Browser QA.
-6. `TASK-044` through `TASK-046` negative-path QA.
-7. `TASK-047` through `TASK-050` stabilization and runtime clarity.
-8. `TASK-051` through `TASK-053` release preparation and movement to `main`.
+1. `TASK-042` Browser QA Pass For Core Happy Path.
+2. `TASK-043` Fix Core UI Friction Found During Browser QA.
+3. `TASK-047` Improve Failure State Visibility In Backend And UI.
+4. `TASK-053` Plan And Execute Release Movement From `develop` To `main`.

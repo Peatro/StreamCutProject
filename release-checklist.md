@@ -31,7 +31,7 @@ This checklist is the release gate for moving the validated MVP from `develop` t
 
 ## Current Blockers
 - `TASK-042` through `TASK-049` are not all complete yet.
-- `TASK-044` exposed a release-blocking URL ingest failure mode until the worker failure path is fixed or explicitly accepted.
+- `TASK-044` has a code fix in place, but it still requires final release revalidation before `TASK-053`.
 - `TASK-053` must not proceed until the required gates and evidence above exist.
 
 ## Documentation Gates
@@ -51,4 +51,4 @@ This checklist is the release gate for moving the validated MVP from `develop` t
 - Disposable artifact and storage volumes should be treated as recoverable runtime data, not source-controlled state.
 
 ## Current Status
-As of 2026-04-06 this checklist is not yet satisfied because `TASK-042` through `TASK-049` are not all complete and `TASK-044` exposed a release-blocking URL ingest failure mode.
+As of 2026-04-06 this checklist is not yet satisfied because `TASK-042` through `TASK-049` are not all complete and `TASK-044` still requires final release revalidation.
