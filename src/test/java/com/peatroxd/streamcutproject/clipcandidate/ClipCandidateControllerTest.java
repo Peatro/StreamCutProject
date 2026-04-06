@@ -9,13 +9,19 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.Mockito;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 
+import java.io.ByteArrayOutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -29,13 +35,15 @@ class ClipCandidateControllerTest {
 
     private VodJobService vodJobService;
     private ArtifactStorageService artifactStorageService;
+    private ClipCandidateController controller;
     private MockMvc mockMvc;
 
     @BeforeEach
     void setUp() {
         vodJobService = Mockito.mock(VodJobService.class);
         artifactStorageService = Mockito.mock(ArtifactStorageService.class);
-        mockMvc = MockMvcBuilders.standaloneSetup(new ClipCandidateController(vodJobService, artifactStorageService)).build();
+        controller = new ClipCandidateController(vodJobService, artifactStorageService);
+        mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
     }
 
     @Test
@@ -87,9 +95,9 @@ class ClipCandidateControllerTest {
         when(vodJobService.startExport(anyLong())).thenReturn(new ExportStatusResponse(
                 7L,
                 1L,
-                "EXPORTING_CLIP",
+                "IN_PROGRESS",
                 "/var/lib/streamcut/jobs/1/exports/candidate-7.mp4",
-                "APPROVED",
+                "PENDING",
                 false
         ));
 
@@ -97,7 +105,7 @@ class ClipCandidateControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
                 .andExpect(jsonPath("$.id").value(7))
-                .andExpect(jsonPath("$.status").value("EXPORTING_CLIP"))
+                .andExpect(jsonPath("$.status").value("IN_PROGRESS"))
                 .andExpect(jsonPath("$.artifactPath").value("/var/lib/streamcut/jobs/1/exports/candidate-7.mp4"));
     }
 
@@ -106,9 +114,9 @@ class ClipCandidateControllerTest {
         when(vodJobService.getExportStatus(anyLong())).thenReturn(new ExportStatusResponse(
                 7L,
                 1L,
-                "EXPORTING_CLIP",
+                "IN_PROGRESS",
                 "/var/lib/streamcut/jobs/1/exports/candidate-7.mp4",
-                "APPROVED",
+                "PENDING",
                 false
         ));
 
@@ -116,8 +124,47 @@ class ClipCandidateControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
                 .andExpect(jsonPath("$.id").value(7))
-                .andExpect(jsonPath("$.status").value("EXPORTING_CLIP"))
+                .andExpect(jsonPath("$.status").value("IN_PROGRESS"))
                 .andExpect(jsonPath("$.artifactPath").value("/var/lib/streamcut/jobs/1/exports/candidate-7.mp4"));
+    }
+
+    @Test
+    void streamsSourceVideoInline(@TempDir Path tempDir) throws Exception {
+        Path source = tempDir.resolve("source-video.mp4");
+        Files.writeString(source, "video");
+        when(vodJobService.getJobSourceVideoPath(anyLong())).thenReturn(source);
+
+        ResponseEntity<StreamingResponseBody> response = controller.streamSourceVideo(1L, new HttpHeaders());
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getHeaders().getFirst(HttpHeaders.ACCEPT_RANGES)).isEqualTo("bytes");
+        assertThat(response.getHeaders().getFirst(HttpHeaders.CONTENT_DISPOSITION)).isEqualTo("inline; filename=\"source-video.mp4\"");
+        assertThat(response.getBody()).isNotNull();
+
+        ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+        response.getBody().writeTo(outputStream);
+        assertThat(outputStream.toString(java.nio.charset.StandardCharsets.UTF_8)).isEqualTo("video");
+    }
+
+    @Test
+    void streamsSourceVideoRangeRequest(@TempDir Path tempDir) throws Exception {
+        Path source = tempDir.resolve("source-video.mp4");
+        Files.writeString(source, "video");
+        when(vodJobService.getJobSourceVideoPath(anyLong())).thenReturn(source);
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.add(HttpHeaders.RANGE, "bytes=1-3");
+
+        ResponseEntity<StreamingResponseBody> response = controller.streamSourceVideo(1L, headers);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.PARTIAL_CONTENT);
+        assertThat(response.getHeaders().getFirst(HttpHeaders.ACCEPT_RANGES)).isEqualTo("bytes");
+        assertThat(response.getHeaders().getFirst(HttpHeaders.CONTENT_RANGE)).isEqualTo("bytes 1-3/5");
+        assertThat(response.getBody()).isNotNull();
+
+        ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+        response.getBody().writeTo(outputStream);
+        assertThat(outputStream.toString(java.nio.charset.StandardCharsets.UTF_8)).isEqualTo("ide");
     }
 
     @Test

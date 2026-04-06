@@ -349,16 +349,21 @@ class VodJobServiceTest {
     }
 
     @Test
-    void startExportRequiresApprovedCandidate() {
+    void startExportDoesNotRequireApprovedCandidate() {
         VodJob job = buildJob(1L, "https://example.com/video", Instant.parse("2026-04-05T10:00:00Z"));
         ClipCandidate candidate = ClipCandidate.create(job, 5.0, 12.0, 0.91, "first");
         candidate.setId(7L);
 
         when(clipCandidateRepository.findById(7L)).thenReturn(java.util.Optional.of(candidate));
+        when(storageService.resolveExportedClipPath(1L, 7L, ".mp4"))
+                .thenReturn(Path.of("/var/lib/streamcut/jobs/1/exports/candidate-7.mp4"));
+        when(clipCandidateRepository.save(candidate)).thenAnswer(invocation -> invocation.getArgument(0));
+        when(vodJobRepository.save(job)).thenAnswer(invocation -> invocation.getArgument(0));
 
-        assertThatThrownBy(() -> vodJobService.startExport(7L))
-                .isInstanceOf(ResponseStatusException.class)
-                .hasMessageContaining("Candidate must be approved before export: 7");
+        ExportStatusResponse response = vodJobService.startExport(7L);
+
+        assertThat(response.status()).isEqualTo("IN_PROGRESS");
+        assertThat(candidate.getExportStatus()).isEqualTo(ExportStatus.IN_PROGRESS);
     }
 
     @Test

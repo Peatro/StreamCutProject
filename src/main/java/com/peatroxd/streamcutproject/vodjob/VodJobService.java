@@ -42,6 +42,7 @@ import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.List;
@@ -206,12 +207,6 @@ public class VodJobService {
     public ExportStatusResponse startExport(Long candidateId) {
         ClipCandidate candidate = requireCandidate(candidateId);
         VodJob job = candidate.getVodJob();
-        if (candidate.getModerationStatus() != ModerationStatus.APPROVED) {
-            throw new ResponseStatusException(
-                    HttpStatus.CONFLICT,
-                    "Candidate must be approved before export: " + candidateId
-            );
-        }
         if (candidate.getExportStatus() == ExportStatus.IN_PROGRESS) {
             throw new ResponseStatusException(
                     HttpStatus.CONFLICT,
@@ -269,6 +264,27 @@ public class VodJobService {
             );
         }
         return reference;
+    }
+
+    @Transactional(readOnly = true)
+    public Path getJobSourceVideoPath(Long jobId) {
+        VodJob job = requireJob(jobId);
+        String storageVideoPath = job.getStorageVideoPath();
+        if (storageVideoPath == null || storageVideoPath.isBlank()) {
+            throw new ResponseStatusException(
+                    HttpStatus.NOT_FOUND,
+                    "Source video is not ready for job: " + jobId
+            );
+        }
+
+        Path path = Path.of(storageVideoPath);
+        if (!Files.exists(path)) {
+            throw new ResponseStatusException(
+                    HttpStatus.NOT_FOUND,
+                    "Source video not found for job: " + jobId
+            );
+        }
+        return path;
     }
 
     @Transactional

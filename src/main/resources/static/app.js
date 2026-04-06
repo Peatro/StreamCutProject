@@ -26,6 +26,39 @@
     job: initJobPage
   };
 
+  const activeWorkerStatuses = new Set([
+    "NEW",
+    "QUEUED",
+    "DOWNLOADING",
+    "EXTRACTING_AUDIO",
+    "TRANSCRIBING",
+    "DETECTING_SILENCE",
+    "ANALYZING_WINDOWS",
+    "GENERATING_CANDIDATES",
+    "EXPORTING_CLIP"
+  ]);
+
+  const terminalJobStatuses = new Set(["COMPLETED", "FAILED"]);
+
+  const liveUpdates = {
+    mode: null,
+    timerId: null,
+    inFlight: false,
+    snapshot: "",
+    root: null,
+    jobId: null,
+    interactionLock: false,
+    interactionReason: ""
+  };
+
+  const liveIntervals = {
+    fast: 4000,
+    steady: 12000,
+    hidden: 20000,
+    paused: 3000,
+    error: 6000
+  };
+
   document.addEventListener("DOMContentLoaded", () => {
     const page = document.body.dataset.page;
     const init = pages[page];
@@ -39,11 +72,19 @@
     }
   });
 
+  window.addEventListener("beforeunload", stopLiveUpdates);
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden && liveUpdates.mode && liveUpdates.root?.isConnected) {
+      scheduleLiveRefresh(250);
+    }
+  });
+
   async function initJobsPage() {
     const root = document.querySelector("[data-page-root]");
     root.innerHTML = renderLoading("Loading jobs...");
 
-    await renderJobsPage(root);
+    const jobs = await renderJobsPage(root);
+    startJobsLiveUpdates(root, jobs);
   }
 
   async function initJobPage() {
@@ -56,16 +97,12 @@
     }
 
     root.innerHTML = renderLoading("Loading job details...");
-    await renderJobPage(root, jobId);
+    const pageData = await renderJobPage(root, jobId);
+    startJobLiveUpdates(root, jobId, pageData);
   }
 
-  async function renderJobPage(root, jobId, flashMessage = null, flashType = "info") {
-    const [job, transcript, events, candidates] = await Promise.all([
-      api.getJob(jobId),
-      api.getTranscript(jobId),
-      api.getEvents(jobId),
-      api.getCandidates(jobId)
-    ]);
+  async function renderJobPage(root, jobId, flashMessage = null, flashType = "info", pageData = null) {
+    const { job, transcript, events, candidates } = pageData || await loadJobPageData(jobId);
 
     const candidateSummary = summarizeCandidates(candidates);
 
@@ -82,6 +119,7 @@
             <h2 style="margin-top: 12px; font-size: 1.6rem;">${escapeHtml(labelForJob(job))}</h2>
           </div>
           <div class="header-actions">
+            <span class="live-indicator" data-live-indicator>Live updates booting...</span>
             <button class="action-button action-button-neutral" type="button" data-page-refresh>Refresh</button>
             <span class="pill ${statusClass(job.status)}">${escapeHtml(job.status)}</span>
           </div>
@@ -126,7 +164,7 @@
           <div class="panel-header">
             <div>
               <h2>Transcript Preview</h2>
-              <p>First transcript segments ordered by start time.</p>
+              <p>Scan the first recovered segments and their coverage before you drill into clip candidates.</p>
             </div>
           </div>
           ${renderTranscript(transcript)}
@@ -135,7 +173,7 @@
           <div class="panel-header">
             <div>
               <h2>Job Events</h2>
-              <p>Pipeline and moderation history.</p>
+              <p>A chronological feed of ingest, analysis, moderation, and export signals.</p>
             </div>
           </div>
           ${renderEvents(events)}
@@ -146,19 +184,25 @@
         <div class="panel-header">
           <div>
             <h2>Candidate Review</h2>
-            <p>Approve, reject, and trigger export from the same surface.</p>
+            <p>Clip windows are ready to inspect immediately. Moderate only when you need curation, then download from the same surface.</p>
           </div>
         </div>
-        ${renderCandidates(candidates)}
+        ${renderCandidates(job, candidates)}
       </section>
     `;
 
     bindCandidateActions(root, jobId);
     bindJobPageActions(root, jobId);
+    bindCandidatePreviewPlayers(root);
+    syncLiveSnapshot("job", buildJobPageSnapshot(job, transcript, events, candidates), root, jobId);
+    if (liveUpdates.mode === "job" && String(liveUpdates.jobId) === String(jobId)) {
+      updateLiveIndicator(root, "live", describeJobLiveState(job, candidates));
+    }
+    return { job, transcript, events, candidates };
   }
 
-  async function renderJobsPage(root, flashMessage = null, flashType = "info") {
-    const jobs = await api.listJobs();
+  async function renderJobsPage(root, flashMessage = null, flashType = "info", jobsData = null) {
+    const jobs = jobsData || await api.listJobs();
     const summary = summarizeJobs(jobs);
 
     root.innerHTML = `
@@ -171,7 +215,10 @@
             <h2>Create Job</h2>
             <p>Submit a VOD URL or upload a local file.</p>
           </div>
-          <button class="action-button action-button-neutral" type="button" data-jobs-refresh>Refresh List</button>
+          <div class="header-actions">
+            <span class="live-indicator" data-live-indicator>Live updates booting...</span>
+            <button class="action-button action-button-neutral" type="button" data-jobs-refresh>Refresh List</button>
+          </div>
         </div>
         <div class="control-grid">
           <form class="action-form" data-url-job-form>
@@ -214,6 +261,11 @@
     `;
 
     bindJobsPageActions(root);
+    syncLiveSnapshot("jobs", buildJobsSnapshot(jobs), root);
+    if (liveUpdates.mode === "jobs") {
+      updateLiveIndicator(root, "live", describeJobsLiveState(jobs));
+    }
+    return jobs;
   }
 
   function bindJobsPageActions(root) {
@@ -222,6 +274,7 @@
     const uploadForm = root.querySelector("[data-upload-job-form]");
 
     refreshButton?.addEventListener("click", async () => {
+      setLiveInteractionLock(true, "Manual refresh in progress.");
       refreshButton.disabled = true;
       const previousLabel = refreshButton.textContent;
       refreshButton.textContent = "Refreshing...";
@@ -231,6 +284,8 @@
         showInlineBanner(root, error.message || "Unable to refresh jobs.", "error");
         refreshButton.disabled = false;
         refreshButton.textContent = previousLabel;
+      } finally {
+        setLiveInteractionLock(false);
       }
     });
 
@@ -246,6 +301,7 @@
         return;
       }
 
+      setLiveInteractionLock(true, "URL job creation in progress.");
       submitButton.disabled = true;
       const previousLabel = submitButton.textContent;
       submitButton.textContent = "Creating...";
@@ -258,6 +314,8 @@
         setFormMessage(message, error.message || "Unable to create URL job.", "error");
         submitButton.disabled = false;
         submitButton.textContent = previousLabel;
+      } finally {
+        setLiveInteractionLock(false);
       }
     });
 
@@ -273,6 +331,7 @@
         return;
       }
 
+      setLiveInteractionLock(true, "File upload in progress.");
       submitButton.disabled = true;
       const previousLabel = submitButton.textContent;
       submitButton.textContent = "Uploading...";
@@ -285,6 +344,8 @@
         setFormMessage(message, formatUploadErrorMessage(error), "error");
         submitButton.disabled = false;
         submitButton.textContent = previousLabel;
+      } finally {
+        setLiveInteractionLock(false);
       }
     });
   }
@@ -292,6 +353,7 @@
   function bindJobPageActions(root, jobId) {
     const refreshButton = root.querySelector("[data-page-refresh]");
     refreshButton?.addEventListener("click", async () => {
+      setLiveInteractionLock(true, "Manual refresh in progress.");
       refreshButton.disabled = true;
       const previousLabel = refreshButton.textContent;
       refreshButton.textContent = "Refreshing...";
@@ -301,6 +363,8 @@
         showInlineBanner(root, error.message || "Unable to refresh job.", "error");
         refreshButton.disabled = false;
         refreshButton.textContent = previousLabel;
+      } finally {
+        setLiveInteractionLock(false);
       }
     });
   }
@@ -314,6 +378,7 @@
         const message = candidateCard?.querySelector("[data-candidate-message]");
         const previousLabel = event.currentTarget.textContent;
 
+        setLiveInteractionLock(true, "Candidate action in progress.");
         event.currentTarget.disabled = true;
         event.currentTarget.textContent = "Working...";
         setCardMessage(message, "Processing action...");
@@ -335,18 +400,329 @@
             await renderJobPage(root, jobId, `Export started for candidate #${result.id}.`, "success");
             return;
           }
+          if (action === "download") {
+            const exportReady = event.currentTarget.dataset.exportReady === "true";
+            await prepareCandidateDownload(candidateId, message, root, jobId, exportReady);
+            return;
+          }
           throw new Error("Unknown action.");
         } catch (error) {
           setCardMessage(message, error.message || "Action failed.");
           event.currentTarget.disabled = false;
           event.currentTarget.textContent = previousLabel;
           showInlineBanner(root, error.message || "Action failed.", "error");
+        } finally {
+          setLiveInteractionLock(false);
         }
       });
     });
   }
 
-  function renderCandidates(candidates) {
+  async function loadJobPageData(jobId) {
+    const [job, transcript, events, candidates] = await Promise.all([
+      api.getJob(jobId),
+      api.getTranscript(jobId),
+      api.getEvents(jobId),
+      api.getCandidates(jobId)
+    ]);
+
+    return { job, transcript, events, candidates };
+  }
+
+  function startJobsLiveUpdates(root, jobs) {
+    stopLiveUpdates();
+    liveUpdates.mode = "jobs";
+    liveUpdates.root = root;
+    liveUpdates.snapshot = buildJobsSnapshot(jobs);
+    updateLiveIndicator(root, "live", describeJobsLiveState(jobs));
+    scheduleLiveRefresh(computeJobsLiveDelay(jobs));
+  }
+
+  function startJobLiveUpdates(root, jobId, pageData) {
+    stopLiveUpdates();
+    liveUpdates.mode = "job";
+    liveUpdates.root = root;
+    liveUpdates.jobId = String(jobId);
+    liveUpdates.snapshot = buildJobPageSnapshot(pageData.job, pageData.transcript, pageData.events, pageData.candidates);
+    updateLiveIndicator(root, "live", describeJobLiveState(pageData.job, pageData.candidates));
+    scheduleLiveRefresh(computeJobLiveDelay(pageData.job, pageData.candidates));
+  }
+
+  function stopLiveUpdates() {
+    if (liveUpdates.timerId) {
+      window.clearTimeout(liveUpdates.timerId);
+    }
+    liveUpdates.mode = null;
+    liveUpdates.timerId = null;
+    liveUpdates.inFlight = false;
+    liveUpdates.snapshot = "";
+    liveUpdates.root = null;
+    liveUpdates.jobId = null;
+    liveUpdates.interactionLock = false;
+    liveUpdates.interactionReason = "";
+  }
+
+  function scheduleLiveRefresh(delay) {
+    if (!liveUpdates.mode) {
+      return;
+    }
+    if (liveUpdates.timerId) {
+      window.clearTimeout(liveUpdates.timerId);
+    }
+    liveUpdates.timerId = window.setTimeout(() => {
+      if (liveUpdates.mode === "jobs") {
+        void runJobsLiveRefresh();
+        return;
+      }
+      if (liveUpdates.mode === "job") {
+        void runJobLiveRefresh();
+      }
+    }, delay);
+  }
+
+  async function runJobsLiveRefresh() {
+    if (liveUpdates.mode !== "jobs" || !liveUpdates.root?.isConnected) {
+      return;
+    }
+    if (liveUpdates.inFlight) {
+      scheduleLiveRefresh(liveIntervals.paused);
+      return;
+    }
+
+    const root = liveUpdates.root;
+    const initialPauseReason = getJobsLivePauseReason(root);
+    if (initialPauseReason) {
+      updateLiveIndicator(root, "paused", initialPauseReason);
+      scheduleLiveRefresh(liveIntervals.paused);
+      return;
+    }
+
+    liveUpdates.inFlight = true;
+    let jobs = null;
+
+    try {
+      jobs = await api.listJobs();
+      const snapshot = buildJobsSnapshot(jobs);
+      const currentPauseReason = getJobsLivePauseReason(root);
+      if (currentPauseReason) {
+        updateLiveIndicator(root, "paused", currentPauseReason);
+      } else if (snapshot !== liveUpdates.snapshot) {
+        await renderJobsPage(root, null, "info", jobs);
+        updateLiveIndicator(root, "live", `Worker activity detected. ${describeJobsLiveState(jobs)}`);
+      } else {
+        updateLiveIndicator(root, "live", describeJobsLiveState(jobs));
+      }
+    } catch (error) {
+      updateLiveIndicator(root, "error", `Live updates stalled: ${error.message || "request failed"}`);
+      scheduleLiveRefresh(liveIntervals.error);
+      liveUpdates.inFlight = false;
+      return;
+    }
+
+    liveUpdates.inFlight = false;
+    scheduleLiveRefresh(computeJobsLiveDelay(jobs || []));
+  }
+
+  async function runJobLiveRefresh() {
+    if (liveUpdates.mode !== "job" || !liveUpdates.root?.isConnected) {
+      return;
+    }
+    if (liveUpdates.inFlight) {
+      scheduleLiveRefresh(liveIntervals.paused);
+      return;
+    }
+
+    const root = liveUpdates.root;
+    const initialPauseReason = getJobLivePauseReason(root);
+    if (initialPauseReason) {
+      updateLiveIndicator(root, "paused", initialPauseReason);
+      scheduleLiveRefresh(liveIntervals.paused);
+      return;
+    }
+
+    liveUpdates.inFlight = true;
+    let pageData = null;
+
+    try {
+      pageData = await loadJobPageData(liveUpdates.jobId);
+      const snapshot = buildJobPageSnapshot(pageData.job, pageData.transcript, pageData.events, pageData.candidates);
+      const currentPauseReason = getJobLivePauseReason(root);
+      if (currentPauseReason) {
+        updateLiveIndicator(root, "paused", currentPauseReason);
+      } else if (snapshot !== liveUpdates.snapshot) {
+        await renderJobPage(root, liveUpdates.jobId, null, "info", pageData);
+        updateLiveIndicator(root, "live", `Worker activity detected. ${describeJobLiveState(pageData.job, pageData.candidates)}`);
+      } else {
+        updateLiveIndicator(root, "live", describeJobLiveState(pageData.job, pageData.candidates));
+      }
+    } catch (error) {
+      updateLiveIndicator(root, "error", `Live updates stalled: ${error.message || "request failed"}`);
+      scheduleLiveRefresh(liveIntervals.error);
+      liveUpdates.inFlight = false;
+      return;
+    }
+
+    liveUpdates.inFlight = false;
+    scheduleLiveRefresh(computeJobLiveDelay(pageData.job, pageData.candidates));
+  }
+
+  function buildJobsSnapshot(jobs) {
+    return JSON.stringify((jobs || []).map((job) => [
+      job.id,
+      job.status,
+      job.updatedAt,
+      job.finishedAt,
+      job.errorMessage,
+      job.storageVideoPath
+    ]));
+  }
+
+  function buildJobPageSnapshot(job, transcript, events, candidates) {
+    return JSON.stringify({
+      job: {
+        id: job?.id,
+        status: job?.status,
+        updatedAt: job?.updatedAt,
+        finishedAt: job?.finishedAt,
+        errorMessage: job?.errorMessage
+      },
+      transcript: (transcript || []).map((segment) => [
+        segment.startSec,
+        segment.endSec,
+        segment.text
+      ]),
+      events: (events || []).map((event) => [
+        event.id,
+        event.eventType,
+        event.createdAt,
+        event.message
+      ]),
+      candidates: (candidates || []).map((candidate) => [
+        candidate.id,
+        candidate.moderationStatus,
+        candidate.exportStatus,
+        candidate.exportReady,
+        candidate.moderatorNote
+      ])
+    });
+  }
+
+  function syncLiveSnapshot(mode, snapshot, root, jobId = null) {
+    if (liveUpdates.mode !== mode || liveUpdates.root !== root) {
+      return;
+    }
+    if (mode === "job" && String(liveUpdates.jobId) !== String(jobId)) {
+      return;
+    }
+    liveUpdates.snapshot = snapshot;
+  }
+
+  function setLiveInteractionLock(locked, reason = "") {
+    liveUpdates.interactionLock = locked;
+    liveUpdates.interactionReason = locked ? reason : "";
+  }
+
+  function getJobsLivePauseReason(root) {
+    if (liveUpdates.interactionLock) {
+      return liveUpdates.interactionReason || "Live updates paused while work is in progress.";
+    }
+
+    const fileInput = root.querySelector("input[name='file']");
+    if (fileInput?.files?.length) {
+      return "Live updates paused while a file is selected for upload.";
+    }
+
+    const urlInput = root.querySelector("input[name='url']");
+    if (urlInput && urlInput.value.trim()) {
+      return "Live updates paused while the URL form has unsaved input.";
+    }
+
+    const activeElement = document.activeElement;
+    if (activeElement && root.contains(activeElement) && ["INPUT", "TEXTAREA", "SELECT"].includes(activeElement.tagName)) {
+      return "Live updates paused while you are editing the form.";
+    }
+
+    return null;
+  }
+
+  function getJobLivePauseReason(root) {
+    if (liveUpdates.interactionLock) {
+      return liveUpdates.interactionReason || "Live updates paused while work is in progress.";
+    }
+
+    if (document.fullscreenElement && root.contains(document.fullscreenElement)) {
+      return "Live updates paused while video is in fullscreen.";
+    }
+
+    const previewPlaying = Array.from(root.querySelectorAll("[data-preview-video]"))
+      .some((video) => !video.paused || video.seeking);
+    if (previewPlaying) {
+      return "Live updates paused while clip preview is playing.";
+    }
+
+    return null;
+  }
+
+  function computeJobsLiveDelay(jobs) {
+    if (document.hidden) {
+      return liveIntervals.hidden;
+    }
+    return hasBackgroundActiveJobs(jobs) ? liveIntervals.fast : liveIntervals.steady;
+  }
+
+  function computeJobLiveDelay(job, candidates) {
+    if (document.hidden) {
+      return liveIntervals.hidden;
+    }
+    return hasBackgroundActiveJob(job, candidates) ? liveIntervals.fast : liveIntervals.steady;
+  }
+
+  function hasBackgroundActiveJobs(jobs) {
+    return (jobs || []).some((job) => activeWorkerStatuses.has(String(job.status || "").toUpperCase()));
+  }
+
+  function hasBackgroundActiveJob(job, candidates) {
+    const status = String(job?.status || "").toUpperCase();
+    if (activeWorkerStatuses.has(status)) {
+      return true;
+    }
+    return (candidates || []).some((candidate) => String(candidate.exportStatus || "").toUpperCase() === "IN_PROGRESS");
+  }
+
+  function describeJobsLiveState(jobs) {
+    const activeCount = (jobs || []).filter((job) => activeWorkerStatuses.has(String(job.status || "").toUpperCase())).length;
+    if (activeCount > 0) {
+      return `Watching ${activeCount} active job${activeCount === 1 ? "" : "s"} for worker updates. Last check ${formatLiveClock()}.`;
+    }
+    return `Watching the queue for new activity. Last check ${formatLiveClock()}.`;
+  }
+
+  function describeJobLiveState(job, candidates) {
+    if (hasBackgroundActiveJob(job, candidates)) {
+      return `Watching this job for worker updates. Last check ${formatLiveClock()}.`;
+    }
+    if (!terminalJobStatuses.has(String(job?.status || "").toUpperCase())) {
+      return `Watching this job for moderation changes. Last check ${formatLiveClock()}.`;
+    }
+    return `Watching this job at a low cadence. Last check ${formatLiveClock()}.`;
+  }
+
+  function updateLiveIndicator(root, state, message) {
+    const indicator = root.querySelector("[data-live-indicator]");
+    if (!indicator) {
+      return;
+    }
+    indicator.dataset.state = state;
+    indicator.textContent = message;
+  }
+
+  function formatLiveClock() {
+    return new Intl.DateTimeFormat(undefined, {
+      timeStyle: "short"
+    }).format(new Date());
+  }
+
+  function renderCandidates(job, candidates) {
     if (!candidates.length) {
       return `<div class="empty-state">No candidates available yet.</div>`;
     }
@@ -355,16 +731,29 @@
       <div class="stack">
         ${candidates.map((candidate) => `
           <article class="candidate-card" data-candidate-card>
-            ${candidate.exportReady ? `
-              <div class="candidate-preview-shell">
+            <div class="candidate-preview-shell" data-preview-shell data-preview-state="loading">
+              <div class="candidate-preview-head">
+                <span class="candidate-preview-chip">Instant preview</span>
+                <span class="candidate-preview-chip candidate-preview-chip-muted">${timeRange(candidate.startSec, candidate.endSec)}</span>
+              </div>
+              <div class="candidate-preview-stage">
                 <video
                   class="candidate-preview"
                   controls
                   preload="metadata"
                   playsinline
-                  src="/api/exports/${encodeURIComponent(candidate.id)}/stream"></video>
+                  data-preview-video
+                  data-preview-start-sec="${escapeHtml(candidate.startSec)}"
+                  data-preview-end-sec="${escapeHtml(candidate.endSec)}"
+                  src="/api/jobs/${encodeURIComponent(job.id)}/source/stream"></video>
               </div>
-            ` : ""}
+              <div class="candidate-preview-foot">
+                <div class="candidate-preview-progress" aria-hidden="true">
+                  <span class="candidate-preview-progress-bar"></span>
+                </div>
+                <div class="candidate-preview-note" data-preview-note>Loading clip window...</div>
+              </div>
+            </div>
             <div class="candidate-top">
               <div>
                 <strong>${timeRange(candidate.startSec, candidate.endSec)}</strong>
@@ -377,13 +766,13 @@
               <span>${escapeHtml(candidate.moderatorNote || "No moderator note yet.")}</span>
               <span>${candidate.exportReady
                 ? `<a href="/api/exports/${encodeURIComponent(candidate.id)}/file">Download clip</a>`
-                : (candidate.exportedClipPath ? "Export in progress" : "Not exported")}</span>
+                : (candidate.exportStatus === "IN_PROGRESS" ? "Clip is being prepared" : "Click download to prepare the clip")}</span>
             </div>
             ${renderCandidateRuntimeState(candidate)}
             <div class="candidate-actions">
               <button class="action-button action-button-approve" type="button" data-candidate-action="approve" data-candidate-id="${escapeHtml(candidate.id)}" ${candidate.moderationStatus === "APPROVED" ? "disabled" : ""}>Approve</button>
               <button class="action-button action-button-reject" type="button" data-candidate-action="reject" data-candidate-id="${escapeHtml(candidate.id)}" ${candidate.moderationStatus === "REJECTED" ? "disabled" : ""}>Reject</button>
-              <button class="action-button action-button-export" type="button" data-candidate-action="export" data-candidate-id="${escapeHtml(candidate.id)}" ${candidate.moderationStatus !== "APPROVED" || candidate.exportedClipPath ? "disabled" : ""}>Export</button>
+              <button class="action-button action-button-export" type="button" data-candidate-action="download" data-candidate-id="${escapeHtml(candidate.id)}" data-export-ready="${candidate.exportReady}" ${candidate.exportStatus === "IN_PROGRESS" ? "disabled" : ""}>Download</button>
             </div>
             <div class="candidate-message" data-candidate-message></div>
           </article>
@@ -452,17 +841,17 @@
       return `
         <div class="runtime-state runtime-state-ready">
           <span class="runtime-dot"></span>
-          <span>Export artifact is ready.</span>
+          <span>Clip file is ready to download.</span>
         </div>
       `;
     }
 
-    if (candidate.exportedClipPath) {
+    if (candidate.exportStatus === "IN_PROGRESS") {
       return `
         <div class="runtime-progress" aria-label="Export in progress">
           <div class="runtime-progress-head">
             <div class="runtime-spinner" aria-hidden="true"></div>
-            <span>Worker is exporting this clip</span>
+            <span>Worker is preparing this clip for download</span>
           </div>
           <div class="runtime-progress-track" aria-hidden="true">
             <div class="runtime-progress-bar"></div>
@@ -472,6 +861,160 @@
     }
 
     return "";
+  }
+
+  function bindCandidatePreviewPlayers(root) {
+    root.querySelectorAll("[data-preview-video]").forEach((video) => {
+      const shell = video.closest("[data-preview-shell]");
+      const note = shell?.querySelector("[data-preview-note]");
+      const startSec = Number(video.dataset.previewStartSec || "0");
+      const endSec = Number(video.dataset.previewEndSec || "0");
+      if (Number.isNaN(startSec) || Number.isNaN(endSec) || endSec <= startSec) {
+        if (shell) {
+          shell.dataset.previewState = "error";
+        }
+        if (note) {
+          note.textContent = "Preview window is unavailable for this candidate.";
+        }
+        return;
+      }
+
+      const clipStart = Math.max(0, startSec + 0.01);
+      const clipDuration = Math.max(endSec - startSec, 0.01);
+      const readyMessage = "Press play to inspect this clip window. Scrubbing stays inside the selected range.";
+      const playingMessage = "Playback is constrained to this clip window.";
+      const pausedMessage = "Preview paused inside the clip window.";
+      const replayMessage = "Clip window finished. Press play to replay it from the start.";
+      const clampedMessage = "Playback is limited to the selected clip window.";
+      let internalPause = false;
+
+      const setPreviewState = (state, message) => {
+        if (shell) {
+          shell.dataset.previewState = state;
+        }
+        if (note) {
+          note.textContent = message;
+        }
+      };
+
+      const updateProgress = () => {
+        const progress = Math.max(0, Math.min((video.currentTime - startSec) / clipDuration, 1));
+        if (shell) {
+          shell.style.setProperty("--preview-progress", `${Math.round(progress * 100)}%`);
+        }
+      };
+
+      const seekToClipStart = (force = false) => {
+        try {
+          if (force || video.currentTime < startSec || video.currentTime > endSec || Math.abs(video.currentTime - clipStart) > 0.05) {
+            video.currentTime = clipStart;
+          }
+        } catch (error) {
+          void error;
+        }
+        updateProgress();
+      };
+
+      const clampToClipWindow = () => {
+        if (video.currentTime < startSec) {
+          seekToClipStart(true);
+          return true;
+        }
+        if (video.currentTime > endSec) {
+          seekToClipStart(true);
+          return true;
+        }
+        updateProgress();
+        return false;
+      };
+
+      setPreviewState("loading", "Loading clip window...");
+      video.addEventListener("loadedmetadata", () => {
+        seekToClipStart(true);
+        setPreviewState("ready", readyMessage);
+      });
+      video.addEventListener("loadeddata", () => {
+        seekToClipStart(true);
+        setPreviewState("ready", readyMessage);
+      });
+      video.addEventListener("canplay", () => {
+        setPreviewState("ready", readyMessage);
+      });
+      video.addEventListener("play", () => {
+        clampToClipWindow();
+        setPreviewState("playing", playingMessage);
+      });
+      video.addEventListener("pause", () => {
+        if (internalPause) {
+          return;
+        }
+        setPreviewState("paused", pausedMessage);
+      });
+      video.addEventListener("seeking", () => {
+        if (clampToClipWindow()) {
+          setPreviewState("paused", clampedMessage);
+        }
+      });
+      video.addEventListener("timeupdate", () => {
+        updateProgress();
+        if (video.currentTime >= endSec - 0.05) {
+          internalPause = true;
+          video.pause();
+          internalPause = false;
+          seekToClipStart(true);
+          setPreviewState("ready", replayMessage);
+        }
+      });
+      video.addEventListener("ended", () => {
+        seekToClipStart(true);
+        setPreviewState("ready", replayMessage);
+      });
+      video.addEventListener("error", () => {
+        if (shell) {
+          shell.dataset.previewState = "error";
+        }
+        if (note) {
+          note.textContent = "Preview could not be loaded. Refresh the page and try again.";
+        }
+      });
+    });
+  }
+
+  async function prepareCandidateDownload(candidateId, message, root, jobId, exportReady) {
+    if (exportReady) {
+      window.location.href = `/api/exports/${encodeURIComponent(candidateId)}/file`;
+      return;
+    }
+
+    setCardMessage(message, "Preparing clip for download...");
+
+    let exportState = await api.exportCandidate(candidateId);
+    if (exportState.exportReady) {
+      window.location.href = `/api/exports/${encodeURIComponent(candidateId)}/file`;
+      await renderJobPage(root, jobId, `Clip for candidate #${candidateId} downloaded.`, "success");
+      return;
+    }
+
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      await wait(1500);
+      exportState = await fetchJson(`/api/exports/${encodeURIComponent(candidateId)}`);
+      if (exportState.exportReady) {
+        window.location.href = `/api/exports/${encodeURIComponent(candidateId)}/file`;
+        await renderJobPage(root, jobId, `Clip for candidate #${candidateId} is ready.`, "success");
+        return;
+      }
+      if (String(exportState.status || "").toUpperCase() === "FAILED") {
+        throw new Error("Clip export failed. Check the job failure reason and retry.");
+      }
+    }
+
+    throw new Error("Clip is still being prepared. Refresh the page and try download again.");
+  }
+
+  function wait(ms) {
+    return new Promise((resolve) => {
+      window.setTimeout(resolve, ms);
+    });
   }
 
   function renderJobsTable(jobs) {
@@ -512,16 +1055,33 @@
       return `<div class="empty-state">Transcript is empty or not ready yet.</div>`;
     }
 
+    const visibleSegments = transcript.slice(0, 8);
+    const firstSegment = visibleSegments[0];
+    const lastSegment = visibleSegments[visibleSegments.length - 1];
+
     return `
+      <div class="panel-micro-grid">
+        <article class="micro-card">
+          <span class="micro-card-label">Visible</span>
+          <strong class="micro-card-value">${visibleSegments.length}/${transcript.length}</strong>
+        </article>
+        <article class="micro-card">
+          <span class="micro-card-label">Coverage</span>
+          <strong class="micro-card-value micro-card-value-compact">${timeRange(firstSegment.startSec, lastSegment.endSec)}</strong>
+        </article>
+      </div>
       <div class="transcript-preview">
-        ${transcript.slice(0, 8).map((segment) => `
+        ${visibleSegments.map((segment, index) => `
           <article class="transcript-line">
-            <span class="transcript-time">${timeRange(segment.startSec, segment.endSec)}</span>
-            <div>${escapeHtml(segment.text || "")}</div>
+            <div class="transcript-line-meta">
+              <span class="transcript-index">S${String(index + 1).padStart(2, "0")}</span>
+              <span class="transcript-time">${timeRange(segment.startSec, segment.endSec)}</span>
+            </div>
+            <div class="transcript-copy">${escapeHtml(segment.text || "")}</div>
           </article>
         `).join("")}
       </div>
-      <div class="footer-note">Showing ${Math.min(transcript.length, 8)} of ${transcript.length} segments.</div>
+      <div class="footer-note">Showing ${visibleSegments.length} of ${transcript.length} segments.</div>
     `;
   }
 
@@ -530,15 +1090,33 @@
       return `<div class="empty-state">No job events recorded yet.</div>`;
     }
 
+    const latestEvent = events[events.length - 1];
+
     return `
-      <div class="stack">
-        ${events.map((event) => `
-          <article class="event-card">
-            <div class="event-top">
-              <strong>${escapeHtml(event.eventType)}</strong>
-              <span class="muted">${escapeHtml(formatDate(event.createdAt))}</span>
+      <div class="panel-micro-grid">
+        <article class="micro-card">
+          <span class="micro-card-label">Recorded</span>
+          <strong class="micro-card-value">${events.length}</strong>
+        </article>
+        <article class="micro-card">
+          <span class="micro-card-label">Latest</span>
+          <strong class="micro-card-value micro-card-value-compact">${escapeHtml(formatEventType(latestEvent.eventType))}</strong>
+        </article>
+      </div>
+      <div class="event-feed">
+        ${events.map((event, index) => `
+          <article class="event-row">
+            <div class="event-rail" aria-hidden="true">
+              <span class="event-node ${eventToneClass(event.eventType)}"></span>
+              ${index === events.length - 1 ? "" : '<span class="event-rail-line"></span>'}
             </div>
-            <p class="muted" style="margin: 10px 0 0;">${escapeHtml(event.message || "")}</p>
+            <div class="event-card ${eventToneClass(event.eventType)}">
+              <div class="event-meta">
+                <span class="event-type-pill ${eventToneClass(event.eventType)}">${escapeHtml(formatEventType(event.eventType))}</span>
+                <span class="event-time">${escapeHtml(formatDate(event.createdAt))}</span>
+              </div>
+              <p class="event-message">${escapeHtml(event.message || "No event message recorded.")}</p>
+            </div>
           </article>
         `).join("")}
       </div>
@@ -603,6 +1181,32 @@
     return `status-${String(status || "").toLowerCase()}`;
   }
 
+  function formatEventType(eventType) {
+    const value = String(eventType || "").trim();
+    if (!value) {
+      return "Event";
+    }
+    return value
+      .toLowerCase()
+      .split("_")
+      .map((part) => part ? `${part.charAt(0).toUpperCase()}${part.slice(1)}` : "")
+      .join(" ");
+  }
+
+  function eventToneClass(eventType) {
+    const value = String(eventType || "").toUpperCase();
+    if (value.includes("FAILED") || value.includes("REJECTED")) {
+      return "tone-danger";
+    }
+    if (value.includes("READY") || value.includes("COMPLETED")) {
+      return "tone-success";
+    }
+    if (value.includes("QUEUED") || value.includes("CLAIMED") || value.includes("EXPORT") || value.includes("STARTED")) {
+      return "tone-accent";
+    }
+    return "tone-muted";
+  }
+
   function formatScore(score) {
     if (score === null || score === undefined || Number.isNaN(Number(score))) {
       return "n/a";
@@ -640,11 +1244,36 @@
     }).format(date);
   }
 
+  function formatClipTimestamp(seconds) {
+    if (seconds === null || seconds === undefined) {
+      return "n/a";
+    }
+
+    const total = Number(seconds);
+    if (Number.isNaN(total)) {
+      return String(seconds);
+    }
+
+    const safeTotal = Math.max(0, total);
+    const hours = Math.floor(safeTotal / 3600);
+    const minutes = Math.floor((safeTotal % 3600) / 60);
+    const secondsPart = safeTotal % 60;
+    const wholeSeconds = Math.floor(secondsPart);
+    const tenths = Math.floor((secondsPart - wholeSeconds) * 10);
+    const secondLabel = `${String(wholeSeconds).padStart(2, "0")}.${tenths}`;
+
+    if (hours > 0) {
+      return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${secondLabel}`;
+    }
+
+    return `${String(minutes).padStart(2, "0")}:${secondLabel}`;
+  }
+
   function timeRange(startSec, endSec) {
     if (startSec === null || startSec === undefined || endSec === null || endSec === undefined) {
       return "n/a";
     }
-    return `${Number(startSec).toFixed(2)}s - ${Number(endSec).toFixed(2)}s`;
+    return `${formatClipTimestamp(startSec)} - ${formatClipTimestamp(endSec)}`;
   }
 
   async function fetchJson(url) {
