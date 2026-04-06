@@ -26,14 +26,28 @@ This is the explicit MVP upload policy for `POST /api/jobs/upload`.
 3. Open the backend on `http://localhost:8080`.
 4. Use `docker compose logs -f backend worker postgres` to follow startup and runtime output.
 
-## Required Environment
+## Runtime Profiles
+- `local` is the default Spring profile and is the profile used by `docker-compose.yml`.
+- `prod` is the explicit deployment profile for `v1.0.0` and later service environments.
+- Checked-in defaults are allowed only for the `local` profile.
+- Production secrets and deployment-specific values must come from environment variables or the deploy system, not from repo-managed source files.
+
+## Local Runtime Contract
 Backend:
+- `SPRING_PROFILES_ACTIVE=local`
 - `SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/streamcut`
 - `SPRING_DATASOURCE_USERNAME=streamcut`
 - `SPRING_DATASOURCE_PASSWORD=streamcut`
 - `APP_STORAGE_LOCAL_ROOT=/data/storage`
 - `APP_OPERATOR_USERNAME=operator`
 - `APP_OPERATOR_PASSWORD=operator-password`
+- `APP_ARTIFACT_STORAGE_MODE=S3`
+- `APP_ARTIFACT_STORAGE_ENDPOINT=http://minio:9000`
+- `APP_ARTIFACT_STORAGE_PUBLIC_ENDPOINT=http://localhost:9000`
+- `APP_ARTIFACT_STORAGE_REGION=us-east-1`
+- `APP_ARTIFACT_STORAGE_ACCESS_KEY=minioadmin`
+- `APP_ARTIFACT_STORAGE_SECRET_KEY=minioadmin`
+- `APP_ARTIFACT_STORAGE_BUCKET=streamcut-artifacts`
 
 Worker:
 - `APP_STORAGE_LOCAL_ROOT=/data/storage`
@@ -43,6 +57,30 @@ PostgreSQL:
 - `POSTGRES_DB=streamcut`
 - `POSTGRES_USER=streamcut`
 - `POSTGRES_PASSWORD=streamcut`
+
+## Production Runtime Contract
+- The backend must run with `SPRING_PROFILES_ACTIVE=prod`.
+- Production runtime values must be supplied explicitly; `application-prod.yaml` no longer carries repo-managed fallback credentials or storage paths.
+- The current example contract lives in `env.production.example`.
+- Required backend environment for `prod`:
+  - `SPRING_PROFILES_ACTIVE=prod`
+  - `SPRING_DATASOURCE_URL`
+  - `SPRING_DATASOURCE_USERNAME`
+  - `SPRING_DATASOURCE_PASSWORD`
+  - `APP_STORAGE_LOCAL_ROOT`
+  - `APP_OPERATOR_USERNAME`
+  - `APP_OPERATOR_PASSWORD`
+  - `APP_ARTIFACT_STORAGE_MODE`
+  - `APP_ARTIFACT_STORAGE_ENDPOINT`
+  - `APP_ARTIFACT_STORAGE_PUBLIC_ENDPOINT`
+  - `APP_ARTIFACT_STORAGE_ACCESS_KEY`
+  - `APP_ARTIFACT_STORAGE_SECRET_KEY`
+  - `APP_ARTIFACT_STORAGE_BUCKET`
+- Optional production backend environment with intentional defaults:
+  - `SPRING_DATASOURCE_DRIVER_CLASS_NAME` defaults to `org.postgresql.Driver`
+  - `APP_ARTIFACT_STORAGE_REGION` defaults to `us-east-1`
+  - `APP_ARTIFACT_STORAGE_PRESIGN_TTL` defaults to `15m`
+- In `S3` mode, missing endpoint, public endpoint, access key, secret key, or bucket should now fail startup instead of silently falling back.
 
 ## Logging Expectations
 - Backend and worker must log to stdout only in local runtime.
@@ -57,7 +95,7 @@ PostgreSQL:
 ## Operator Authentication
 - Operator access uses Spring Security form login with a session cookie.
 - The public bootstrap page is `/login.html`, which fetches `/csrf` and posts credentials to `/login`.
-- Operator credentials are configured through environment variables:
+- Operator credentials are configured through environment variables in both profiles:
   - `APP_OPERATOR_USERNAME`
   - `APP_OPERATOR_PASSWORD`
 - Protected surfaces include the dashboard pages, operator-facing `/api/**` endpoints, and artifact download/stream endpoints.
@@ -87,6 +125,7 @@ PostgreSQL:
 - The current Docker image strategy is acceptable for the MVP, but it is intentionally not production-grade.
 - `Dockerfile.backend` and `worker/Dockerfile` currently use `postgres:15` as a base image and layer the runtime they need on top of it.
 - That choice is a convenience compromise for the current MVP. It keeps the stack reproducible and already validated locally, but it should be revisited before any real deployment hardening.
+- `docker-compose.yml` is explicitly the local-runtime path; it should not be treated as a production deploy manifest.
 - MinIO is the artifact store for exports in the local Docker stack, and the backend is configured to talk to it via the internal service endpoint while serving public artifact URLs back through `localhost:9000`.
 - Named volumes are part of the runtime contract:
   - `streamcut-postgres` holds the database state

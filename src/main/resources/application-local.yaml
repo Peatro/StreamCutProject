@@ -1,0 +1,24 @@
+spring:
+  config:
+    activate:
+      on-profile: local
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/streamcut}
+    username: ${SPRING_DATASOURCE_USERNAME:streamcut}
+    password: ${SPRING_DATASOURCE_PASSWORD:streamcut}
+    driver-class-name: ${SPRING_DATASOURCE_DRIVER_CLASS_NAME:org.postgresql.Driver}
+app:
+  security:
+    operator-username: ${APP_OPERATOR_USERNAME:operator}
+    operator-password: ${APP_OPERATOR_PASSWORD:operator-password}
+  storage:
+    local-root: ${APP_STORAGE_LOCAL_ROOT:data/storage}
+  artifact-storage:
+    mode: ${APP_ARTIFACT_STORAGE_MODE:LOCAL}
+    endpoint: ${APP_ARTIFACT_STORAGE_ENDPOINT:}
+    public-endpoint: ${APP_ARTIFACT_STORAGE_PUBLIC_ENDPOINT:}
+    region: ${APP_ARTIFACT_STORAGE_REGION:us-east-1}
+    access-key: ${APP_ARTIFACT_STORAGE_ACCESS_KEY:}
+    secret-key: ${APP_ARTIFACT_STORAGE_SECRET_KEY:}
+    bucket: ${APP_ARTIFACT_STORAGE_BUCKET:streamcut-artifacts}
+    presign-ttl: ${APP_ARTIFACT_STORAGE_PRESIGN_TTL:15m}

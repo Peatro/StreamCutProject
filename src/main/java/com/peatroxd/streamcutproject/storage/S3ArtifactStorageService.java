@@ -244,11 +244,17 @@ public class S3ArtifactStorageService implements ArtifactStorageService {
         if (properties.getEndpoint() == null) {
             throw new IllegalStateException("app.artifact-storage.endpoint must be configured in S3 mode");
         }
+        if (properties.getPublicEndpoint() == null) {
+            throw new IllegalStateException("app.artifact-storage.public-endpoint must be configured in S3 mode");
+        }
         if (properties.getAccessKey() == null || properties.getAccessKey().isBlank()) {
             throw new IllegalStateException("app.artifact-storage.access-key must be configured in S3 mode");
         }
         if (properties.getSecretKey() == null || properties.getSecretKey().isBlank()) {
             throw new IllegalStateException("app.artifact-storage.secret-key must be configured in S3 mode");
+        }
+        if (properties.getBucket() == null || properties.getBucket().isBlank()) {
+            throw new IllegalStateException("app.artifact-storage.bucket must be configured in S3 mode");
         }
     }
 }
