@@ -48,3 +48,23 @@ The current MVP has no access control. That is acceptable for local validation, 
 
 ## Notes
 One clearly documented operator role is sufficient for `v1.0.0` if it protects the service and avoids fake complexity.
+
+## Implementation Notes
+- Auth shape: Spring Security form login + session cookie.
+- CSRF bootstrap: public `/csrf` endpoint plus `X-XSRF-TOKEN` on operator POSTs from the static app.
+- Public surfaces retained: `/health` and `/api/internal/worker/**`.
+- Follow-up hardening for machine auth can move to `TASK-056` if needed.
+
+## Verified On 2026-04-06
+- Focused security integration test passed: `./gradlew test --tests com.peatroxd.streamcutproject.config.SecurityConfigurationIntegrationTest --no-configuration-cache`
+- Full backend test suite passed: `./gradlew test --no-configuration-cache`
+- Live Docker smoke confirmed:
+  - `/health` remained public
+  - `/index.html` redirected to `/login.html` without an operator session
+  - `/login.html` loaded successfully
+  - `/csrf` returned a token and `XSRF-TOKEN` cookie
+  - authenticated session access to `/api/jobs` returned `200`
+
+## Residual Notes
+- Operator logout UX is still minimal and can be improved later without changing the auth model.
+- Worker transport remains public in `TASK-055` by design; stronger machine-auth hardening should move to `TASK-056`.

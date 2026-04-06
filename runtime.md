@@ -32,6 +32,8 @@ Backend:
 - `SPRING_DATASOURCE_USERNAME=streamcut`
 - `SPRING_DATASOURCE_PASSWORD=streamcut`
 - `APP_STORAGE_LOCAL_ROOT=/data/storage`
+- `APP_OPERATOR_USERNAME=operator`
+- `APP_OPERATOR_PASSWORD=operator-password`
 
 Worker:
 - `APP_STORAGE_LOCAL_ROOT=/data/storage`
@@ -51,6 +53,17 @@ PostgreSQL:
 - Failure logs should include the affected stage or `failedState` where applicable so QA can correlate backend state with worker output.
 - Use `jobId=` in backend and worker logs as the primary trace key for one pipeline run.
 - Expected lifecycle markers include `job_created`, `job_queued`, `job_claimed`, `job_result_ingested`, `export_started`, `export_completed`, and `job_failed`.
+
+## Operator Authentication
+- Operator access uses Spring Security form login with a session cookie.
+- The public bootstrap page is `/login.html`, which fetches `/csrf` and posts credentials to `/login`.
+- Operator credentials are configured through environment variables:
+  - `APP_OPERATOR_USERNAME`
+  - `APP_OPERATOR_PASSWORD`
+- Protected surfaces include the dashboard pages, operator-facing `/api/**` endpoints, and artifact download/stream endpoints.
+- `/health` stays public.
+- `/api/internal/worker/**` stays public for now so worker transport is not blocked in `TASK-055`; machine auth can be handled in `TASK-056`.
+- The static frontend sends `X-XSRF-TOKEN` on operator POST requests after bootstrapping the CSRF token from `/csrf`.
 
 ## Cleanup Policy
 - Temporary build artifacts must stay out of git. The existing `.dockerignore` files already exclude common caches and build outputs.

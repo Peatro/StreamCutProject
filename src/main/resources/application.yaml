@@ -17,6 +17,9 @@ spring:
     init:
       mode: never
 app:
+  security:
+    operator-username: ${APP_OPERATOR_USERNAME:operator}
+    operator-password: ${APP_OPERATOR_PASSWORD:operator-password}
   storage:
     local-root: ${APP_STORAGE_LOCAL_ROOT:data/storage}
   artifact-storage:

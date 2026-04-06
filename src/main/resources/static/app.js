@@ -26,6 +26,11 @@
     job: initJobPage
   };
 
+  const authState = {
+    csrfToken: null,
+    csrfPromise: null
+  };
+
   const activeWorkerStatuses = new Set([
     "NEW",
     "QUEUED",
@@ -1282,6 +1287,9 @@
         Accept: "application/json"
       }
     });
+    if (handleAuthFailure(response)) {
+      throw new Error("Authentication required.");
+    }
     if (!response.ok) {
       throw new Error(await readErrorMessage(response));
     }
@@ -1289,14 +1297,19 @@
   }
 
   async function postJson(url, options = {}) {
+    const csrfToken = await getCsrfToken();
     const response = await fetch(url, {
       method: "POST",
       headers: {
         Accept: "application/json",
+        "X-XSRF-TOKEN": csrfToken,
         ...(options.headers || {})
       },
       body: options.body
     });
+    if (handleAuthFailure(response)) {
+      throw new Error("Authentication required.");
+    }
     if (!response.ok) {
       throw new Error(await readErrorMessage(response));
     }
@@ -1304,17 +1317,68 @@
   }
 
   async function postMultipart(url, formData) {
+    const csrfToken = await getCsrfToken();
     const response = await fetch(url, {
       method: "POST",
       headers: {
-        Accept: "application/json"
+        Accept: "application/json",
+        "X-XSRF-TOKEN": csrfToken
       },
       body: formData
     });
+    if (handleAuthFailure(response)) {
+      throw new Error("Authentication required.");
+    }
     if (!response.ok) {
       throw new Error(await readErrorMessage(response));
     }
     return response.json();
+  }
+
+  async function getCsrfToken() {
+    if (authState.csrfToken) {
+      return authState.csrfToken;
+    }
+
+    const cookieToken = readCookie("XSRF-TOKEN");
+    if (cookieToken) {
+      authState.csrfToken = cookieToken;
+      return cookieToken;
+    }
+
+    if (!authState.csrfPromise) {
+      authState.csrfPromise = fetch("/csrf", {
+        headers: {
+          Accept: "application/json"
+        }
+      })
+        .then(async (response) => {
+          if (!response.ok) {
+            throw new Error("Unable to bootstrap the login session.");
+          }
+          return response.json();
+        })
+        .then((payload) => {
+          authState.csrfToken = payload.token;
+          return payload.token;
+        })
+        .finally(() => {
+          authState.csrfPromise = null;
+        });
+    }
+
+    return authState.csrfPromise;
+  }
+
+  function handleAuthFailure(response) {
+    if (response.status !== 401 && response.status !== 403) {
+      return false;
+    }
+
+    const loginUrl = new URL("/login.html", window.location.origin);
+    loginUrl.searchParams.set("reason", "session");
+    window.location.assign(loginUrl.toString());
+    return true;
   }
 
   async function readErrorMessage(response) {
@@ -1344,6 +1408,17 @@
 
   function renderError(message) {
     return `<div class="error-state">${escapeHtml(message)}</div>`;
+  }
+
+  function readCookie(name) {
+    const cookies = document.cookie ? document.cookie.split(";") : [];
+    for (const cookie of cookies) {
+      const [rawName, ...rawValueParts] = cookie.trim().split("=");
+      if (rawName === name) {
+        return decodeURIComponent(rawValueParts.join("="));
+      }
+    }
+    return null;
   }
 
   function escapeHtml(value) {

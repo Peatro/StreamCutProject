@@ -1,0 +1,169 @@
+package com.peatroxd.streamcutproject.config;
+
+import com.peatroxd.streamcutproject.vodjob.VodJobService;
+import com.peatroxd.streamcutproject.vodjob.api.JobListItemResponse;
+import com.peatroxd.streamcutproject.vodjob.api.JobSummaryResponse;
+import com.peatroxd.streamcutproject.workerdispatch.WorkerDispatchPayload;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Primary;
+import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockHttpSession;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.web.context.WebApplicationContext;
+
+import java.time.Instant;
+import java.util.List;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.when;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
+import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.redirectedUrl;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+
+@SpringBootTest(properties = {
+        "spring.datasource.url=jdbc:h2:mem:streamcut-security;MODE=PostgreSQL;DB_CLOSE_DELAY=-1",
+        "spring.datasource.driver-class-name=org.h2.Driver",
+        "spring.datasource.username=sa",
+        "spring.datasource.password="
+})
+class SecurityConfigurationIntegrationTest {
+
+    @TestConfiguration
+    static class TestBeans {
+        @Bean
+        @Primary
+        VodJobService vodJobService() {
+            return Mockito.mock(VodJobService.class);
+        }
+    }
+
+    @Autowired
+    private WebApplicationContext webApplicationContext;
+
+    @Autowired
+    private VodJobService vodJobService;
+
+    private MockMvc mockMvc;
+
+    @BeforeEach
+    void setUp() {
+        mockMvc = MockMvcBuilders.webAppContextSetup(webApplicationContext)
+                .apply(springSecurity())
+                .build();
+    }
+
+    @Test
+    void redirectsUnauthenticatedBrowserAccessToLoginPage() throws Exception {
+        mockMvc.perform(get("/index.html"))
+                .andExpect(status().isFound())
+                .andExpect(redirectedUrl("/login.html"));
+    }
+
+    @Test
+    void returnsStableJsonErrorForUnauthenticatedApiAccess() throws Exception {
+        mockMvc.perform(get("/api/jobs"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.status").value(401))
+                .andExpect(jsonPath("$.message").value("Authentication required."))
+                .andExpect(jsonPath("$.path").value("/api/jobs"));
+    }
+
+    @Test
+    void exposesCsrfBootstrapPublicly() throws Exception {
+        mockMvc.perform(get("/csrf"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.token").isNotEmpty());
+    }
+
+    @Test
+    void authenticatesOperatorAndAllowsProtectedApiAccess() throws Exception {
+        when(vodJobService.listJobs()).thenReturn(List.of(
+                new JobListItemResponse(
+                        1L,
+                        "URL",
+                        "https://example.com/video",
+                        null,
+                        "QUEUED",
+                        Instant.parse("2026-04-06T10:00:00Z"),
+                        Instant.parse("2026-04-06T10:00:05Z"),
+                        null,
+                        null
+                )
+        ));
+        when(vodJobService.createUrlJob(anyString())).thenReturn(
+                new JobSummaryResponse(2L, "QUEUED", "URL", "https://example.com/video", null, null, null)
+        );
+
+        MockHttpSession session = (MockHttpSession) mockMvc.perform(post("/login")
+                        .with(csrf())
+                        .param("username", "operator")
+                        .param("password", "operator-password"))
+                .andExpect(status().isFound())
+                .andExpect(redirectedUrl("/index.html"))
+                .andReturn()
+                .getRequest()
+                .getSession(false);
+
+        assertThat(session).isNotNull();
+
+        mockMvc.perform(get("/api/jobs").session(session))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$[0].id").value(1));
+
+        mockMvc.perform(post("/api/jobs/url")
+                        .session(session)
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "url": "https://example.com/video"
+                                }
+                                """))
+                .andExpect(status().isCreated());
+    }
+
+    @Test
+    void allowsUnauthenticatedWorkerPostWithoutCsrf() throws Exception {
+        when(vodJobService.claimNextQueuedJob("worker-1")).thenReturn(
+                java.util.Optional.of(new WorkerDispatchPayload(
+                        7L,
+                        "ANALYZE",
+                        "/data/storage/jobs/7/source/video.mp4",
+                        "FILE",
+                        null,
+                        null,
+                        null,
+                        null,
+                        null
+                ))
+        );
+
+        mockMvc.perform(post("/api/internal/worker/claims/next")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "workerId": "worker-1"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.jobId").value(7))
+                .andExpect(jsonPath("$.taskType").value("ANALYZE"));
+    }
+}
