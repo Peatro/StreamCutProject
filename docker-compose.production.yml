@@ -1,0 +1,53 @@
+services:
+  edge:
+    image: caddy:2.10-alpine
+    depends_on:
+      - backend
+    ports:
+      - "${EDGE_PORT:-80}:80"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      SPRING_DATASOURCE_URL: ${SPRING_DATASOURCE_URL}
+      SPRING_DATASOURCE_DRIVER_CLASS_NAME: ${SPRING_DATASOURCE_DRIVER_CLASS_NAME:-org.postgresql.Driver}
+      SPRING_DATASOURCE_USERNAME: ${SPRING_DATASOURCE_USERNAME}
+      SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD}
+      APP_STORAGE_LOCAL_ROOT: ${APP_STORAGE_LOCAL_ROOT}
+      APP_OPERATOR_USERNAME: ${APP_OPERATOR_USERNAME}
+      APP_OPERATOR_PASSWORD: ${APP_OPERATOR_PASSWORD}
+      APP_ARTIFACT_STORAGE_MODE: ${APP_ARTIFACT_STORAGE_MODE}
+      APP_ARTIFACT_STORAGE_ENDPOINT: ${APP_ARTIFACT_STORAGE_ENDPOINT}
+      APP_ARTIFACT_STORAGE_PUBLIC_ENDPOINT: ${APP_ARTIFACT_STORAGE_PUBLIC_ENDPOINT}
+      APP_ARTIFACT_STORAGE_REGION: ${APP_ARTIFACT_STORAGE_REGION:-us-east-1}
+      APP_ARTIFACT_STORAGE_ACCESS_KEY: ${APP_ARTIFACT_STORAGE_ACCESS_KEY}
+      APP_ARTIFACT_STORAGE_SECRET_KEY: ${APP_ARTIFACT_STORAGE_SECRET_KEY}
+      APP_ARTIFACT_STORAGE_BUCKET: ${APP_ARTIFACT_STORAGE_BUCKET}
+      APP_ARTIFACT_STORAGE_PRESIGN_TTL: ${APP_ARTIFACT_STORAGE_PRESIGN_TTL:-15m}
+      SPRING_SERVLET_MULTIPART_MAX_FILE_SIZE: ${SPRING_SERVLET_MULTIPART_MAX_FILE_SIZE:-512MB}
+      SPRING_SERVLET_MULTIPART_MAX_REQUEST_SIZE: ${SPRING_SERVLET_MULTIPART_MAX_REQUEST_SIZE:-520MB}
+    expose:
+      - "8080"
+    volumes:
+      - streamcut-data:/data
+
+  worker:
+    build:
+      context: ./worker
+      dockerfile: Dockerfile
+    environment:
+      BACKEND_BASE_URL: http://backend:8080
+      APP_STORAGE_LOCAL_ROOT: ${APP_STORAGE_LOCAL_ROOT}
+      PYTHONUNBUFFERED: "1"
+    depends_on:
+      - backend
+    volumes:
+      - streamcut-data:/data
+
+volumes:
+  streamcut-data:

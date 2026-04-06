@@ -25,6 +25,7 @@ This is the explicit MVP upload policy for `POST /api/jobs/upload`.
 2. Wait for PostgreSQL health checks to pass.
 3. Open the backend on `http://localhost:8080`.
 4. Use `docker compose logs -f backend worker postgres` to follow startup and runtime output.
+5. This path is explicitly local-only and uses `docker-compose.yml`.
 
 ## Runtime Profiles
 - `local` is the default Spring profile and is the profile used by `docker-compose.yml`.
@@ -62,7 +63,11 @@ PostgreSQL:
 - The backend must run with `SPRING_PROFILES_ACTIVE=prod`.
 - Production runtime values must be supplied explicitly; `application-prod.yaml` no longer carries repo-managed fallback credentials or storage paths.
 - The current example contract lives in `env.production.example`.
+- The production compose entrypoint is `docker-compose.production.yml`.
+- The public entry path is the `edge` container on port `80` by default; `backend` is internal-only behind the reverse proxy.
+- The production package keeps PostgreSQL and S3-compatible object storage as external runtime dependencies and does not expose a database container publicly.
 - Required backend environment for `prod`:
+  - `EDGE_PORT` if the reverse proxy should listen on a host port other than `80`
   - `SPRING_PROFILES_ACTIVE=prod`
   - `SPRING_DATASOURCE_URL`
   - `SPRING_DATASOURCE_USERNAME`
@@ -80,6 +85,8 @@ PostgreSQL:
   - `SPRING_DATASOURCE_DRIVER_CLASS_NAME` defaults to `org.postgresql.Driver`
   - `APP_ARTIFACT_STORAGE_REGION` defaults to `us-east-1`
   - `APP_ARTIFACT_STORAGE_PRESIGN_TTL` defaults to `15m`
+- The production compose path is expected to be run like:
+  - `docker compose -f docker-compose.production.yml --env-file env.production up --build -d`
 - In `S3` mode, missing endpoint, public endpoint, access key, secret key, or bucket should now fail startup instead of silently falling back.
 
 ## Logging Expectations
@@ -122,10 +129,11 @@ PostgreSQL:
 - The compose setup is intentionally local-first and should remain simple until the MVP stabilizes.
 
 ## Docker Runtime Notes
-- The current Docker image strategy is acceptable for the MVP, but it is intentionally not production-grade.
-- `Dockerfile.backend` and `worker/Dockerfile` currently use `postgres:15` as a base image and layer the runtime they need on top of it.
-- That choice is a convenience compromise for the current MVP. It keeps the stack reproducible and already validated locally, but it should be revisited before any real deployment hardening.
+- `Dockerfile.backend` now builds the Spring Boot jar in a Gradle build stage and runs it on `eclipse-temurin:21-jre`.
+- `worker/Dockerfile` now runs on `python:3.12-slim` with only the packages it needs for the worker process.
+- `docker-compose.yml` remains the local full-stack path, while `docker-compose.production.yml` defines the production-oriented package with an explicit edge runtime.
 - `docker-compose.yml` is explicitly the local-runtime path; it should not be treated as a production deploy manifest.
+- `deploy/Caddyfile` defines the minimal production edge runtime and routes public UI/API traffic to `backend:8080`.
 - MinIO is the artifact store for exports in the local Docker stack, and the backend is configured to talk to it via the internal service endpoint while serving public artifact URLs back through `localhost:9000`.
 - Named volumes are part of the runtime contract:
   - `streamcut-postgres` holds the database state
