@@ -47,3 +47,4 @@ This task should update source-of-truth docs, not create parallel status documen
 - `TASK-044` is captured as a release-blocking URL ingest failure mode because jobs can get stuck in `DOWNLOADING` without `JOB_FAILED`.
 - The branch state remains `develop` as the integration branch, with `main` still behind the validated MVP state.
 - No application logic changes were needed for this task.
+- `release-checklist.md` is now the explicit gate for `develop -> main`, and `TASK-053` should not proceed until that gate is satisfied.
