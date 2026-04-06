@@ -8,7 +8,7 @@ It tracks:
 - remaining work required to stabilize the MVP and finish the service through `v1.0.0`
 
 Last updated: 2026-04-06
-Branch snapshot: `chore/release-hardening-wave-1`
+Branch snapshot: `develop`
 
 ## Current Status
 - The MVP now runs as a real full-cycle local service on Docker Compose.
@@ -26,6 +26,8 @@ Branch snapshot: `chore/release-hardening-wave-1`
   - URL ingest completed end-to-end
   - upload ingest completed end-to-end on a valid small file
   - export artifact download and stream endpoints returned `200`
+- `TASK-042` browser happy-path QA passed in a live browser against the running Docker stack.
+- `TASK-043` and `TASK-054` are merged into `develop`.
 - `main` is still behind the current delivery state.
 - The canonical MVP upload policy is defined in `runtime.md`:
   - single-file uploads only
@@ -37,7 +39,7 @@ Branch snapshot: `chore/release-hardening-wave-1`
 - The Docker image strategy is intentionally MVP-only: backend and worker both inherit from `postgres:15` and layer their own runtimes on top.
 - MinIO is the export artifact store in Docker, and the named volumes `streamcut-postgres`, `streamcut-data`, and `streamcut-minio` are part of the runtime contract.
 - Release hardening wave 1 is now complete in source control: upload policy, multipart handling, UI upload guidance, URL/export/restart QA notes, structured runtime logging, integration coverage, Docker runtime notes, release checklist, and status docs have all been updated.
-- `TASK-044` was revalidated on the live Docker stack after the worker-side fix: a bad `404` URL now transitions `QUEUED -> FAILED`, persists `JOB_FAILED`, and stores a readable download error instead of leaving the job stuck in `DOWNLOADING`.
+- `TASK-044` was revalidated on the live Docker stack: malformed URL and `404` cases now transition `QUEUED -> FAILED`, persist `JOB_FAILED`, and store readable failure messages instead of leaving jobs stuck in `DOWNLOADING`.
 - The working tree is currently ahead of the last committed release-hardening wave with additional Job page UX/runtime work in progress.
 
 ## DONE
@@ -82,6 +84,11 @@ Branch snapshot: `chore/release-hardening-wave-1`
 - `TASK-025` Harden MVP Runtime
 - `TASK-036` Add Artifact Access And UI Runtime Controls
 - `TASK-038` Run QA Release Validation
+- `TASK-042` Browser QA Pass For Core Happy Path
+
+### Release Hardening
+- `TASK-043` Fix Core UI Friction Found During Browser QA
+- `TASK-054` Fix Stale Artifact Semantics After Failed Export
 
 ### Backend <-> Worker Full-Cycle Loop
 - `TASK-026` Freeze Worker Transport Contract
@@ -158,12 +165,10 @@ Branch snapshot: `chore/release-hardening-wave-1`
 ## NEXT
 
 ### Immediate
-- `TASK-042` Browser QA Pass For Core Happy Path
-- `TASK-043` Fix Core UI Friction Found During Browser QA
-- `TASK-054` Fix Stale Artifact Semantics After Failed Export
+- `TASK-053` Plan And Execute Release Movement From `develop` To `main`
 
 ### Validation
-- Browser happy-path QA remains the next release gate.
+- Browser happy-path QA passed in a live browser on the running Docker stack.
 
 ### Stabilization
 - `TASK-053` Plan And Execute Release Movement From `develop` To `main`
@@ -193,9 +198,6 @@ Status: completed locally on 2026-04-06
 ## PLANNED TASK QUEUE
 
 ### Current Release Baseline
-- `TASK-042` Browser QA Pass For Core Happy Path
-- `TASK-043` Fix Core UI Friction Found During Browser QA
-- `TASK-054` Fix Stale Artifact Semantics After Failed Export
 - `TASK-053` Plan And Execute Release Movement From `develop` To `main`
 
 ### v1.0.0 Buildout
@@ -221,8 +223,8 @@ Status: completed locally on 2026-04-06
 5. add CI, browser regression coverage, runbooks, and a restore drill before release
 
 ### Parallelism Notes
-- `TASK-043` should consume only concrete findings from `TASK-042`.
-- `TASK-054` should close before `TASK-053` and before any production-facing release claim.
+- `TASK-043` has been merged into `develop` and no longer gates the current release baseline.
+- `TASK-054` has been merged into `develop` and no longer gates the current release baseline.
 - `TASK-055` should complete before `TASK-056`, because the security baseline depends on the chosen auth model.
 - `TASK-057` and `TASK-058` can run in parallel once runtime secrets and deployment assumptions are clear.
 - `TASK-059` through `TASK-063` can overlap, but `TASK-060` owns recovery semantics and should define the contract for `TASK-061` and parts of `TASK-062`.
@@ -244,19 +246,15 @@ Status: completed locally on 2026-04-06
 - `main` does not yet represent the current MVP state.
 - Upload ingest now uses the explicit multipart limits from `TASK-040`, and oversized files fail with stable `413` semantics.
 - Docker image choices are acceptable for the current MVP but remain a deliberate compromise rather than a production recommendation.
-- Release readiness is still blocked by incomplete browser QA and the remaining stabilization gates.
+- `TASK-044` has been revalidated for malformed URL and `404` cases; residual coverage gaps remain only for timeout and unsupported-source variants, and they are not release blockers for the current gate.
 - Restart resilience on export looks acceptable from `TASK-046`: a worker bounce mid-export recovered and completed instead of ghosting the job.
 - `TASK-046` also showed that restart recovery is not very observable: file-backed work and exports can continue, but the API may sit on `DOWNLOADING` or `IN_PROGRESS` without an explicit progress signal.
 - Worker cold start depends on external model download and is slower without a configured `HF_TOKEN`.
-- Browser happy-path QA has not yet been completed as a formal release gate.
 - Negative-path recovery behavior is partially known from smoke tests, but not yet documented as release-safe behavior.
-- `TASK-045` QA found that export retries are allowed, export failure correctly marks the job `FAILED`, but stale artifact endpoints can still return `200` during a failed retry because an old object remains accessible. This is now tracked as `TASK-054`.
+- `TASK-045` QA found that export retries are allowed, export failure correctly marks the job `FAILED`, and the stale-artifact behavior was addressed in `TASK-054`.
 
 ## Recommended Next Sequence
-1. `TASK-042` Browser QA Pass For Core Happy Path.
-2. `TASK-043` Fix Core UI Friction Found During Browser QA.
-3. `TASK-054` Fix Stale Artifact Semantics After Failed Export.
-4. `TASK-053` Plan And Execute Release Movement From `develop` To `main`.
+1. `TASK-053` Plan And Execute Release Movement From `develop` To `main`.
 
 ## Path To Service v1.0.0
 
@@ -284,9 +282,6 @@ Status: completed locally on 2026-04-06
 ### v1.0.0 Task Queue
 
 #### Phase 0. Release Baseline
-- `TASK-042` Browser QA Pass For Core Happy Path
-- `TASK-043` Fix Core UI Friction Found During Browser QA
-- `TASK-054` Fix Stale Artifact Semantics After Failed Export
 - `TASK-053` Plan And Execute Release Movement From `develop` To `main`
 
 #### Phase 1. Security And Runtime Foundation

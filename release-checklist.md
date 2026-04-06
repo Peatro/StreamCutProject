@@ -23,7 +23,6 @@ This checklist is the release gate for moving the validated MVP from `develop` t
 - `TASK-043` any high-signal browser QA defects are fixed or explicitly accepted.
 - `TASK-044` negative-path URL ingest failure behavior is understood and no release-blocking stuck-job bug remains open.
 - `TASK-045` export and artifact failure behavior is understood.
-- `TASK-054` stale artifact semantics after failed export are either fixed or explicitly accepted.
 - `TASK-046` worker restart behavior is understood.
 - `TASK-047` failure visibility is practical enough for operators to diagnose issues.
 - `TASK-048` runtime logs are traceable enough to follow one job end-to-end.
@@ -31,10 +30,8 @@ This checklist is the release gate for moving the validated MVP from `develop` t
 - `TASK-050` Docker runtime and image choices are documented as MVP compromises.
 
 ## Current Blockers
-- `TASK-042` through `TASK-049` are not all complete yet.
-- Browser QA evidence from `TASK-042` and any follow-up fixes from `TASK-043` still do not exist.
-- `TASK-054` is still open, so stale-artifact behavior is not yet dispositioned for release.
-- `TASK-053` must not proceed until the required gates and evidence above exist.
+- No current blockers remain from local evidence for the required gates listed above.
+- `TASK-053` may proceed with the documented residual risk that timeout and unsupported-source variants were not separately re-run in `TASK-044`.
 
 ## Documentation Gates
 - `backlog.md` reflects the current branch state and known limitations.
@@ -53,4 +50,4 @@ This checklist is the release gate for moving the validated MVP from `develop` t
 - Disposable artifact and storage volumes should be treated as recoverable runtime data, not source-controlled state.
 
 ## Current Status
-As of 2026-04-06 this checklist is not yet satisfied because browser QA is still incomplete and `TASK-054` has not yet closed the stale-artifact release blocker.
+As of 2026-04-06 this checklist is satisfied enough for `TASK-053` to proceed from local evidence, with a narrow residual QA note for timeout and unsupported-source variants in `TASK-044`.
