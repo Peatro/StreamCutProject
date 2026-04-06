@@ -47,6 +47,7 @@ Branch snapshot: `develop`
   - `docker-compose.yml` for the local full stack
   - `docker-compose.production.yml` for the production-oriented package behind the `edge` reverse proxy
   - purpose-fit backend and worker images that no longer inherit from `postgres:15`
+  - verified alternative registries for image builds outside Docker Hub-only pull paths
 - MinIO is the export artifact store in Docker, and the named volumes `streamcut-postgres`, `streamcut-data`, and `streamcut-minio` are part of the runtime contract.
 - Release hardening wave 1 is now complete in source control: upload policy, multipart handling, UI upload guidance, URL/export/restart QA notes, structured runtime logging, integration coverage, Docker runtime notes, release checklist, and status docs have all been updated.
 - `TASK-044` was revalidated on the live Docker stack: malformed URL and `404` cases now transition `QUEUED -> FAILED`, persist `JOB_FAILED`, and store readable failure messages instead of leaving jobs stuck in `DOWNLOADING`.
@@ -260,7 +261,6 @@ Status: completed locally on 2026-04-06
 ## Risks
 - The MVP baseline is now aligned on both `main` and `develop`, but the service is still not at the `v1.0.0` operating standard.
 - Upload ingest now uses the explicit multipart limits from `TASK-040`, and oversized files fail with stable `413` semantics.
-- `TASK-058` replaced the old `postgres:15` image inheritance and added a production-oriented compose package, but local image-build verification was only partial because Docker Hub base-image pulls hit an external TLS handshake failure during validation.
 - `TASK-044` has been revalidated for malformed URL and `404` cases; residual coverage gaps remain only for timeout and unsupported-source variants, and they are not release blockers for the current gate.
 - Restart resilience on export looks acceptable from `TASK-046`: a worker bounce mid-export recovered and completed instead of ghosting the job.
 - `TASK-046` also showed that restart recovery is not very observable: file-backed work and exports can continue, but the API may sit on `DOWNLOADING` or `IN_PROGRESS` without an explicit progress signal.
