@@ -818,6 +818,9 @@ class VodJobServiceTest {
 
     @Test
     void claimNextQueuedJobRequeuesStaleAnalyzeExecutionBeforePollingQueue() {
+        java.util.EnumMap<WorkerTaskType, Duration> staleTimeoutOverrides = new java.util.EnumMap<>(WorkerTaskType.class);
+        staleTimeoutOverrides.put(WorkerTaskType.ANALYZE, Duration.ofMinutes(2));
+        workerExecutionProperties.setStaleTimeoutOverrides(staleTimeoutOverrides);
         VodJob job = buildJob(1L, "https://example.com/video", Instant.parse("2026-04-05T10:00:00Z"));
         job.setStatus(JobStatus.TRANSCRIBING);
         job.setCurrentWorkerId("worker-1");
@@ -825,8 +828,9 @@ class VodJobServiceTest {
         task.markRunning(Instant.now().minus(Duration.ofMinutes(10)));
         WorkerExecution execution = buildExecution(job, task, "worker-1", WorkerTaskType.ANALYZE, 71L);
         execution.setLastHeartbeatAt(Instant.now().minus(Duration.ofMinutes(10)));
-        when(workerTaskRepository.findAllByStatusInAndLastHeartbeatAtBeforeOrderByIdAsc(any(), any()))
+        when(workerTaskRepository.findAllByStatusInOrderByIdAsc(any()))
                 .thenReturn(List.of(task));
+        when(workerTaskRepository.findAllByVodJobIdOrderByCreatedAtAscIdAsc(1L)).thenReturn(List.of(task));
         when(workerExecutionRepository.findFirstByWorkerTaskIdOrderByIdDesc(task.getId()))
                 .thenReturn(java.util.Optional.of(execution));
         when(workerTaskRepository.findFirstByTaskTypeAndStatusOrderByIdAsc(
@@ -848,7 +852,7 @@ class VodJobServiceTest {
         assertThat(job.getProgressPercent()).isEqualTo(28);
         assertThat(job.getProgressMessage()).contains("requeued");
         assertThat(job.getErrorMessage()).contains("timed out");
-        verify(vodJobRepository).save(job);
+        verify(vodJobRepository, Mockito.atLeastOnce()).save(job);
         verify(jobEventRepository, Mockito.atLeastOnce()).save(any(JobEvent.class));
     }
 
@@ -861,8 +865,9 @@ class VodJobServiceTest {
         task.markRunning(Instant.now().minus(Duration.ofMinutes(10)));
         WorkerExecution execution = buildExecution(job, task, "worker-1", WorkerTaskType.EXPORT, 72L, 7L);
         execution.setLastHeartbeatAt(Instant.now().minus(Duration.ofMinutes(10)));
-        when(workerTaskRepository.findAllByStatusInAndLastHeartbeatAtBeforeOrderByIdAsc(any(), any()))
+        when(workerTaskRepository.findAllByStatusInOrderByIdAsc(any()))
                 .thenReturn(List.of(task));
+        when(workerTaskRepository.findAllByVodJobIdOrderByCreatedAtAscIdAsc(1L)).thenReturn(List.of(task));
         when(workerExecutionRepository.findFirstByWorkerTaskIdOrderByIdDesc(task.getId()))
                 .thenReturn(java.util.Optional.of(execution));
         when(workerTaskRepository.findFirstByTaskTypeAndStatusOrderByIdAsc(
@@ -884,7 +889,7 @@ class VodJobServiceTest {
         assertThat(job.getProgressPercent()).isEqualTo(92);
         assertThat(job.getProgressMessage()).contains("requeued");
         assertThat(job.getErrorMessage()).contains("timed out");
-        verify(vodJobRepository).save(job);
+        verify(vodJobRepository, Mockito.atLeastOnce()).save(job);
         verify(jobEventRepository, Mockito.atLeastOnce()).save(any(JobEvent.class));
     }
 
@@ -1175,6 +1180,59 @@ class VodJobServiceTest {
         ))
                 .isInstanceOf(ResponseStatusException.class)
                 .hasMessageContaining("unknown execution");
+    }
+
+    @Test
+    void recoverStaleExecutionsKeepsHealthyLongRunningAnalyzeTask() {
+        VodJob job = buildJob(1L, "https://example.com/video", Instant.parse("2026-04-05T10:00:00Z"));
+        job.setStatus(JobStatus.TRANSCRIBING);
+        WorkerTask task = buildQueuedTask(job, WorkerTaskType.ANALYZE, null);
+        task.setId(501L);
+        task.markRunning(Instant.now().minus(Duration.ofMinutes(6)));
+        task.setLastHeartbeatAt(Instant.now().minus(Duration.ofMinutes(5)));
+        when(workerTaskRepository.findAllByStatusInOrderByIdAsc(List.of(
+                WorkerTaskStatus.CLAIMED,
+                WorkerTaskStatus.RUNNING
+        ))).thenReturn(List.of(task));
+
+        vodJobService.recoverStaleExecutions();
+
+        assertThat(task.getStatus()).isEqualTo(WorkerTaskStatus.RUNNING);
+        assertThat(job.getStatus()).isEqualTo(JobStatus.TRANSCRIBING);
+        verify(workerTaskRepository, Mockito.never()).save(any(WorkerTask.class));
+        verify(workerExecutionRepository, Mockito.never()).save(any(WorkerExecution.class));
+        verify(jobEventRepository, Mockito.never()).save(any(JobEvent.class));
+    }
+
+    @Test
+    void recoverStaleExecutionsRequeuesAnalyzeTaskAfterAnalyzeTimeout() {
+        VodJob job = buildJob(1L, "https://example.com/video", Instant.parse("2026-04-05T10:00:00Z"));
+        job.setStatus(JobStatus.TRANSCRIBING);
+        WorkerTask task = buildQueuedTask(job, WorkerTaskType.ANALYZE, null);
+        task.setId(502L);
+        task.markRunning(Instant.now().minus(Duration.ofMinutes(26)));
+        task.setLastHeartbeatAt(Instant.now().minus(Duration.ofMinutes(25)));
+        WorkerExecution execution = buildExecution(job, task, "worker-1", WorkerTaskType.ANALYZE, 88L);
+        when(workerTaskRepository.findAllByStatusInOrderByIdAsc(List.of(
+                WorkerTaskStatus.CLAIMED,
+                WorkerTaskStatus.RUNNING
+        ))).thenReturn(List.of(task));
+        when(workerTaskRepository.findAllByVodJobIdOrderByCreatedAtAscIdAsc(1L)).thenReturn(List.of(task));
+        when(workerExecutionRepository.findFirstByWorkerTaskIdOrderByIdDesc(502L))
+                .thenReturn(java.util.Optional.of(execution));
+
+        vodJobService.recoverStaleExecutions();
+
+        assertThat(task.getStatus()).isEqualTo(WorkerTaskStatus.QUEUED);
+        assertThat(task.getFailureMessage()).contains("timed out after heartbeat stall");
+        assertThat(execution.getStatus()).isEqualTo(WorkerExecutionStatus.FAILED);
+        assertThat(job.getStatus()).isEqualTo(JobStatus.QUEUED_FOR_PROCESSING);
+        assertThat(job.getCurrentWorkerId()).isNull();
+        assertThat(job.getErrorMessage()).contains("timed out after heartbeat stall");
+        verify(workerTaskRepository).save(task);
+        verify(workerExecutionRepository).save(execution);
+        verify(vodJobRepository, Mockito.atLeastOnce()).save(job);
+        verify(jobEventRepository, Mockito.times(2)).save(any(JobEvent.class));
     }
 
     @Test

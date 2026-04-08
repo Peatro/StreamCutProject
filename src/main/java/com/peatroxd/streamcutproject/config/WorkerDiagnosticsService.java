@@ -23,8 +23,11 @@ public class WorkerDiagnosticsService {
 
     public WorkerDiagnosticsResponse snapshot() {
         Instant now = Instant.now();
-        Duration staleTimeout = resolveStaleTimeout();
-        Instant staleBefore = now.minus(staleTimeout);
+        Duration staleTimeout = workerExecutionProperties.resolveStaleTimeout();
+        Duration reconcileInterval = workerExecutionProperties.resolveReconcileInterval();
+        Map<WorkerTaskType, Duration> staleTimeouts = workerExecutionProperties.resolveStaleTimeouts();
+        Map<WorkerTaskType, Long> staleTimeoutsSec = new EnumMap<>(WorkerTaskType.class);
+        staleTimeouts.forEach((taskType, timeout) -> staleTimeoutsSec.put(taskType, timeout.getSeconds()));
 
         List<WorkerTask> relevantTasks = workerTaskRepository.findAllByStatusInOrderByIdAsc(
                 List.of(WorkerTaskStatus.QUEUED, WorkerTaskStatus.CLAIMED, WorkerTaskStatus.RUNNING)
@@ -37,34 +40,19 @@ public class WorkerDiagnosticsService {
             RoleDiagnosticsAccumulator accumulator = roleFor(task.getTaskType()) == WorkerRole.DOWNLOAD
                     ? download
                     : processing;
-            accumulator.accept(task, staleBefore);
+            accumulator.accept(task, now, staleTimeouts.get(task.getTaskType()));
         }
 
         return new WorkerDiagnosticsResponse(
                 "UP",
                 staleTimeout.getSeconds(),
-                resolveReconcileInterval().getSeconds(),
+                Map.copyOf(staleTimeoutsSec),
+                reconcileInterval.getSeconds(),
                 Map.of(
                         "download", download.build(),
                         "processing", processing.build()
                 )
         );
-    }
-
-    private Duration resolveStaleTimeout() {
-        Duration configured = workerExecutionProperties.getStaleTimeout();
-        if (configured == null || configured.isNegative() || configured.isZero()) {
-            return Duration.ofMinutes(2);
-        }
-        return configured;
-    }
-
-    private Duration resolveReconcileInterval() {
-        Duration configured = workerExecutionProperties.getReconcileInterval();
-        if (configured == null || configured.isNegative() || configured.isZero()) {
-            return Duration.ofSeconds(30);
-        }
-        return configured;
     }
 
     private static WorkerRole roleFor(WorkerTaskType taskType) {
@@ -90,7 +78,7 @@ public class WorkerDiagnosticsService {
             this.role = role;
         }
 
-        private void accept(WorkerTask task, Instant staleBefore) {
+        private void accept(WorkerTask task, Instant now, Duration staleTimeout) {
             if (task.getStatus() == WorkerTaskStatus.QUEUED) {
                 queued++;
                 queuedByTaskType.merge(task.getTaskType(), 1, Integer::sum);
@@ -110,7 +98,7 @@ public class WorkerDiagnosticsService {
                 if (oldestHeartbeatAt == null || lastHeartbeatAt.isBefore(oldestHeartbeatAt)) {
                     oldestHeartbeatAt = lastHeartbeatAt;
                 }
-                if (lastHeartbeatAt.isBefore(staleBefore)) {
+                if (lastHeartbeatAt.isBefore(now.minus(staleTimeout))) {
                     stale++;
                 }
             }
@@ -133,6 +121,7 @@ public class WorkerDiagnosticsService {
     public record WorkerDiagnosticsResponse(
             String status,
             long staleTimeoutSec,
+            Map<WorkerTaskType, Long> staleTimeoutsSec,
             long reconcileIntervalSec,
             Map<String, WorkerRoleDiagnostics> roles
     ) {

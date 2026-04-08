@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 import threading
-from typing import Callable
+from typing import Callable, TypeVar
 
 from streamcut_worker.analysis import CandidateAnalysisRequest, SlidingWindowCandidateAnalysisService
 from streamcut_worker.audio import AudioExtractionRequest, FfmpegAudioExtractionService
@@ -29,11 +29,16 @@ class WorkerJobRunnerError(RuntimeError):
         self.failed_state = failed_state
 
 
+T = TypeVar("T")
+
+
 @dataclass(slots=True)
 class WorkerJobRunner:
     TRANSCRIPTION_PROGRESS_START = 48
     TRANSCRIPTION_PROGRESS_END = 67
-    TRANSCRIPTION_HEARTBEAT_SEC = 30.0
+    DETECTING_SILENCE_PROGRESS = 68
+    ANALYZING_WINDOWS_PROGRESS = 84
+    STAGE_HEARTBEAT_SEC = 30.0
 
     storage_root: Path
     source_materializer: SourceMaterializer
@@ -72,10 +77,20 @@ class WorkerJobRunner:
         audio_result = self._extract_audio(source_video_path)
         self._notify_progress(on_progress, "TRANSCRIBING", 48, "Worker is transcribing the audio")
         transcription_result = self._transcribe(job, audio_result.audio_path, on_progress)
-        self._notify_progress(on_progress, "DETECTING_SILENCE", 68, "Worker is detecting silence spans")
-        silence_result = self._detect_silence(source_video_path)
-        self._notify_progress(on_progress, "ANALYZING_WINDOWS", 84, "Worker is scoring sliding analysis windows")
-        analysis_result = self._analyze(job, transcription_result, silence_result)
+        self._notify_progress(
+            on_progress,
+            "DETECTING_SILENCE",
+            self.DETECTING_SILENCE_PROGRESS,
+            "Worker is detecting silence spans",
+        )
+        silence_result = self._detect_silence(source_video_path, on_progress)
+        self._notify_progress(
+            on_progress,
+            "ANALYZING_WINDOWS",
+            self.ANALYZING_WINDOWS_PROGRESS,
+            "Worker is scoring sliding analysis windows",
+        )
+        analysis_result = self._analyze(job, transcription_result, silence_result, on_progress)
         self._notify_progress(on_progress, "GENERATING_CANDIDATES", 94, "Worker is assembling clip candidates")
 
         return WorkerProcessingPayload(
@@ -224,19 +239,40 @@ class WorkerJobRunner:
         on_progress: Callable[[str, int, str], None] | None,
         stop_event: threading.Event,
     ) -> threading.Thread | None:
+        return self._start_stage_heartbeat(
+            on_progress,
+            stop_event,
+            status="TRANSCRIBING",
+            progress_percent=self.TRANSCRIPTION_PROGRESS_START,
+            message="Worker is still transcribing the audio",
+        )
+
+    def _start_stage_heartbeat(
+        self,
+        on_progress: Callable[[str, int, str], None] | None,
+        stop_event: threading.Event,
+        *,
+        status: str,
+        progress_percent: int,
+        message: str,
+    ) -> threading.Thread | None:
         if on_progress is None:
             return None
 
         def heartbeat() -> None:
-            while not stop_event.wait(self.TRANSCRIPTION_HEARTBEAT_SEC):
+            while not stop_event.wait(self.STAGE_HEARTBEAT_SEC):
                 self._notify_progress(
                     on_progress,
-                    "TRANSCRIBING",
-                    self.TRANSCRIPTION_PROGRESS_START,
-                    "Worker is still transcribing the audio",
+                    status,
+                    progress_percent,
+                    message,
                 )
 
-        thread = threading.Thread(target=heartbeat, name="transcription-heartbeat", daemon=True)
+        thread = threading.Thread(
+            target=heartbeat,
+            name=f"{status.lower().replace('_', '-')}-heartbeat",
+            daemon=True,
+        )
         thread.start()
         return thread
 
@@ -255,27 +291,74 @@ class WorkerJobRunner:
             return "Worker is transcribing the audio"
         return f"Worker is transcribing the audio ({processed_sec:.0f}s / {total_sec:.0f}s)"
 
-    def _detect_silence(self, source_video_path: Path):
+    def _detect_silence(
+        self,
+        source_video_path: Path,
+        on_progress: Callable[[str, int, str], None] | None,
+    ):
         try:
-            return self.silence_service.detect(
-                SilenceDetectionRequest(video_path=source_video_path)
+            return self._run_with_stage_heartbeat(
+                on_progress=on_progress,
+                status="DETECTING_SILENCE",
+                progress_percent=self.DETECTING_SILENCE_PROGRESS,
+                message="Worker is still detecting silence spans",
+                operation=lambda: self.silence_service.detect(
+                    SilenceDetectionRequest(video_path=source_video_path)
+                ),
             )
         except Exception as exc:
             raise WorkerJobRunnerError("DETECTING_SILENCE", str(exc)) from exc
 
-    def _analyze(self, job: ClaimedJob, transcription_result, silence_result):
+    def _analyze(
+        self,
+        job: ClaimedJob,
+        transcription_result,
+        silence_result,
+        on_progress: Callable[[str, int, str], None] | None,
+    ):
         try:
-            return self.analysis_service.analyze(
-                CandidateAnalysisRequest(
-                    job_id=str(job.job_id),
-                    transcript_segments=transcription_result.transcript_segments,
-                    silence_segments=silence_result.silence_segments,
-                    duration_sec=transcription_result.duration_sec,
-                    emotion_keywords=self.emotion_keywords,
+            return self._run_with_stage_heartbeat(
+                on_progress=on_progress,
+                status="ANALYZING_WINDOWS",
+                progress_percent=self.ANALYZING_WINDOWS_PROGRESS,
+                message="Worker is still scoring sliding analysis windows",
+                operation=lambda: self.analysis_service.analyze(
+                    CandidateAnalysisRequest(
+                        job_id=str(job.job_id),
+                        transcript_segments=transcription_result.transcript_segments,
+                        silence_segments=silence_result.silence_segments,
+                        duration_sec=transcription_result.duration_sec,
+                        emotion_keywords=self.emotion_keywords,
+                    )
                 )
             )
         except Exception as exc:
             raise WorkerJobRunnerError("ANALYZING_WINDOWS", str(exc)) from exc
+
+    def _run_with_stage_heartbeat(
+        self,
+        *,
+        on_progress: Callable[[str, int, str], None] | None,
+        status: str,
+        progress_percent: int,
+        message: str,
+        operation: Callable[[], T],
+    ) -> T:
+        heartbeat_stop = threading.Event()
+        heartbeat_thread = self._start_stage_heartbeat(
+            on_progress,
+            heartbeat_stop,
+            status=status,
+            progress_percent=progress_percent,
+            message=message,
+        )
+
+        try:
+            return operation()
+        finally:
+            heartbeat_stop.set()
+            if heartbeat_thread is not None:
+                heartbeat_thread.join()
 
 
 def create_default_job_runner(

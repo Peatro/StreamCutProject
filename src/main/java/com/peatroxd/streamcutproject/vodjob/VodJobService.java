@@ -1060,11 +1060,11 @@ public class VodJobService {
     }
 
     private void recoverStaleExecutions(Instant now) {
-        Instant staleBefore = now.minus(resolveStaleTimeout());
-        workerTaskRepository.findAllByStatusInAndLastHeartbeatAtBeforeOrderByIdAsc(
-                List.of(WorkerTaskStatus.CLAIMED, WorkerTaskStatus.RUNNING),
-                staleBefore
-        ).forEach(task -> recoverStaleTask(task, now));
+        workerTaskRepository.findAllByStatusInOrderByIdAsc(
+                List.of(WorkerTaskStatus.CLAIMED, WorkerTaskStatus.RUNNING)
+        ).stream()
+                .filter(task -> isTaskStale(task, now))
+                .forEach(task -> recoverStaleTask(task, now));
     }
 
     private void recoverStaleTask(WorkerTask task, Instant now) {
@@ -1107,9 +1107,12 @@ public class VodJobService {
     }
 
     private void requeueRecoveredDownload(VodJob job, Instant now, String recoveryMessage) {
-        JobProjection.applyQueuedTask(job, WorkerTaskType.DOWNLOAD, now, "Download worker lease expired and job was requeued");
+        String progressMessage = "Download worker lease expired and job was requeued";
+        JobProjection.applyQueuedTask(job, WorkerTaskType.DOWNLOAD, now, progressMessage);
         job.setErrorMessage(recoveryMessage);
         recomputeAndPersistJob(job);
+        job.setProgressMessage(progressMessage);
+        vodJobRepository.save(job);
         jobEventRepository.save(JobEvent.create(
                 job,
                 EVENT_JOB_QUEUED_FOR_DOWNLOAD,
@@ -1119,9 +1122,12 @@ public class VodJobService {
     }
 
     private void requeueRecoveredAnalyze(VodJob job, Instant now, String recoveryMessage) {
-        JobProjection.applyQueuedTask(job, WorkerTaskType.ANALYZE, now, "Processing worker lease expired and job was requeued");
+        String progressMessage = "Processing worker lease expired and job was requeued";
+        JobProjection.applyQueuedTask(job, WorkerTaskType.ANALYZE, now, progressMessage);
         job.setErrorMessage(recoveryMessage);
         recomputeAndPersistJob(job);
+        job.setProgressMessage(progressMessage);
+        vodJobRepository.save(job);
         jobEventRepository.save(JobEvent.create(
                 job,
                 EVENT_JOB_QUEUED_FOR_PROCESSING,
@@ -1131,16 +1137,22 @@ public class VodJobService {
     }
 
     private void requeueRecoveredExport(VodJob job, Instant now, String recoveryMessage) {
-        JobProjection.applyQueuedTask(job, WorkerTaskType.EXPORT, now, "Export worker lease expired and export was requeued");
+        String progressMessage = "Export worker lease expired and export was requeued";
+        JobProjection.applyQueuedTask(job, WorkerTaskType.EXPORT, now, progressMessage);
         job.setErrorMessage(recoveryMessage);
         recomputeAndPersistJob(job);
+        job.setProgressMessage(progressMessage);
+        vodJobRepository.save(job);
     }
 
-    private java.time.Duration resolveStaleTimeout() {
-        if (workerExecutionProperties.getStaleTimeout() == null || workerExecutionProperties.getStaleTimeout().isNegative()) {
-            return java.time.Duration.ofMinutes(2);
+    private boolean isTaskStale(WorkerTask task, Instant now) {
+        Instant lastHeartbeatAt = task.getLastHeartbeatAt();
+        if (lastHeartbeatAt == null) {
+            return false;
         }
-        return workerExecutionProperties.getStaleTimeout();
+
+        Instant staleBefore = now.minus(workerExecutionProperties.resolveStaleTimeout(task.getTaskType()));
+        return lastHeartbeatAt.isBefore(staleBefore);
     }
 
     private Map<Long, WorkerExecution> latestExecutionByJobId(List<VodJob> jobs) {

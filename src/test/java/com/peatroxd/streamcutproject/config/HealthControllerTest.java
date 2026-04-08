@@ -40,6 +40,7 @@ class HealthControllerTest {
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
                 .andExpect(jsonPath("$.status").value("UP"))
                 .andExpect(jsonPath("$.staleTimeoutSec").value(120))
+                .andExpect(jsonPath("$.staleTimeoutsSec.ANALYZE").value(1200))
                 .andExpect(jsonPath("$.reconcileIntervalSec").value(30))
                 .andExpect(jsonPath("$.roles.download.role").value("download"))
                 .andExpect(jsonPath("$.roles.download.queued").value(1))
@@ -57,6 +58,11 @@ class HealthControllerTest {
             return new WorkerDiagnosticsResponse(
                     "UP",
                     120,
+                    Map.of(
+                            com.peatroxd.streamcutproject.workerexecution.WorkerTaskType.DOWNLOAD, 120L,
+                            com.peatroxd.streamcutproject.workerexecution.WorkerTaskType.ANALYZE, 1200L,
+                            com.peatroxd.streamcutproject.workerexecution.WorkerTaskType.EXPORT, 120L
+                    ),
                     30,
                     Map.of(
                             "download",
