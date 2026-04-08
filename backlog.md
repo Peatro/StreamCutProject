@@ -58,6 +58,11 @@ Branch snapshot: `develop`
   - download completion moves them to `QUEUED_FOR_PROCESSING`
   - export remains on the `processing-worker`
 - Local and production compose now run one `download-worker` and one `processing-worker` on the same worker image, with future scale expected first on the download side.
+- Local Docker validation for the split worker flow was executed on 2026-04-08 against a real uploaded `.mp4`:
+  - job created as `QUEUED_FOR_DOWNLOAD`
+  - `download-worker` claimed and completed the download/materialization step
+  - backend persisted `JOB_DOWNLOAD_COMPLETED` and `JOB_QUEUED_FOR_PROCESSING`
+  - `processing-worker` claimed the same job and advanced it through analysis to `READY_FOR_REVIEW`
 
 ## DONE
 
@@ -184,7 +189,7 @@ Branch snapshot: `develop`
 - `TASK-060` is now the active bounded runtime slice.
 - Current staged execution:
   - Phase 1: completed, role-aware worker claims and explicit `DOWNLOAD -> QUEUED_FOR_PROCESSING -> ANALYZE` flow are now implemented and validated in tests
-  - Phase 2: completed, local and production runtime wiring for one `download-worker` and one `processing-worker` is now implemented in compose and worker runtime
+  - Phase 2: completed, local and production runtime wiring for one `download-worker` and one `processing-worker` is implemented and locally validated on Docker against a live upload job
   - Phase 3: active, follow-up diagnostics, lease recovery, and operator controls on top of the split worker model
 - Export remains on the `processing-worker` for now.
 
@@ -192,7 +197,7 @@ Branch snapshot: `develop`
 
 ### Immediate
 - `TASK-059` Add Health, Readiness, And Worker Diagnostics
-- validate the split worker flow on the live Docker stack and surface role-specific diagnostics in the UI and health endpoints
+- surface role-specific diagnostics in the UI and health endpoints
 
 ### Validation
 - The MVP release baseline has been promoted to `main`.
@@ -286,7 +291,7 @@ Status: completed locally on 2026-04-06
 
 ## Recommended Next Sequence
 1. `TASK-059` Add Health, Readiness, And Worker Diagnostics.
-2. validate the staged split into `download-worker` and `processing-worker` on the live stack.
+2. add role-specific worker diagnostics and stuck-run visibility on top of the validated split worker flow.
 3. `TASK-060` Harden Queue Reliability And Stuck-Job Recovery.
 4. `TASK-061` Add Operator Recovery Controls.
 
