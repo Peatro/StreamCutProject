@@ -84,7 +84,8 @@ public class VodJobService {
     private static final String EVENT_JOB_QUEUED_FOR_PROCESSING = "JOB_QUEUED_FOR_PROCESSING";
     private static final String EVENT_JOB_CLAIMED = "JOB_CLAIMED";
     private static final String EVENT_JOB_CANCELED = "JOB_CANCELED";
-    private static final String EVENT_JOB_RESTARTED = "JOB_RESTARTED";
+    private static final String EVENT_JOB_RETRIED = "JOB_RETRIED";
+    private static final String EVENT_JOB_FORCE_FAILED = "JOB_FORCE_FAILED";
     private static final String EVENT_WORKER_PROGRESS = "WORKER_PROGRESS";
     private static final String EVENT_WORKER_EXECUTION_STALE = "WORKER_EXECUTION_STALE";
     private static final String EVENT_DOWNLOAD_COMPLETED = "JOB_DOWNLOAD_COMPLETED";
@@ -92,33 +93,15 @@ public class VodJobService {
     private static final String EVENT_JOB_FAILED = "JOB_FAILED";
     private static final String EVENT_EXPORT_STARTED = "EXPORT_STARTED";
     private static final String EVENT_EXPORT_COMPLETED = "EXPORT_COMPLETED";
-    private static final Set<JobStatus> ANALYSIS_ACTIVE_STATUSES = EnumSet.of(
-            JobStatus.QUEUED_FOR_DOWNLOAD,
-            JobStatus.DOWNLOADING,
-            JobStatus.QUEUED_FOR_PROCESSING,
-            JobStatus.EXTRACTING_AUDIO,
-            JobStatus.TRANSCRIBING,
-            JobStatus.DETECTING_SILENCE,
-            JobStatus.ANALYZING_WINDOWS,
-            JobStatus.GENERATING_CANDIDATES
-    );
-    private static final Set<JobStatus> RESTARTABLE_STATUSES = EnumSet.of(
-            JobStatus.QUEUED_FOR_DOWNLOAD,
-            JobStatus.DOWNLOADING,
-            JobStatus.QUEUED_FOR_PROCESSING,
-            JobStatus.EXTRACTING_AUDIO,
-            JobStatus.TRANSCRIBING,
-            JobStatus.DETECTING_SILENCE,
-            JobStatus.ANALYZING_WINDOWS,
-            JobStatus.GENERATING_CANDIDATES,
-            JobStatus.EXPORTING_CLIP,
-            JobStatus.FAILED,
-            JobStatus.CANCELED
+    private static final Set<JobStatus> RETRYABLE_STATUSES = EnumSet.of(
+            JobStatus.FAILED
     );
     private static final Set<JobStatus> CANCELABLE_STATUSES = EnumSet.of(
             JobStatus.QUEUED_FOR_DOWNLOAD,
+            JobStatus.QUEUED_FOR_PROCESSING
+    );
+    private static final Set<JobStatus> FORCE_FAILABLE_STATUSES = EnumSet.of(
             JobStatus.DOWNLOADING,
-            JobStatus.QUEUED_FOR_PROCESSING,
             JobStatus.EXTRACTING_AUDIO,
             JobStatus.TRANSCRIBING,
             JobStatus.DETECTING_SILENCE,
@@ -280,6 +263,35 @@ public class VodJobService {
     }
 
     @Transactional
+    public JobDetailResponse retryJob(Long jobId) {
+        VodJob job = requireJob(jobId);
+        if (!RETRYABLE_STATUSES.contains(job.getStatus())) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "Job cannot be retried from status: " + job.getStatus()
+            );
+        }
+
+        Instant now = Instant.now();
+        Long previousProcessingVersion = job.getProcessingVersion();
+        job.setProcessingVersion(nextProcessingVersion(job));
+        cancelOpenWorkerState(job.getId(), previousProcessingVersion, now, "Retried by operator");
+        resetAnalysisArtifacts(job);
+        queueJobForDownload(job, now);
+        vodJobRepository.save(job);
+        queueWorkerTask(job, job.getProcessingVersion(), WorkerTaskType.DOWNLOAD, null, now);
+        jobEventRepository.save(JobEvent.create(
+                job,
+                EVENT_JOB_RETRIED,
+                "Operator retried the failed job and requeued it for download",
+                now
+        ));
+        log.info("job_retried jobId={} processingVersion={} status={}", job.getId(), job.getProcessingVersion(), job.getStatus());
+
+        return toJobDetailResponse(job);
+    }
+
+    @Transactional
     public JobDetailResponse cancelJob(Long jobId) {
         VodJob job = requireJob(jobId);
         if (!CANCELABLE_STATUSES.contains(job.getStatus())) {
@@ -290,8 +302,35 @@ public class VodJobService {
         }
 
         Instant now = Instant.now();
-        Long activeProcessingVersion = job.getProcessingVersion();
-        if (job.getStatus() == JobStatus.EXPORTING_CLIP) {
+        cancelOpenWorkerState(job.getId(), job.getProcessingVersion(), now, "Canceled by operator");
+        JobProjection.applyCanceled(job, now, "Canceled by operator");
+        job.setProgressMessage("Job canceled by operator");
+        job.setLastWorkerHeartbeatAt(null);
+        vodJobRepository.save(job);
+        jobEventRepository.save(JobEvent.create(
+                job,
+                EVENT_JOB_CANCELED,
+                "Operator canceled the queued job",
+                now
+        ));
+        log.warn("job_canceled jobId={} processingVersion={} status={}", job.getId(), job.getProcessingVersion(), job.getStatus());
+
+        return toJobDetailResponse(job);
+    }
+
+    @Transactional
+    public JobDetailResponse forceFailJob(Long jobId) {
+        VodJob job = requireJob(jobId);
+        if (!FORCE_FAILABLE_STATUSES.contains(job.getStatus())) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "Job cannot be force-failed from status: " + job.getStatus()
+            );
+        }
+
+        Instant now = Instant.now();
+        JobStatus forcedFromStatus = job.getStatus();
+        if (forcedFromStatus == JobStatus.EXPORTING_CLIP) {
             clipCandidateRepository.findAllByVodJobIdAndExportStatus(job.getId(), ExportStatus.IN_PROGRESS)
                     .forEach(candidate -> {
                         candidate.setExportStatus(ExportStatus.FAILED);
@@ -299,75 +338,18 @@ public class VodJobService {
                     });
         }
 
-        cancelOpenWorkerState(job.getId(), activeProcessingVersion, now, "Canceled by operator");
-        job.setProcessingVersion(nextProcessingVersion(job));
-        JobProjection.applyCanceled(job, now, "Canceled by operator");
+        failOpenWorkerState(job.getId(), job.getProcessingVersion(), now, "Operator forced failure");
+        JobProjection.applyFailure(job, now, "Operator forced failure");
         vodJobRepository.save(job);
         jobEventRepository.save(JobEvent.create(
                 job,
-                EVENT_JOB_CANCELED,
-                "Operator canceled the current worker run",
+                EVENT_JOB_FORCE_FAILED,
+                "Operator force-failed the job while it was in status " + forcedFromStatus,
                 now
         ));
-        log.warn("job_canceled jobId={} processingVersion={}", job.getId(), job.getProcessingVersion());
+        log.warn("job_force_failed jobId={} forcedFromStatus={} processingVersion={}", job.getId(), forcedFromStatus, job.getProcessingVersion());
 
-        return JobMapper.toDetailResponse(
-                job,
-                workerExecutionRepository.findFirstByVodJobIdOrderByIdDesc(job.getId()),
-                workerTaskRepository.findFirstByVodJobIdOrderByIdDesc(job.getId())
-        );
-    }
-
-    @Transactional
-    public JobDetailResponse restartJob(Long jobId) {
-        VodJob job = requireJob(jobId);
-        if (!RESTARTABLE_STATUSES.contains(job.getStatus())) {
-            throw new ResponseStatusException(
-                    HttpStatus.CONFLICT,
-                    "Job cannot be restarted from status: " + job.getStatus()
-            );
-        }
-
-        Instant now = Instant.now();
-        Long activeProcessingVersion = job.getProcessingVersion();
-        boolean restartExport = shouldRestartExport(job);
-        cancelOpenWorkerState(job.getId(), activeProcessingVersion, now, "Restarted by operator");
-        job.setProcessingVersion(nextProcessingVersion(job));
-        if (restartExport) {
-            Long candidateId = restartExport(job, now);
-            queueWorkerTask(job, job.getProcessingVersion(), WorkerTaskType.EXPORT, candidateId, now);
-        } else {
-            resetAnalysisArtifacts(job);
-            queueJobForDownload(job, now);
-            queueWorkerTask(job, job.getProcessingVersion(), WorkerTaskType.DOWNLOAD, null, now);
-        }
-
-        job.setFinishedAt(null);
-        job.setCurrentWorkerId(null);
-        job.setLastWorkerHeartbeatAt(null);
-        job.setErrorMessage(null);
-        recomputeAndPersistJob(job);
-        jobEventRepository.save(JobEvent.create(
-                job,
-                EVENT_JOB_RESTARTED,
-                "Operator restarted the worker run",
-                now
-        ));
-        if (job.getStatus() == JobStatus.QUEUED_FOR_DOWNLOAD) {
-            jobEventRepository.save(JobEvent.create(
-                    job,
-                    EVENT_JOB_QUEUED_FOR_DOWNLOAD,
-                    "Job queued for download worker after restart",
-                    now
-            ));
-        }
-        log.info("job_restarted jobId={} processingVersion={} status={}", job.getId(), job.getProcessingVersion(), job.getStatus());
-
-        return JobMapper.toDetailResponse(
-                job,
-                workerExecutionRepository.findFirstByVodJobIdOrderByIdDesc(job.getId()),
-                workerTaskRepository.findFirstByVodJobIdOrderByIdDesc(job.getId())
-        );
+        return toJobDetailResponse(job);
     }
 
     @Transactional
@@ -991,34 +973,6 @@ public class VodJobService {
         }
     }
 
-    private boolean shouldRestartExport(VodJob job) {
-        if (job.getStatus() == JobStatus.EXPORTING_CLIP) {
-            return true;
-        }
-        return clipCandidateRepository.findAllByVodJobIdAndExportStatus(job.getId(), ExportStatus.FAILED)
-                .stream()
-                .findFirst()
-                .isPresent();
-    }
-
-    private Long restartExport(VodJob job, Instant now) {
-        List<ClipCandidate> failedExports = clipCandidateRepository.findAllByVodJobIdAndExportStatus(job.getId(), ExportStatus.FAILED);
-        List<ClipCandidate> runningExports = clipCandidateRepository.findAllByVodJobIdAndExportStatus(job.getId(), ExportStatus.IN_PROGRESS);
-        ClipCandidate candidate = !runningExports.isEmpty() ? runningExports.getFirst() : (!failedExports.isEmpty() ? failedExports.getFirst() : null);
-        if (candidate == null) {
-            throw new ResponseStatusException(
-                    HttpStatus.CONFLICT,
-                    "No export candidate is available to restart for job: " + job.getId()
-            );
-        }
-        candidate.setExportStatus(ExportStatus.IN_PROGRESS);
-        clipCandidateRepository.save(candidate);
-        JobProjection.applyQueuedTask(job, WorkerTaskType.EXPORT, now, "Queued for clip export");
-        job.setLastWorkerHeartbeatAt(null);
-        job.setStartedAt(job.getStartedAt() == null ? now : job.getStartedAt());
-        return candidate.getId();
-    }
-
     private void resetAnalysisArtifacts(VodJob job) {
         transcriptSegmentRepository.deleteAllByJobId(job.getId());
         silenceSegmentRepository.deleteAllByJobId(job.getId());
@@ -1050,6 +1004,28 @@ public class VodJobService {
                 List.of(WorkerTaskStatus.QUEUED, WorkerTaskStatus.CLAIMED, WorkerTaskStatus.RUNNING)
         ).forEach(task -> {
             task.markCanceled(now, reason);
+            workerTaskRepository.save(task);
+        });
+    }
+
+    private void failOpenWorkerState(Long jobId, Long processingVersion, Instant now, String reason) {
+        workerExecutionRepository.findAllByVodJobIdAndProcessingVersionAndStatusIn(
+                jobId,
+                processingVersion,
+                List.of(WorkerExecutionStatus.CLAIMED, WorkerExecutionStatus.RUNNING)
+        ).forEach(execution -> {
+            execution.setStatus(WorkerExecutionStatus.FAILED);
+            execution.setLastHeartbeatAt(now);
+            execution.setFinishedAt(now);
+            execution.setFailureMessage(reason);
+            workerExecutionRepository.save(execution);
+        });
+        workerTaskRepository.findAllByVodJobIdAndProcessingVersionAndStatusIn(
+                jobId,
+                processingVersion,
+                List.of(WorkerTaskStatus.QUEUED, WorkerTaskStatus.CLAIMED, WorkerTaskStatus.RUNNING)
+        ).forEach(task -> {
+            task.markFailed(now, reason);
             workerTaskRepository.save(task);
         });
     }
@@ -1237,6 +1213,14 @@ public class VodJobService {
                 queuedAt
         ));
         return queuedJob;
+    }
+
+    private JobDetailResponse toJobDetailResponse(VodJob job) {
+        return JobMapper.toDetailResponse(
+                job,
+                workerExecutionRepository.findFirstByVodJobIdOrderByIdDesc(job.getId()),
+                workerTaskRepository.findFirstByVodJobIdOrderByIdDesc(job.getId())
+        );
     }
 
     private ClipCandidateResponse moderateCandidate(Long candidateId, ModerationStatus moderationStatus) {

@@ -6,8 +6,9 @@
     getEvents: (id) => fetchJson(`/api/jobs/${id}/events`),
     getExecutions: (id) => fetchJson(`/api/jobs/${id}/executions`),
     getCandidates: (id) => fetchJson(`/api/jobs/${id}/candidates`),
+    retryJob: (id) => postJson(`/api/jobs/${id}/retry`),
     cancelJob: (id) => postJson(`/api/jobs/${id}/cancel`),
-    restartJob: (id) => postJson(`/api/jobs/${id}/restart`),
+    forceFailJob: (id) => postJson(`/api/jobs/${id}/force-fail`),
     createUrlJob: (url) => postJson("/api/jobs/url", {
       headers: {
         "Content-Type": "application/json"
@@ -463,21 +464,30 @@ ${renderJobFailureSummary(job, candidates)}
     root.querySelectorAll("[data-job-control]").forEach((button) => {
       button.addEventListener("click", async () => {
         const action = button.dataset.jobControl;
-        const actionLabel = action === "cancel" ? "Canceling..." : "Restarting...";
+        const actionLabelByType = {
+          retry: "Retrying...",
+          cancel: "Canceling...",
+          "force-fail": "Force Failing..."
+        };
         const previousLabel = button.textContent;
         setLiveInteractionLock(true, `${previousLabel} in progress.`);
         button.disabled = true;
-        button.textContent = actionLabel;
+        button.textContent = actionLabelByType[action] || "Working...";
 
         try {
-          if (action === "cancel") {
-            await api.cancelJob(jobId);
-            await renderJobPage(root, jobId, `Worker run for job #${jobId} canceled.`, "warning");
+          if (action === "retry") {
+            await api.retryJob(jobId);
+            await renderJobPage(root, jobId, `Job #${jobId} was requeued for download.`, "success");
             return;
           }
-          if (action === "restart") {
-            await api.restartJob(jobId);
-            await renderJobPage(root, jobId, `Worker run for job #${jobId} restarted.`, "success");
+          if (action === "cancel") {
+            await api.cancelJob(jobId);
+            await renderJobPage(root, jobId, `Job #${jobId} was canceled.`, "warning");
+            return;
+          }
+          if (action === "force-fail") {
+            await api.forceFailJob(jobId);
+            await renderJobPage(root, jobId, `Job #${jobId} was force-failed by an operator.`, "warning");
             return;
           }
           throw new Error("Unknown job control action.");
@@ -863,8 +873,9 @@ ${renderJobFailureSummary(job, candidates)}
   function renderWorkerRuntimePanel(job) {
     const progressPercent = normalizedProgressPercent(job);
     const currentStatus = String(job?.status || "").toUpperCase();
+    const canRetry = isJobRetryable(job);
     const canCancel = isJobCancelable(job);
-    const canRestart = isJobRestartable(job);
+    const canForceFail = isJobForceFailable(job);
     const progressLabel = job?.progressMessage || defaultProgressMessage(job);
     const phaseLabel = formatEventType(currentStatus);
     const heartbeat = describeWorkerHeartbeat(job);
@@ -874,8 +885,9 @@ ${renderJobFailureSummary(job, candidates)}
     const runtimeBody = `
       <div class="worker-runtime-body">
         <div class="header-actions">
-          ${canRestart ? '<button class="action-button action-button-primary" type="button" data-job-control="restart">Restart Worker Run</button>' : ""}
-          ${canCancel ? '<button class="action-button action-button-reject" type="button" data-job-control="cancel">Cancel Worker Run</button>' : ""}
+          ${canRetry ? '<button class="action-button action-button-primary" type="button" data-job-control="retry">Retry</button>' : ""}
+          ${canCancel ? '<button class="action-button action-button-reject" type="button" data-job-control="cancel">Cancel</button>' : ""}
+          ${canForceFail ? '<button class="action-button action-button-reject" type="button" data-job-control="force-fail">Force Fail</button>' : ""}
         </div>
         <div class="worker-progress-shell ${activeWorkerStatuses.has(currentStatus) ? "is-active" : ""}">
           <div class="worker-progress-meta">
@@ -1164,24 +1176,29 @@ ${renderJobFailureSummary(job, candidates)}
 
   function isJobCancelable(job) {
     const status = String(job?.status || "").toUpperCase();
-    return ["QUEUED_FOR_DOWNLOAD", "DOWNLOADING", "QUEUED_FOR_PROCESSING", "EXTRACTING_AUDIO", "TRANSCRIBING", "DETECTING_SILENCE", "ANALYZING_WINDOWS", "GENERATING_CANDIDATES", "EXPORTING_CLIP"].includes(status);
+    return ["QUEUED_FOR_DOWNLOAD", "QUEUED_FOR_PROCESSING"].includes(status);
   }
 
-  function isJobRestartable(job) {
+  function isJobRetryable(job) {
     const status = String(job?.status || "").toUpperCase();
-    return ["QUEUED_FOR_DOWNLOAD", "DOWNLOADING", "QUEUED_FOR_PROCESSING", "EXTRACTING_AUDIO", "TRANSCRIBING", "DETECTING_SILENCE", "ANALYZING_WINDOWS", "GENERATING_CANDIDATES", "EXPORTING_CLIP", "FAILED", "CANCELED"].includes(status);
+    return status === "FAILED";
+  }
+
+  function isJobForceFailable(job) {
+    const status = String(job?.status || "").toUpperCase();
+    return ["DOWNLOADING", "EXTRACTING_AUDIO", "TRANSCRIBING", "DETECTING_SILENCE", "ANALYZING_WINDOWS", "GENERATING_CANDIDATES", "EXPORTING_CLIP"].includes(status);
   }
 
   function workerActionHint(job) {
     const status = String(job?.status || "").toUpperCase();
-    if (status === "FAILED") {
-      return "Restart the worker run after checking the failure reason in the event feed.";
-    }
-    if (status === "CANCELED") {
-      return "This run was canceled manually. Restart to requeue it through the download stage.";
+    if (isJobRetryable(job)) {
+      return "Retry requeues a failed job from the download stage and increments the processing version.";
     }
     if (isJobCancelable(job)) {
-      return "Cancel stops the current run immediately. Restart invalidates the current worker lease and queues a fresh attempt.";
+      return "Cancel permanently stops a queued job before a worker picks it up.";
+    }
+    if (isJobForceFailable(job)) {
+      return "Force Fail marks the active worker run as failed and records an explicit operator recovery event.";
     }
     return "No operator recovery action is available for the current state.";
   }
@@ -1885,9 +1902,10 @@ ${renderJobFailureSummary(job, candidates)}
       "JOB_READY_FOR_REVIEW",
       "EXPORT_STARTED",
       "EXPORT_COMPLETED",
+      "JOB_RETRIED",
       "JOB_FAILED",
       "JOB_CANCELED",
-      "JOB_RESTARTED"
+      "JOB_FORCE_FAILED"
     ]);
     if (importantTypes.has(type)) {
       return true;
@@ -1962,7 +1980,7 @@ ${renderJobFailureSummary(job, candidates)}
     if (value.includes("DOWNLOAD") || value.includes("CREATED")) {
       return "ingest";
     }
-    if (value.includes("PROCESSING") || value.includes("CLAIMED") || value.includes("RESTARTED")) {
+    if (value.includes("PROCESSING") || value.includes("CLAIMED") || value.includes("RETRIED")) {
       return "processing";
     }
     return "system";

@@ -39,11 +39,30 @@ Current detail responses also expose runtime projection fields such as:
 
 These are aggregate-facing projections, not a replacement for task/execution inspection models.
 
-### POST /api/jobs/{id}/cancel
-Cancels the current queued or in-flight worker run.
+### POST /api/jobs/{id}/retry
+Retries a failed job by moving it back to `QUEUED_FOR_DOWNLOAD`.
 
-### POST /api/jobs/{id}/restart
-Invalidates the current worker lease and starts a fresh worker attempt.
+Effects:
+- only valid when the aggregate job status is `FAILED`
+- increments `processingVersion` to invalidate stale worker callbacks
+- queues a fresh `DOWNLOAD` task
+- records a `JOB_RETRIED` event
+
+### POST /api/jobs/{id}/cancel
+Cancels a queued job before worker execution begins.
+
+Effects:
+- only valid when the aggregate job status is `QUEUED_FOR_DOWNLOAD` or `QUEUED_FOR_PROCESSING`
+- moves the aggregate job to `CANCELED`
+- records a `JOB_CANCELED` event
+
+### POST /api/jobs/{id}/force-fail
+Force-fails an active worker run that appears stuck.
+
+Effects:
+- only valid when the aggregate job status is `DOWNLOADING`, `EXTRACTING_AUDIO`, `TRANSCRIBING`, `DETECTING_SILENCE`, `ANALYZING_WINDOWS`, `GENERATING_CANDIDATES`, or `EXPORTING_CLIP`
+- moves the aggregate job to `FAILED`
+- records a `JOB_FORCE_FAILED` event
 
 ## Transcript
 ### GET /api/jobs/{id}/transcript

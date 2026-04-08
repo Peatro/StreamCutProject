@@ -217,6 +217,45 @@ class VodJobControllerTest {
     }
 
     @Test
+    void retriesFailedJob() throws Exception {
+        when(vodJobService.retryJob(1L)).thenReturn(jobDetailResponse("QUEUED_FOR_DOWNLOAD"));
+
+        mockMvc.perform(post("/api/jobs/1/retry"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.id").value(1))
+                .andExpect(jsonPath("$.status").value("QUEUED_FOR_DOWNLOAD"));
+
+        verify(vodJobService).retryJob(1L);
+    }
+
+    @Test
+    void cancelsQueuedJob() throws Exception {
+        when(vodJobService.cancelJob(1L)).thenReturn(jobDetailResponse("CANCELED"));
+
+        mockMvc.perform(post("/api/jobs/1/cancel"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.id").value(1))
+                .andExpect(jsonPath("$.status").value("CANCELED"));
+
+        verify(vodJobService).cancelJob(1L);
+    }
+
+    @Test
+    void forceFailsActiveJob() throws Exception {
+        when(vodJobService.forceFailJob(1L)).thenReturn(jobDetailResponse("FAILED"));
+
+        mockMvc.perform(post("/api/jobs/1/force-fail"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.id").value(1))
+                .andExpect(jsonPath("$.status").value("FAILED"));
+
+        verify(vodJobService).forceFailJob(1L);
+    }
+
+    @Test
     void listsCandidates() throws Exception {
         when(vodJobService.listCandidates(1L)).thenReturn(List.of(
                 new ClipCandidateResponse(
@@ -376,5 +415,31 @@ class VodJobControllerTest {
                 .andExpect(jsonPath("$.message").value("Upload file is required."))
                 .andExpect(jsonPath("$.status").value(400))
                 .andExpect(jsonPath("$.path").value("/api/jobs/upload"));
+    }
+
+    private static JobDetailResponse jobDetailResponse(String status) {
+        return new JobDetailResponse(
+                1L,
+                "URL",
+                "https://example.com/video",
+                "video.mp4",
+                status,
+                Instant.parse("2026-04-05T10:00:00Z"),
+                Instant.parse("2026-04-05T10:01:00Z"),
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                1L,
+                null,
+                null,
+                5,
+                "Queued for download worker",
+                null,
+                null
+        );
     }
 }

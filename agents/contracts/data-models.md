@@ -34,7 +34,7 @@ Fields:
 Notes:
 - `vod_job` is not the primary runtime execution record.
 - `vod_job.status` is a projection of task/execution progress for UI and operators.
-- restart/cancel flows may invalidate the active `processing_version`.
+- operator retry increments `processing_version` so stale worker callbacks can be rejected cleanly.
 
 ## worker_task
 Represents one backend-managed task in the execution queue.

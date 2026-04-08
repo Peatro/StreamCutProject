@@ -60,14 +60,19 @@ public class VodJobController {
         return vodJobService.getJob(id);
     }
 
+    @PostMapping("/{id}/retry")
+    public JobDetailResponse retryJob(@PathVariable Long id) {
+        return vodJobService.retryJob(id);
+    }
+
     @PostMapping("/{id}/cancel")
     public JobDetailResponse cancelJob(@PathVariable Long id) {
         return vodJobService.cancelJob(id);
     }
 
-    @PostMapping("/{id}/restart")
-    public JobDetailResponse restartJob(@PathVariable Long id) {
-        return vodJobService.restartJob(id);
+    @PostMapping("/{id}/force-fail")
+    public JobDetailResponse forceFailJob(@PathVariable Long id) {
+        return vodJobService.forceFailJob(id);
     }
 
     @GetMapping("/{id}/candidates")

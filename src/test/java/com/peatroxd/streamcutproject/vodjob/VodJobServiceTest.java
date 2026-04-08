@@ -45,6 +45,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.Mockito;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -135,10 +136,13 @@ class VodJobServiceTest {
                 workerDispatchPayloadFactory
         );
         lenient().when(workerTaskRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        lenient().when(vodJobRepository.save(any(VodJob.class))).thenAnswer(invocation -> invocation.getArgument(0));
         lenient().when(workerTaskRepository.findAllByVodJobIdAndProcessingVersionAndStatusIn(anyLong(), anyLong(), any()))
                 .thenReturn(List.of());
         lenient().when(workerTaskRepository.findAllByStatusInAndLastHeartbeatAtBeforeOrderByIdAsc(any(), any()))
                 .thenReturn(List.of());
+        lenient().when(workerTaskRepository.findFirstByVodJobIdOrderByIdDesc(anyLong()))
+                .thenReturn(java.util.Optional.empty());
         lenient().when(workerTaskRepository.findFirstByVodJobIdAndProcessingVersionAndTaskTypeAndStatusInOrderByIdAsc(
                 anyLong(), anyLong(), any(), any()
         )).thenReturn(java.util.Optional.empty());
@@ -146,6 +150,10 @@ class VodJobServiceTest {
                 anyLong(), anyLong(), any(), anyLong(), any()
         )).thenReturn(java.util.Optional.empty());
         lenient().when(workerExecutionRepository.findFirstByWorkerTaskIdOrderByIdDesc(anyLong()))
+                .thenReturn(java.util.Optional.empty());
+        lenient().when(workerExecutionRepository.findAllByVodJobIdAndProcessingVersionAndStatusIn(anyLong(), anyLong(), any()))
+                .thenReturn(List.of());
+        lenient().when(workerExecutionRepository.findFirstByVodJobIdOrderByIdDesc(anyLong()))
                 .thenReturn(java.util.Optional.empty());
         lenient().when(workerExecutionRepository.save(any(WorkerExecution.class))).thenAnswer(invocation -> {
             WorkerExecution execution = invocation.getArgument(0);
@@ -403,6 +411,151 @@ class VodJobServiceTest {
         assertThatThrownBy(() -> vodJobService.getJob(99L))
                 .isInstanceOf(ResponseStatusException.class)
                 .hasMessageContaining("Job not found: 99");
+    }
+
+    @Test
+    void retryJobRequeuesFailedJobAndCreatesFreshDownloadTask() {
+        VodJob job = buildJob(1L, "https://example.com/video", Instant.parse("2026-04-05T10:00:00Z"));
+        job.setStatus(JobStatus.FAILED);
+        job.setProcessingVersion(3L);
+        job.setStartedAt(Instant.parse("2026-04-05T10:01:00Z"));
+        job.setFinishedAt(Instant.parse("2026-04-05T10:03:00Z"));
+        job.setErrorMessage("download failed");
+        job.setStorageAudioPath("/var/lib/streamcut/jobs/1/audio/audio.wav");
+        when(vodJobRepository.findById(1L)).thenReturn(java.util.Optional.of(job));
+
+        JobDetailResponse response = vodJobService.retryJob(1L);
+
+        assertThat(response.status()).isEqualTo("QUEUED_FOR_DOWNLOAD");
+        assertThat(response.processingVersion()).isEqualTo(4L);
+        assertThat(job.getStatus()).isEqualTo(JobStatus.QUEUED_FOR_DOWNLOAD);
+        assertThat(job.getProcessingVersion()).isEqualTo(4L);
+        assertThat(job.getStartedAt()).isNull();
+        assertThat(job.getFinishedAt()).isNull();
+        assertThat(job.getErrorMessage()).isNull();
+        assertThat(job.getStorageAudioPath()).isNull();
+        verify(transcriptSegmentRepository).deleteAllByJobId(1L);
+        verify(silenceSegmentRepository).deleteAllByJobId(1L);
+        verify(analysisWindowRepository).deleteAllByJobId(1L);
+        verify(clipCandidateRepository).deleteAllByJobId(1L);
+
+        ArgumentCaptor<WorkerTask> taskCaptor = ArgumentCaptor.forClass(WorkerTask.class);
+        verify(workerTaskRepository).save(taskCaptor.capture());
+        WorkerTask queuedTask = taskCaptor.getValue();
+        assertThat(queuedTask.getTaskType()).isEqualTo(WorkerTaskType.DOWNLOAD);
+        assertThat(queuedTask.getProcessingVersion()).isEqualTo(4L);
+        assertThat(queuedTask.getStatus()).isEqualTo(WorkerTaskStatus.QUEUED);
+
+        ArgumentCaptor<JobEvent> eventCaptor = ArgumentCaptor.forClass(JobEvent.class);
+        verify(jobEventRepository).save(eventCaptor.capture());
+        assertThat(eventCaptor.getValue().getEventType()).isEqualTo("JOB_RETRIED");
+        assertThat(eventCaptor.getValue().getMessage()).contains("requeued it for download");
+    }
+
+    @Test
+    void retryJobRejectsNonFailedStatus() {
+        VodJob job = buildJob(1L, "https://example.com/video", Instant.parse("2026-04-05T10:00:00Z"));
+        job.setStatus(JobStatus.READY_FOR_REVIEW);
+        when(vodJobRepository.findById(1L)).thenReturn(java.util.Optional.of(job));
+
+        assertThatThrownBy(() -> vodJobService.retryJob(1L))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("Job cannot be retried from status: READY_FOR_REVIEW");
+    }
+
+    @Test
+    void cancelJobCancelsQueuedJobAndMarksOpenTaskCanceled() {
+        VodJob job = buildJob(1L, "https://example.com/video", Instant.parse("2026-04-05T10:00:00Z"));
+        job.setStatus(JobStatus.QUEUED_FOR_PROCESSING);
+        job.setCurrentWorkerId(null);
+        job.setProcessingVersion(3L);
+        WorkerTask queuedTask = buildQueuedTask(job, WorkerTaskType.ANALYZE, null);
+        when(vodJobRepository.findById(1L)).thenReturn(java.util.Optional.of(job));
+        when(workerTaskRepository.findAllByVodJobIdAndProcessingVersionAndStatusIn(
+                1L,
+                3L,
+                List.of(WorkerTaskStatus.QUEUED, WorkerTaskStatus.CLAIMED, WorkerTaskStatus.RUNNING)
+        )).thenReturn(List.of(queuedTask));
+
+        JobDetailResponse response = vodJobService.cancelJob(1L);
+
+        assertThat(response.status()).isEqualTo("CANCELED");
+        assertThat(job.getStatus()).isEqualTo(JobStatus.CANCELED);
+        assertThat(job.getProcessingVersion()).isEqualTo(3L);
+        assertThat(job.getLastWorkerHeartbeatAt()).isNull();
+        assertThat(job.getProgressMessage()).isEqualTo("Job canceled by operator");
+        assertThat(queuedTask.getStatus()).isEqualTo(WorkerTaskStatus.CANCELED);
+        assertThat(queuedTask.getFailureMessage()).isEqualTo("Canceled by operator");
+
+        ArgumentCaptor<JobEvent> eventCaptor = ArgumentCaptor.forClass(JobEvent.class);
+        verify(jobEventRepository).save(eventCaptor.capture());
+        assertThat(eventCaptor.getValue().getEventType()).isEqualTo("JOB_CANCELED");
+        assertThat(eventCaptor.getValue().getMessage()).contains("queued job");
+    }
+
+    @Test
+    void cancelJobRejectsActiveStatus() {
+        VodJob job = buildJob(1L, "https://example.com/video", Instant.parse("2026-04-05T10:00:00Z"));
+        job.setStatus(JobStatus.DOWNLOADING);
+        when(vodJobRepository.findById(1L)).thenReturn(java.util.Optional.of(job));
+
+        assertThatThrownBy(() -> vodJobService.cancelJob(1L))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("Job cannot be canceled from status: DOWNLOADING");
+    }
+
+    @Test
+    void forceFailJobFailsActiveExecutionAndMarksExportCandidateFailed() {
+        VodJob job = buildJob(1L, "https://example.com/video", Instant.parse("2026-04-05T10:00:00Z"));
+        job.setStatus(JobStatus.EXPORTING_CLIP);
+        job.setProcessingVersion(5L);
+        job.setCurrentWorkerId("worker-1");
+        WorkerTask exportTask = buildQueuedTask(job, WorkerTaskType.EXPORT, 7L);
+        exportTask.markRunning(Instant.parse("2026-04-05T10:02:00Z"));
+        WorkerExecution execution = buildExecution(job, exportTask, "worker-1", WorkerTaskType.EXPORT, 91L, 7L);
+        ClipCandidate candidate = ClipCandidate.create(job, 5.0, 12.0, 0.91, "first");
+        candidate.setId(7L);
+        candidate.setExportStatus(ExportStatus.IN_PROGRESS);
+        when(vodJobRepository.findById(1L)).thenReturn(java.util.Optional.of(job));
+        when(clipCandidateRepository.findAllByVodJobIdAndExportStatus(1L, ExportStatus.IN_PROGRESS))
+                .thenReturn(List.of(candidate));
+        when(workerExecutionRepository.findAllByVodJobIdAndProcessingVersionAndStatusIn(
+                1L,
+                5L,
+                List.of(WorkerExecutionStatus.CLAIMED, WorkerExecutionStatus.RUNNING)
+        )).thenReturn(List.of(execution));
+        when(workerTaskRepository.findAllByVodJobIdAndProcessingVersionAndStatusIn(
+                1L,
+                5L,
+                List.of(WorkerTaskStatus.QUEUED, WorkerTaskStatus.CLAIMED, WorkerTaskStatus.RUNNING)
+        )).thenReturn(List.of(exportTask));
+
+        JobDetailResponse response = vodJobService.forceFailJob(1L);
+
+        assertThat(response.status()).isEqualTo("FAILED");
+        assertThat(job.getStatus()).isEqualTo(JobStatus.FAILED);
+        assertThat(job.getErrorMessage()).isEqualTo("Operator forced failure");
+        assertThat(execution.getStatus()).isEqualTo(WorkerExecutionStatus.FAILED);
+        assertThat(execution.getFailureMessage()).isEqualTo("Operator forced failure");
+        assertThat(exportTask.getStatus()).isEqualTo(WorkerTaskStatus.FAILED);
+        assertThat(exportTask.getFailureMessage()).isEqualTo("Operator forced failure");
+        assertThat(candidate.getExportStatus()).isEqualTo(ExportStatus.FAILED);
+
+        ArgumentCaptor<JobEvent> eventCaptor = ArgumentCaptor.forClass(JobEvent.class);
+        verify(jobEventRepository).save(eventCaptor.capture());
+        assertThat(eventCaptor.getValue().getEventType()).isEqualTo("JOB_FORCE_FAILED");
+        assertThat(eventCaptor.getValue().getMessage()).contains("EXPORTING_CLIP");
+    }
+
+    @Test
+    void forceFailJobRejectsQueuedStatus() {
+        VodJob job = buildJob(1L, "https://example.com/video", Instant.parse("2026-04-05T10:00:00Z"));
+        job.setStatus(JobStatus.QUEUED_FOR_DOWNLOAD);
+        when(vodJobRepository.findById(1L)).thenReturn(java.util.Optional.of(job));
+
+        assertThatThrownBy(() -> vodJobService.forceFailJob(1L))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("Job cannot be force-failed from status: QUEUED_FOR_DOWNLOAD");
     }
 
     @Test

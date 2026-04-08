@@ -26,7 +26,9 @@ Current states:
 Rules:
 - transitions must be explicit
 - aggregate status is derived from accepted task/execution progress
-- cancellation and restart invalidate the active worker lease/version
+- operator retry from `FAILED` moves the aggregate back to `QUEUED_FOR_DOWNLOAD` and increments `processing_version`
+- operator cancel is only valid from `QUEUED_FOR_DOWNLOAD` or `QUEUED_FOR_PROCESSING` and ends in `CANCELED`
+- operator force-fail is only valid from active worker states and ends in `FAILED`
 - export is user-triggered after moderation, not an automatic continuation of analysis
 
 Typical aggregate flow:
