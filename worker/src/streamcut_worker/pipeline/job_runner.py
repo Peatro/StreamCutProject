@@ -33,7 +33,7 @@ class WorkerJobRunner:
     storage_root: Path
     source_materializer: SourceMaterializer
     audio_service: FfmpegAudioExtractionService
-    transcription_service: FasterWhisperTranscriptionService
+    transcription_service: FasterWhisperTranscriptionService | None
     silence_service: FfmpegSilenceDetectionService
     analysis_service: SlidingWindowCandidateAnalysisService
     export_service: FfmpegClipExportService
@@ -180,6 +180,8 @@ class WorkerJobRunner:
             raise WorkerJobRunnerError("EXTRACTING_AUDIO", str(exc)) from exc
 
     def _transcribe(self, job: ClaimedJob, audio_path: Path):
+        if self.transcription_service is None:
+            raise WorkerJobRunnerError("TRANSCRIBING", "No transcription service available for this worker role")
         try:
             return self.transcription_service.transcribe(
                 TranscriptionRequest(
@@ -217,12 +219,13 @@ def create_default_job_runner(
     *,
     storage_root: Path,
     emotion_keywords: tuple[str, ...] = (),
+    load_transcription_model: bool = True,
 ) -> WorkerJobRunner:
     return WorkerJobRunner(
         storage_root=storage_root,
         source_materializer=SourceMaterializer(storage_root=storage_root),
         audio_service=FfmpegAudioExtractionService(),
-        transcription_service=create_default_transcription_service(),
+        transcription_service=create_default_transcription_service() if load_transcription_model else None,
         silence_service=FfmpegSilenceDetectionService(),
         analysis_service=SlidingWindowCandidateAnalysisService(),
         export_service=FfmpegClipExportService(storage_root),

@@ -40,6 +40,7 @@ def main() -> None:
         job_runner=create_default_job_runner(
             storage_root=storage_root,
             emotion_keywords=emotion_keywords,
+            load_transcription_model=(worker_role == "processing"),
         ),
         worker_id=worker_id,
         worker_role=worker_role,

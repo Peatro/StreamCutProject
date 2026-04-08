@@ -94,7 +94,7 @@ class FasterWhisperTranscriptionService:
 
 def create_default_transcription_service(
     *,
-    model_size: str = "small",
+    model_size: str = "large-v3-turbo",
     device: str = "cpu",
     compute_type: str = "int8",
 ) -> FasterWhisperTranscriptionService:
