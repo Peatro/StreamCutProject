@@ -395,7 +395,7 @@ public class VodJobService {
         }
 
         Instant now = Instant.now();
-        String artifactPath = resolveExportArtifactPath(candidate);
+        String artifactPath = resolvePlannedExportArtifactPath(candidate);
 
         candidate.setExportedClipPath(artifactPath);
         candidate.setExportStatus(ExportStatus.IN_PROGRESS);
@@ -421,17 +421,23 @@ public class VodJobService {
     @Transactional(readOnly = true)
     public ExportStatusResponse getExportStatus(Long exportId) {
         ClipCandidate candidate = requireCandidate(exportId);
-        return toExportStatusResponse(candidate, resolveExportArtifactPath(candidate), exportReady(candidate));
+        return toExportStatusResponse(candidate, resolveCurrentExportArtifactReference(candidate), exportReady(candidate));
     }
 
     @Transactional(readOnly = true)
     public String getExportArtifactReference(Long exportId) {
         ClipCandidate candidate = requireCandidate(exportId);
-        String reference = resolveExportArtifactPath(candidate);
         if (candidate.getExportStatus() != ExportStatus.COMPLETED) {
             throw new ResponseStatusException(
                     HttpStatus.CONFLICT,
                     "Export artifact is not ready for candidate: " + exportId
+            );
+        }
+        String reference = resolveCurrentExportArtifactReference(candidate);
+        if (reference == null || reference.isBlank()) {
+            throw new ResponseStatusException(
+                    HttpStatus.NOT_FOUND,
+                    "Export artifact not found for candidate: " + exportId
             );
         }
         if (!artifactStorageService.exists(reference)) {
@@ -1267,15 +1273,23 @@ public class VodJobService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Candidate not found: " + candidateId));
     }
 
-    private String resolveExportArtifactPath(ClipCandidate candidate) {
-        if (candidate.getExportedClipPath() != null && !candidate.getExportedClipPath().isBlank()) {
-            return normalizeArtifactPath(candidate.getExportedClipPath());
+    private String resolvePlannedExportArtifactPath(ClipCandidate candidate) {
+        String currentReference = resolveCurrentExportArtifactReference(candidate);
+        if (currentReference != null && !currentReference.isBlank()) {
+            return currentReference;
         }
         return normalizeArtifactPath(storageService.resolveExportedClipPath(
                 candidate.getVodJob().getId(),
                 candidate.getId(),
                 ".mp4"
         ).toString());
+    }
+
+    private String resolveCurrentExportArtifactReference(ClipCandidate candidate) {
+        if (candidate.getExportedClipPath() == null || candidate.getExportedClipPath().isBlank()) {
+            return null;
+        }
+        return normalizeArtifactPath(candidate.getExportedClipPath());
     }
 
     private static String normalizeArtifactPath(String path) {

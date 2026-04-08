@@ -10,6 +10,7 @@ import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.S3Configuration;
 import software.amazon.awssdk.services.s3.model.CreateBucketConfiguration;
 import software.amazon.awssdk.services.s3.model.CreateBucketRequest;
+import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 import software.amazon.awssdk.services.s3.model.HeadBucketRequest;
@@ -109,6 +110,27 @@ public class S3ArtifactStorageService implements ArtifactStorageService {
                 return false;
             }
             throw exception;
+        }
+    }
+
+    @Override
+    public void delete(String reference) throws IOException {
+        if (reference == null || reference.isBlank()) {
+            return;
+        }
+        if (!isS3Reference(reference)) {
+            Files.deleteIfExists(Path.of(reference).normalize());
+            return;
+        }
+
+        ParsedReference parsed = parse(reference);
+        try {
+            s3Client.deleteObject(DeleteObjectRequest.builder()
+                    .bucket(parsed.bucket())
+                    .key(parsed.key())
+                    .build());
+        } catch (S3Exception exception) {
+            throw new IOException("Failed to delete artifact from object storage: " + reference, exception);
         }
     }
 

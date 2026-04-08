@@ -120,6 +120,28 @@ Track:
 - export retention
 - temporary local storage growth
 
+Current policy:
+
+- source video files for `COMPLETED` and `FAILED` jobs are eligible for cleanup 7 days after the job reached its terminal state
+- exported clip artifacts for `COMPLETED` jobs are eligible for cleanup 30 days after completion
+- jobs in `NEW`, `QUEUED_FOR_DOWNLOAD`, `DOWNLOADING`, `QUEUED_FOR_PROCESSING`, `EXTRACTING_AUDIO`, `TRANSCRIBING`, `DETECTING_SILENCE`, `ANALYZING_WINDOWS`, `GENERATING_CANDIDATES`, `READY_FOR_REVIEW`, and `EXPORTING_CLIP` are never retention-cleaned
+- `finishedAt` is used as the terminal-state timestamp; `updatedAt` is used as a fallback for older terminal rows without `finishedAt`
+- when a retained file is already missing, cleanup logs it as non-fatal and clears the stored reference so the item is not retried forever
+- expired successful exports stop being downloadable after cleanup because the stored artifact reference is removed
+
+Configuration:
+
+- `app.retention.source-retention`: source retention window, default `7d`
+- `app.retention.artifact-retention`: artifact retention window, default `30d`
+- `app.retention.cleanup-cron`: cleanup schedule, default `0 0 3 * * *`
+- `app.retention.cleanup-zone`: cron timezone, default `UTC`
+
+Operational notes:
+
+- the scheduler logs one summary line per run with source and artifact cleanup counts
+- each deleted or already-missing item is logged with `jobId`; artifact cleanup logs also include `candidateId`
+- operators should expect downloads to keep working for successful exports until the artifact retention window expires
+
 See also:
 
 - `TASK-063`
@@ -145,7 +167,7 @@ Near-term missing operational maturity:
 - richer diagnostics
 - explicit operator recovery controls
 - richer metrics surface
-- fully documented cleanup lifecycle
+- richer retention reporting beyond scheduler logs
 
 ---
 
