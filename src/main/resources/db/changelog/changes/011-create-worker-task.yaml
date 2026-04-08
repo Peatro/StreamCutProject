@@ -1,0 +1,99 @@
+databaseChangeLog:
+  - changeSet:
+      id: 011-create-worker-task
+      author: codex
+      comment: Create worker_task table and link worker executions to logical tasks.
+      changes:
+        - createTable:
+            tableName: worker_task
+            columns:
+              - column:
+                  name: id
+                  type: BIGINT
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: job_id
+                  type: BIGINT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: processing_version
+                  type: BIGINT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: task_type
+                  type: VARCHAR(32)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: status
+                  type: VARCHAR(32)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: candidate_id
+                  type: BIGINT
+              - column:
+                  name: created_at
+                  type: TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: claimed_at
+                  type: TIMESTAMP
+              - column:
+                  name: last_heartbeat_at
+                  type: TIMESTAMP
+              - column:
+                  name: finished_at
+                  type: TIMESTAMP
+              - column:
+                  name: failure_message
+                  type: VARCHAR(1000)
+        - addForeignKeyConstraint:
+            baseTableName: worker_task
+            baseColumnNames: job_id
+            referencedTableName: vod_job
+            referencedColumnNames: id
+            constraintName: fk_worker_task_job
+            onDelete: CASCADE
+        - createIndex:
+            tableName: worker_task
+            indexName: idx_worker_task_queue_lookup
+            columns:
+              - column:
+                  name: job_id
+              - column:
+                  name: processing_version
+              - column:
+                  name: task_type
+              - column:
+                  name: status
+        - addColumn:
+            tableName: worker_execution
+            columns:
+              - column:
+                  name: task_id
+                  type: BIGINT
+        - addForeignKeyConstraint:
+            baseTableName: worker_execution
+            baseColumnNames: task_id
+            referencedTableName: worker_task
+            referencedColumnNames: id
+            constraintName: fk_worker_execution_task
+            onDelete: SET NULL
+        - createIndex:
+            tableName: worker_execution
+            indexName: idx_worker_execution_task
+            columns:
+              - column:
+                  name: task_id

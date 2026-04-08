@@ -10,9 +10,16 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import lombok.AccessLevel;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
 
 @Entity
 @Table(name = "analysis_window")
+@Getter
+@Setter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class AnalysisWindow {
 
     @Id
@@ -44,9 +51,6 @@ public class AnalysisWindow {
     @Column(name = "total_score", nullable = false)
     private Double totalScore;
 
-    protected AnalysisWindow() {
-    }
-
     public static AnalysisWindow create(
             VodJob vodJob,
             Double startSec,
@@ -67,77 +71,5 @@ public class AnalysisWindow {
         window.setContinuityScore(continuityScore);
         window.setTotalScore(totalScore);
         return window;
-    }
-
-    public Long getId() {
-        return id;
-    }
-
-    public void setId(Long id) {
-        this.id = id;
-    }
-
-    public VodJob getVodJob() {
-        return vodJob;
-    }
-
-    public void setVodJob(VodJob vodJob) {
-        this.vodJob = vodJob;
-    }
-
-    public Double getStartSec() {
-        return startSec;
-    }
-
-    public void setStartSec(Double startSec) {
-        this.startSec = startSec;
-    }
-
-    public Double getEndSec() {
-        return endSec;
-    }
-
-    public void setEndSec(Double endSec) {
-        this.endSec = endSec;
-    }
-
-    public Double getSpeechDensity() {
-        return speechDensity;
-    }
-
-    public void setSpeechDensity(Double speechDensity) {
-        this.speechDensity = speechDensity;
-    }
-
-    public Double getSilenceRatio() {
-        return silenceRatio;
-    }
-
-    public void setSilenceRatio(Double silenceRatio) {
-        this.silenceRatio = silenceRatio;
-    }
-
-    public Integer getEmotionHits() {
-        return emotionHits;
-    }
-
-    public void setEmotionHits(Integer emotionHits) {
-        this.emotionHits = emotionHits;
-    }
-
-    public Double getContinuityScore() {
-        return continuityScore;
-    }
-
-    public void setContinuityScore(Double continuityScore) {
-        this.continuityScore = continuityScore;
-    }
-
-    public Double getTotalScore() {
-        return totalScore;
-    }
-
-    public void setTotalScore(Double totalScore) {
-        this.totalScore = totalScore;
     }
 }

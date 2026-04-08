@@ -18,6 +18,8 @@ import com.peatroxd.streamcutproject.vodjob.api.JobEventResponse;
 import com.peatroxd.streamcutproject.vodjob.api.JobSummaryResponse;
 import com.peatroxd.streamcutproject.vodjob.api.JobMapper;
 import com.peatroxd.streamcutproject.vodjob.api.TranscriptSegmentResponse;
+import com.peatroxd.streamcutproject.vodjob.api.WorkerExecutionResponse;
+import com.peatroxd.streamcutproject.vodjob.api.WorkerTaskResponse;
 import com.peatroxd.streamcutproject.vodjob.event.JobEvent;
 import com.peatroxd.streamcutproject.vodjob.event.JobEventRepository;
 import com.peatroxd.streamcutproject.transcript.TranscriptSegmentRepository;
@@ -35,11 +37,19 @@ import com.peatroxd.streamcutproject.workerdispatch.WorkerProcessingResultPayloa
 import com.peatroxd.streamcutproject.workerdispatch.WorkerProgressUpdatePayload;
 import com.peatroxd.streamcutproject.workerdispatch.WorkerDispatchPort;
 import com.peatroxd.streamcutproject.workerdispatch.WorkerTransportAck;
+import com.peatroxd.streamcutproject.workerexecution.WorkerExecution;
+import com.peatroxd.streamcutproject.workerexecution.WorkerExecutionProperties;
+import com.peatroxd.streamcutproject.workerexecution.WorkerExecutionRepository;
+import com.peatroxd.streamcutproject.workerexecution.WorkerExecutionStatus;
+import com.peatroxd.streamcutproject.workerexecution.WorkerTaskType;
+import com.peatroxd.streamcutproject.workertask.WorkerTask;
+import com.peatroxd.streamcutproject.workertask.WorkerTaskRepository;
+import com.peatroxd.streamcutproject.workertask.WorkerTaskStatus;
+import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.data.domain.Sort;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -52,11 +62,15 @@ import java.nio.file.Path;
 import java.net.URI;
 import java.time.Instant;
 import java.util.EnumSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 
 @Service
+@RequiredArgsConstructor
 public class VodJobService {
 
     private static final Logger log = LoggerFactory.getLogger(VodJobService.class);
@@ -72,6 +86,7 @@ public class VodJobService {
     private static final String EVENT_JOB_CANCELED = "JOB_CANCELED";
     private static final String EVENT_JOB_RESTARTED = "JOB_RESTARTED";
     private static final String EVENT_WORKER_PROGRESS = "WORKER_PROGRESS";
+    private static final String EVENT_WORKER_EXECUTION_STALE = "WORKER_EXECUTION_STALE";
     private static final String EVENT_DOWNLOAD_COMPLETED = "JOB_DOWNLOAD_COMPLETED";
     private static final String EVENT_JOB_READY_FOR_REVIEW = "JOB_READY_FOR_REVIEW";
     private static final String EVENT_JOB_FAILED = "JOB_FAILED";
@@ -121,33 +136,11 @@ public class VodJobService {
     private final StorageService storageService;
     private final ArtifactStorageService artifactStorageService;
     private final StorageProperties storageProperties;
+    private final WorkerExecutionProperties workerExecutionProperties;
+    private final WorkerTaskRepository workerTaskRepository;
+    private final WorkerExecutionRepository workerExecutionRepository;
     private final WorkerDispatchPort workerDispatchPort;
     private final WorkerDispatchPayloadFactory workerDispatchPayloadFactory;
-
-    public VodJobService(
-            VodJobRepository vodJobRepository,
-            JobEventRepository jobEventRepository,
-            TranscriptSegmentRepository transcriptSegmentRepository,
-            SilenceSegmentRepository silenceSegmentRepository,
-            AnalysisWindowRepository analysisWindowRepository,
-            ClipCandidateRepository clipCandidateRepository,
-            StorageService storageService,
-            ArtifactStorageService artifactStorageService,
-            StorageProperties storageProperties,
-            WorkerDispatchPort workerDispatchPort,
-            WorkerDispatchPayloadFactory workerDispatchPayloadFactory) {
-        this.vodJobRepository = vodJobRepository;
-        this.jobEventRepository = jobEventRepository;
-        this.transcriptSegmentRepository = transcriptSegmentRepository;
-        this.silenceSegmentRepository = silenceSegmentRepository;
-        this.analysisWindowRepository = analysisWindowRepository;
-        this.clipCandidateRepository = clipCandidateRepository;
-        this.storageService = storageService;
-        this.artifactStorageService = artifactStorageService;
-        this.storageProperties = storageProperties;
-        this.workerDispatchPort = workerDispatchPort;
-        this.workerDispatchPayloadFactory = workerDispatchPayloadFactory;
-    }
 
     @Transactional
     public JobSummaryResponse createUrlJob(String url) {
@@ -194,16 +187,37 @@ public class VodJobService {
 
     @Transactional(readOnly = true)
     public List<JobListItemResponse> listJobs() {
-        return vodJobRepository.findAll(Sort.by(Sort.Direction.ASC, "createdAt", "id"))
+        List<VodJob> jobs = vodJobRepository.findAll(Sort.by(Sort.Direction.ASC, "createdAt", "id"));
+        Map<Long, WorkerExecution> latestExecutionByJobId = latestExecutionByJobId(jobs);
+        Map<Long, List<WorkerTask>> tasksByJobId = tasksByJobId(jobs);
+        return jobs
                 .stream()
-                .map(JobMapper::toListItemResponse)
+                .map(job -> {
+                    List<WorkerTask> tasks = tasksByJobId.getOrDefault(job.getId(), List.of());
+                    WorkerTask latestTask = tasks.isEmpty() ? null : tasks.get(tasks.size() - 1);
+                    JobProjection.recomputeFromTasks(job, tasks);
+                    return JobMapper.toListItemResponse(
+                        job,
+                        Optional.ofNullable(latestExecutionByJobId.get(job.getId())),
+                        Optional.ofNullable(latestTask)
+                    );
+                })
                 .toList();
     }
 
     @Transactional(readOnly = true)
     public JobDetailResponse getJob(Long jobId) {
         VodJob job = requireJob(jobId);
-        return JobMapper.toDetailResponse(job);
+        List<WorkerTask> tasks = workerTaskRepository.findAllByVodJobIdOrderByCreatedAtAscIdAsc(jobId);
+        Optional<WorkerTask> latestTask = tasks.isEmpty()
+                ? Optional.empty()
+                : Optional.of(tasks.get(tasks.size() - 1));
+        JobProjection.recomputeFromTasks(job, tasks);
+        return JobMapper.toDetailResponse(
+                job,
+                workerExecutionRepository.findFirstByVodJobIdOrderByIdDesc(jobId),
+                latestTask
+        );
     }
 
     @Transactional(readOnly = true)
@@ -247,6 +261,24 @@ public class VodJobService {
                 .toList();
     }
 
+    @Transactional(readOnly = true)
+    public List<WorkerExecutionResponse> listWorkerExecutions(Long jobId) {
+        requireJob(jobId);
+        return workerExecutionRepository.findAllByVodJobIdOrderByClaimedAtAscIdAsc(jobId)
+                .stream()
+                .map(JobMapper::toExecutionResponse)
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<WorkerTaskResponse> listWorkerTasks(Long jobId) {
+        requireJob(jobId);
+        return workerTaskRepository.findAllByVodJobIdOrderByCreatedAtAscIdAsc(jobId)
+                .stream()
+                .map(JobMapper::toTaskResponse)
+                .toList();
+    }
+
     @Transactional
     public JobDetailResponse cancelJob(Long jobId) {
         VodJob job = requireJob(jobId);
@@ -258,6 +290,7 @@ public class VodJobService {
         }
 
         Instant now = Instant.now();
+        Long activeProcessingVersion = job.getProcessingVersion();
         if (job.getStatus() == JobStatus.EXPORTING_CLIP) {
             clipCandidateRepository.findAllByVodJobIdAndExportStatus(job.getId(), ExportStatus.IN_PROGRESS)
                     .forEach(candidate -> {
@@ -266,15 +299,9 @@ public class VodJobService {
                     });
         }
 
+        cancelOpenWorkerState(job.getId(), activeProcessingVersion, now, "Canceled by operator");
         job.setProcessingVersion(nextProcessingVersion(job));
-        job.setStatus(JobStatus.CANCELED);
-        job.setUpdatedAt(now);
-        job.setFinishedAt(now);
-        job.setCurrentWorkerId(null);
-        job.setLastWorkerHeartbeatAt(now);
-        job.setProgressPercent(0);
-        job.setProgressMessage("Worker run canceled by operator");
-        job.setErrorMessage("Canceled by operator");
+        JobProjection.applyCanceled(job, now, "Canceled by operator");
         vodJobRepository.save(job);
         jobEventRepository.save(JobEvent.create(
                 job,
@@ -284,7 +311,11 @@ public class VodJobService {
         ));
         log.warn("job_canceled jobId={} processingVersion={}", job.getId(), job.getProcessingVersion());
 
-        return JobMapper.toDetailResponse(job);
+        return JobMapper.toDetailResponse(
+                job,
+                workerExecutionRepository.findFirstByVodJobIdOrderByIdDesc(job.getId()),
+                workerTaskRepository.findFirstByVodJobIdOrderByIdDesc(job.getId())
+        );
     }
 
     @Transactional
@@ -298,20 +329,24 @@ public class VodJobService {
         }
 
         Instant now = Instant.now();
-        if (shouldRestartExport(job)) {
-            restartExport(job, now);
+        Long activeProcessingVersion = job.getProcessingVersion();
+        boolean restartExport = shouldRestartExport(job);
+        cancelOpenWorkerState(job.getId(), activeProcessingVersion, now, "Restarted by operator");
+        job.setProcessingVersion(nextProcessingVersion(job));
+        if (restartExport) {
+            Long candidateId = restartExport(job, now);
+            queueWorkerTask(job, job.getProcessingVersion(), WorkerTaskType.EXPORT, candidateId, now);
         } else {
             resetAnalysisArtifacts(job);
             queueJobForDownload(job, now);
+            queueWorkerTask(job, job.getProcessingVersion(), WorkerTaskType.DOWNLOAD, null, now);
         }
 
-        job.setProcessingVersion(nextProcessingVersion(job));
-        job.setUpdatedAt(now);
         job.setFinishedAt(null);
         job.setCurrentWorkerId(null);
         job.setLastWorkerHeartbeatAt(null);
         job.setErrorMessage(null);
-        vodJobRepository.save(job);
+        recomputeAndPersistJob(job);
         jobEventRepository.save(JobEvent.create(
                 job,
                 EVENT_JOB_RESTARTED,
@@ -328,7 +363,11 @@ public class VodJobService {
         }
         log.info("job_restarted jobId={} processingVersion={} status={}", job.getId(), job.getProcessingVersion(), job.getStatus());
 
-        return JobMapper.toDetailResponse(job);
+        return JobMapper.toDetailResponse(
+                job,
+                workerExecutionRepository.findFirstByVodJobIdOrderByIdDesc(job.getId()),
+                workerTaskRepository.findFirstByVodJobIdOrderByIdDesc(job.getId())
+        );
     }
 
     @Transactional
@@ -363,17 +402,14 @@ public class VodJobService {
 
         candidate.setExportedClipPath(artifactPath);
         candidate.setExportStatus(ExportStatus.IN_PROGRESS);
-        job.setStatus(JobStatus.EXPORTING_CLIP);
-        job.setUpdatedAt(now);
-        job.setFinishedAt(null);
-        job.setCurrentWorkerId(null);
+        JobProjection.applyQueuedTask(job, WorkerTaskType.EXPORT, now, "Queued for clip export");
         job.setLastWorkerHeartbeatAt(null);
-        job.setProgressPercent(90);
-        job.setProgressMessage("Queued for clip export");
+        job.setFinishedAt(null);
         job.setErrorMessage(null);
 
         clipCandidateRepository.save(candidate);
-        vodJobRepository.save(job);
+        queueWorkerTask(job, job.getProcessingVersion(), WorkerTaskType.EXPORT, candidate.getId(), now);
+        recomputeAndPersistJob(job);
         jobEventRepository.save(JobEvent.create(
                 job,
                 EVENT_EXPORT_STARTED,
@@ -436,12 +472,13 @@ public class VodJobService {
         VodJob job = vodJobRepository.findById(jobId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Job not found: " + jobId));
 
-        WorkerDispatchPayload payload = workerDispatchPayloadFactory.fromDownloadJob(job);
+        WorkerDispatchPayload payload = workerDispatchPayloadFactory.fromDownloadJob(job, null);
         workerDispatchPort.dispatch(payload);
 
         Instant now = Instant.now();
         queueJobForDownload(job, now);
         vodJobRepository.save(job);
+        queueWorkerTask(job, job.getProcessingVersion(), WorkerTaskType.DOWNLOAD, null, now);
 
         jobEventRepository.save(JobEvent.create(
                 job,
@@ -456,6 +493,7 @@ public class VodJobService {
 
     @Transactional
     public Optional<WorkerDispatchPayload> claimNextQueuedJob(String workerId, String workerRole) {
+        recoverStaleExecutions();
         String normalizedRole = normalizeWorkerRole(workerRole);
         if (WORKER_ROLE_PROCESSING.equals(normalizedRole)) {
             return claimNextProcessingJob(workerId);
@@ -464,28 +502,35 @@ public class VodJobService {
     }
 
     private Optional<WorkerDispatchPayload> claimNextDownloadJob(String workerId) {
-        List<VodJob> queuedJobs = vodJobRepository.findAllByStatusForUpdate(
-                JobStatus.QUEUED_FOR_DOWNLOAD,
-                PageRequest.of(0, 1)
+        Optional<WorkerTask> queuedTask = workerTaskRepository.findFirstByTaskTypeAndStatusOrderByIdAsc(
+                WorkerTaskType.DOWNLOAD,
+                WorkerTaskStatus.QUEUED
         );
-        if (queuedJobs.isEmpty()) {
+        if (queuedTask.isEmpty()) {
             return Optional.empty();
         }
 
-        VodJob job = queuedJobs.get(0);
-        WorkerDispatchPayload payload = workerDispatchPayloadFactory.fromDownloadJob(job);
-
+        WorkerTask task = queuedTask.get();
+        VodJob job = task.getVodJob();
         Instant now = Instant.now();
-        job.setStatus(JobStatus.DOWNLOADING);
-        job.setUpdatedAt(now);
-        job.setCurrentWorkerId(workerId);
-        job.setLastWorkerHeartbeatAt(now);
-        job.setProgressPercent(progressPercentFor(JobStatus.DOWNLOADING));
-        job.setProgressMessage("Download worker claimed job and started source materialization");
+        JobProjection.applyClaimedTask(job, WorkerTaskType.DOWNLOAD, workerId, now);
         if (job.getStartedAt() == null) {
             job.setStartedAt(now);
         }
+        task.markClaimed(now);
+        workerTaskRepository.save(task);
         vodJobRepository.save(job);
+        WorkerExecution execution = workerExecutionRepository.save(WorkerExecution.create(
+                job,
+                task,
+                job.getProcessingVersion(),
+                workerId,
+                WORKER_ROLE_DOWNLOAD,
+                WorkerTaskType.DOWNLOAD,
+                null,
+                now
+        ));
+        WorkerDispatchPayload payload = workerDispatchPayloadFactory.fromDownloadJob(job, execution.getId());
         jobEventRepository.save(JobEvent.create(
                 job,
                 EVENT_JOB_CLAIMED,
@@ -498,19 +543,32 @@ public class VodJobService {
     }
 
     private Optional<WorkerDispatchPayload> claimNextProcessingJob(String workerId) {
-        List<ClipCandidate> pendingExports = clipCandidateRepository.findPendingExportsForUpdate(
-                ExportStatus.IN_PROGRESS,
-                PageRequest.of(0, 1)
+        Optional<WorkerTask> queuedExportTask = workerTaskRepository.findFirstByTaskTypeAndStatusOrderByIdAsc(
+                WorkerTaskType.EXPORT,
+                WorkerTaskStatus.QUEUED
         );
-        if (!pendingExports.isEmpty()) {
-            ClipCandidate candidate = pendingExports.get(0);
+        if (queuedExportTask.isPresent()) {
+            WorkerTask task = queuedExportTask.get();
+            ClipCandidate candidate = clipCandidateRepository.findById(task.getCandidateId())
+                    .orElseThrow(() -> new ResponseStatusException(
+                            HttpStatus.CONFLICT,
+                            "Export candidate is missing for worker task: " + task.getId()
+                    ));
             Instant now = Instant.now();
-            candidate.getVodJob().setCurrentWorkerId(workerId);
-            candidate.getVodJob().setLastWorkerHeartbeatAt(now);
-            candidate.getVodJob().setProgressPercent(92);
-            candidate.getVodJob().setProgressMessage("Worker claimed export task");
-            candidate.getVodJob().setUpdatedAt(now);
+            JobProjection.applyClaimedTask(candidate.getVodJob(), WorkerTaskType.EXPORT, workerId, now);
+            task.markClaimed(now);
+            workerTaskRepository.save(task);
             vodJobRepository.save(candidate.getVodJob());
+            WorkerExecution execution = workerExecutionRepository.save(WorkerExecution.create(
+                    candidate.getVodJob(),
+                    task,
+                    candidate.getVodJob().getProcessingVersion(),
+                    workerId,
+                    WORKER_ROLE_PROCESSING,
+                    WorkerTaskType.EXPORT,
+                    candidate.getId(),
+                    now
+            ));
             jobEventRepository.save(JobEvent.create(
                     candidate.getVodJob(),
                     EVENT_JOB_CLAIMED,
@@ -524,31 +582,38 @@ public class VodJobService {
                     workerId,
                     candidate.getVodJob().getStatus()
             );
-            return Optional.of(workerDispatchPayloadFactory.fromExportCandidate(candidate));
+            return Optional.of(workerDispatchPayloadFactory.fromExportCandidate(candidate, execution.getId()));
         }
 
-        List<VodJob> queuedJobs = vodJobRepository.findAllByStatusForUpdate(
-                JobStatus.QUEUED_FOR_PROCESSING,
-                PageRequest.of(0, 1)
+        Optional<WorkerTask> queuedAnalyzeTask = workerTaskRepository.findFirstByTaskTypeAndStatusOrderByIdAsc(
+                WorkerTaskType.ANALYZE,
+                WorkerTaskStatus.QUEUED
         );
-        if (queuedJobs.isEmpty()) {
+        if (queuedAnalyzeTask.isEmpty()) {
             return Optional.empty();
         }
 
-        VodJob job = queuedJobs.get(0);
-        WorkerDispatchPayload payload = workerDispatchPayloadFactory.fromAnalyzeJob(job);
-
+        WorkerTask task = queuedAnalyzeTask.get();
+        VodJob job = task.getVodJob();
         Instant now = Instant.now();
-        job.setStatus(JobStatus.EXTRACTING_AUDIO);
-        job.setUpdatedAt(now);
-        job.setCurrentWorkerId(workerId);
-        job.setLastWorkerHeartbeatAt(now);
-        job.setProgressPercent(progressPercentFor(JobStatus.EXTRACTING_AUDIO));
-        job.setProgressMessage("Processing worker claimed job and started analysis pipeline");
+        JobProjection.applyClaimedTask(job, WorkerTaskType.ANALYZE, workerId, now);
         if (job.getStartedAt() == null) {
             job.setStartedAt(now);
         }
+        task.markClaimed(now);
+        workerTaskRepository.save(task);
         vodJobRepository.save(job);
+        WorkerExecution execution = workerExecutionRepository.save(WorkerExecution.create(
+                job,
+                task,
+                job.getProcessingVersion(),
+                workerId,
+                WORKER_ROLE_PROCESSING,
+                WorkerTaskType.ANALYZE,
+                null,
+                now
+        ));
+        WorkerDispatchPayload payload = workerDispatchPayloadFactory.fromAnalyzeJob(job, execution.getId());
         jobEventRepository.save(JobEvent.create(
                 job,
                 EVENT_JOB_CLAIMED,
@@ -563,15 +628,21 @@ public class VodJobService {
     @Transactional
     public WorkerTransportAck updateWorkerProgress(WorkerProgressUpdatePayload payload) {
         VodJob job = requireJob(payload.jobId());
-        validateWorkerLease(job, payload.workerId(), payload.processingVersion());
-
         JobStatus stageStatus = parseJobStatus(payload.status(), "worker progress status");
+        WorkerExecution execution = requireActiveExecution(
+                job,
+                payload.executionId(),
+                payload.workerId(),
+                payload.processingVersion(),
+                expectedTaskTypeForStage(stageStatus),
+                null
+        );
         Instant now = Instant.now();
-        job.setStatus(stageStatus);
-        job.setUpdatedAt(now);
-        job.setLastWorkerHeartbeatAt(now);
-        job.setProgressPercent(payload.progressPercent());
-        job.setProgressMessage(payload.message());
+        execution.setStatus(WorkerExecutionStatus.RUNNING);
+        execution.setLastHeartbeatAt(now);
+        updateExecutionTaskAsRunning(execution, now);
+        workerExecutionRepository.save(execution);
+        JobProjection.applyProgress(job, stageStatus, now, payload.progressPercent(), payload.message());
         vodJobRepository.save(job);
         jobEventRepository.save(JobEvent.create(
                 job,
@@ -595,7 +666,14 @@ public class VodJobService {
     @Transactional
     public WorkerTransportAck ingestWorkerResult(WorkerProcessingResultPayload payload) {
         VodJob job = requireJob(payload.jobId());
-        validateWorkerLease(job, payload.workerId(), payload.processingVersion());
+        WorkerExecution execution = requireActiveExecution(
+                job,
+                payload.executionId(),
+                payload.workerId(),
+                payload.processingVersion(),
+                WorkerTaskType.ANALYZE,
+                null
+        );
 
         transcriptSegmentRepository.deleteAllByJobId(job.getId());
         silenceSegmentRepository.deleteAllByJobId(job.getId());
@@ -628,15 +706,12 @@ public class VodJobService {
         if (payload.audioPath() != null && !payload.audioPath().isBlank()) {
             job.setStorageAudioPath(normalizeWorkerPath(payload.audioPath(), "worker audio path"));
         }
-        job.setStatus(JobStatus.READY_FOR_REVIEW);
-        job.setUpdatedAt(now);
-        job.setFinishedAt(now);
-        job.setCurrentWorkerId(null);
-        job.setLastWorkerHeartbeatAt(now);
-        job.setProgressPercent(100);
-        job.setProgressMessage("Analysis completed and candidates are ready for review");
-        job.setErrorMessage(null);
-        vodJobRepository.save(job);
+        execution.setStatus(WorkerExecutionStatus.SUCCEEDED);
+        execution.setLastHeartbeatAt(now);
+        execution.setFinishedAt(now);
+        completeExecutionTask(execution, now);
+        workerExecutionRepository.save(execution);
+        recomputeAndPersistJob(job);
         jobEventRepository.save(JobEvent.create(
                 job,
                 EVENT_JOB_READY_FOR_REVIEW,
@@ -659,18 +734,26 @@ public class VodJobService {
     @Transactional
     public WorkerTransportAck ingestWorkerDownloadResult(WorkerDownloadResultPayload payload) {
         VodJob job = requireJob(payload.jobId());
-        validateWorkerLease(job, payload.workerId(), payload.processingVersion());
+        WorkerExecution execution = requireActiveExecution(
+                job,
+                payload.executionId(),
+                payload.workerId(),
+                payload.processingVersion(),
+                WorkerTaskType.DOWNLOAD,
+                null
+        );
 
         Instant now = Instant.now();
         job.setStorageVideoPath(normalizeWorkerPath(payload.videoPath(), "worker download video path"));
-        job.setStatus(JobStatus.QUEUED_FOR_PROCESSING);
-        job.setUpdatedAt(now);
-        job.setCurrentWorkerId(null);
-        job.setLastWorkerHeartbeatAt(now);
-        job.setProgressPercent(progressPercentFor(JobStatus.QUEUED_FOR_PROCESSING));
-        job.setProgressMessage("Source video is ready and queued for processing");
+        JobProjection.applyQueuedTask(job, WorkerTaskType.ANALYZE, now, "Source video is ready and queued for processing");
         job.setErrorMessage(null);
-        vodJobRepository.save(job);
+        execution.setStatus(WorkerExecutionStatus.SUCCEEDED);
+        execution.setLastHeartbeatAt(now);
+        execution.setFinishedAt(now);
+        completeExecutionTask(execution, now);
+        workerExecutionRepository.save(execution);
+        queueWorkerTask(job, job.getProcessingVersion(), WorkerTaskType.ANALYZE, null, now);
+        recomputeAndPersistJob(job);
         jobEventRepository.save(JobEvent.create(
                 job,
                 EVENT_DOWNLOAD_COMPLETED,
@@ -699,7 +782,14 @@ public class VodJobService {
     public WorkerTransportAck ingestWorkerExportResult(WorkerExportResultPayload payload) {
         ClipCandidate candidate = requireCandidate(payload.candidateId());
         VodJob job = candidate.getVodJob();
-        validateWorkerLease(job, payload.workerId(), payload.processingVersion());
+        WorkerExecution execution = requireActiveExecution(
+                job,
+                payload.executionId(),
+                payload.workerId(),
+                payload.processingVersion(),
+                WorkerTaskType.EXPORT,
+                payload.candidateId()
+        );
         Instant now = Instant.now();
 
         if (payload.artifactPath() != null && !payload.artifactPath().isBlank()) {
@@ -724,16 +814,14 @@ public class VodJobService {
             }
         }
         candidate.setExportStatus(ExportStatus.COMPLETED);
-        job.setStatus(JobStatus.COMPLETED);
-        job.setUpdatedAt(now);
-        job.setFinishedAt(now);
-        job.setCurrentWorkerId(null);
-        job.setLastWorkerHeartbeatAt(now);
-        job.setProgressPercent(100);
-        job.setProgressMessage("Export completed and clip artifact is ready");
-        job.setErrorMessage(null);
+        JobProjection.applyCompletedExport(job, now);
+        execution.setStatus(WorkerExecutionStatus.SUCCEEDED);
+        execution.setLastHeartbeatAt(now);
+        execution.setFinishedAt(now);
+        completeExecutionTask(execution, now);
+        workerExecutionRepository.save(execution);
         clipCandidateRepository.save(candidate);
-        vodJobRepository.save(job);
+        recomputeAndPersistJob(job);
         jobEventRepository.save(JobEvent.create(
                 job,
                 EVENT_EXPORT_COMPLETED,
@@ -754,7 +842,14 @@ public class VodJobService {
     @Transactional
     public WorkerTransportAck reportWorkerFailure(WorkerFailureReportPayload payload) {
         VodJob job = requireJob(payload.jobId());
-        validateWorkerLease(job, payload.workerId(), payload.processingVersion());
+        WorkerExecution execution = requireActiveExecution(
+                job,
+                payload.executionId(),
+                payload.workerId(),
+                payload.processingVersion(),
+                expectedTaskTypeForFailureState(payload.failedState()),
+                null
+        );
         Instant now = Instant.now();
         String failureSummary = payload.failedState() + ": " + payload.message();
 
@@ -766,14 +861,13 @@ public class VodJobService {
                     });
         }
 
-        job.setStatus(JobStatus.FAILED);
-        job.setErrorMessage(failureSummary);
-        job.setUpdatedAt(now);
-        job.setFinishedAt(now);
-        job.setCurrentWorkerId(null);
-        job.setLastWorkerHeartbeatAt(now);
-        job.setProgressPercent(0);
-        job.setProgressMessage("Worker run failed");
+        JobProjection.applyFailure(job, now, failureSummary);
+        execution.setStatus(WorkerExecutionStatus.FAILED);
+        execution.setLastHeartbeatAt(now);
+        execution.setFinishedAt(now);
+        execution.setFailureMessage(failureSummary);
+        failExecutionTask(execution, now, failureSummary);
+        workerExecutionRepository.save(execution);
         vodJobRepository.save(job);
         jobEventRepository.save(JobEvent.create(
                 job,
@@ -792,7 +886,14 @@ public class VodJobService {
         return new WorkerTransportAck(job.getId(), JobStatus.FAILED.name());
     }
 
-    private void validateWorkerLease(VodJob job, String workerId, Long processingVersion) {
+    private WorkerExecution requireActiveExecution(
+            VodJob job,
+            Long executionId,
+            String workerId,
+            Long processingVersion,
+            WorkerTaskType expectedTaskType,
+            Long expectedCandidateId
+    ) {
         Long currentVersion = job.getProcessingVersion();
         if (currentVersion == null || !currentVersion.equals(processingVersion)) {
             throw new ResponseStatusException(
@@ -807,6 +908,79 @@ public class VodJobService {
                     "Worker callback does not own the active lease for job: " + job.getId()
             );
         }
+        WorkerExecution execution = workerExecutionRepository.findById(executionId)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.CONFLICT,
+                        "Worker callback references unknown execution: " + executionId
+                ));
+        if (!execution.getVodJob().getId().equals(job.getId())) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "Worker callback execution does not belong to job: " + job.getId()
+            );
+        }
+        if (!execution.getProcessingVersion().equals(processingVersion)) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "Worker callback execution version is stale for job: " + job.getId()
+            );
+        }
+        if (!execution.getWorkerId().equals(workerId)) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "Worker callback execution does not belong to worker: " + workerId
+            );
+        }
+        if (expectedTaskType != null && execution.getTaskType() != expectedTaskType) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "Worker callback execution task type mismatch for job: " + job.getId()
+            );
+        }
+        if (expectedCandidateId != null && !Objects.equals(execution.getCandidateId(), expectedCandidateId)) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "Worker callback execution does not belong to candidate: " + expectedCandidateId
+            );
+        }
+        if (!List.of(WorkerExecutionStatus.CLAIMED, WorkerExecutionStatus.RUNNING).contains(execution.getStatus())) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "Worker callback has no active execution for job: " + job.getId()
+            );
+        }
+        return execution;
+    }
+
+    private static WorkerTaskType expectedTaskTypeForStage(JobStatus stageStatus) {
+        return switch (stageStatus) {
+            case DOWNLOADING -> WorkerTaskType.DOWNLOAD;
+            case EXPORTING_CLIP -> WorkerTaskType.EXPORT;
+            case EXTRACTING_AUDIO, TRANSCRIBING, DETECTING_SILENCE, ANALYZING_WINDOWS, GENERATING_CANDIDATES ->
+                    WorkerTaskType.ANALYZE;
+            default -> throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Unsupported worker progress status: " + stageStatus
+            );
+        };
+    }
+
+    private static WorkerTaskType expectedTaskTypeForFailureState(String failedState) {
+        String normalizedState = String.valueOf(failedState).trim().toUpperCase();
+        if ("WORKER_INTERNAL".equals(normalizedState)) {
+            return WorkerTaskType.ANALYZE;
+        }
+        JobStatus stageStatus = parseJobStatus(failedState, "worker failure state");
+        return switch (stageStatus) {
+            case DOWNLOADING -> WorkerTaskType.DOWNLOAD;
+            case EXPORTING_CLIP -> WorkerTaskType.EXPORT;
+            case EXTRACTING_AUDIO, TRANSCRIBING, DETECTING_SILENCE, ANALYZING_WINDOWS, GENERATING_CANDIDATES ->
+                    WorkerTaskType.ANALYZE;
+            default -> throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Unsupported worker failure state: " + stageStatus
+            );
+        };
     }
 
     private static JobStatus parseJobStatus(String rawStatus, String description) {
@@ -815,23 +989,6 @@ public class VodJobService {
         } catch (IllegalArgumentException ex) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, description + " is invalid", ex);
         }
-    }
-
-    private static int progressPercentFor(JobStatus status) {
-        return switch (status) {
-            case NEW -> 0;
-            case QUEUED_FOR_DOWNLOAD -> 5;
-            case DOWNLOADING -> 18;
-            case QUEUED_FOR_PROCESSING -> 28;
-            case EXTRACTING_AUDIO -> 36;
-            case TRANSCRIBING -> 48;
-            case DETECTING_SILENCE -> 68;
-            case ANALYZING_WINDOWS -> 84;
-            case GENERATING_CANDIDATES -> 94;
-            case READY_FOR_REVIEW, COMPLETED -> 100;
-            case EXPORTING_CLIP -> 92;
-            case CANCELED, FAILED -> 0;
-        };
     }
 
     private boolean shouldRestartExport(VodJob job) {
@@ -844,7 +1001,7 @@ public class VodJobService {
                 .isPresent();
     }
 
-    private void restartExport(VodJob job, Instant now) {
+    private Long restartExport(VodJob job, Instant now) {
         List<ClipCandidate> failedExports = clipCandidateRepository.findAllByVodJobIdAndExportStatus(job.getId(), ExportStatus.FAILED);
         List<ClipCandidate> runningExports = clipCandidateRepository.findAllByVodJobIdAndExportStatus(job.getId(), ExportStatus.IN_PROGRESS);
         ClipCandidate candidate = !runningExports.isEmpty() ? runningExports.getFirst() : (!failedExports.isEmpty() ? failedExports.getFirst() : null);
@@ -856,10 +1013,10 @@ public class VodJobService {
         }
         candidate.setExportStatus(ExportStatus.IN_PROGRESS);
         clipCandidateRepository.save(candidate);
-        job.setStatus(JobStatus.EXPORTING_CLIP);
-        job.setProgressPercent(progressPercentFor(JobStatus.EXPORTING_CLIP));
-        job.setProgressMessage("Queued for clip export");
+        JobProjection.applyQueuedTask(job, WorkerTaskType.EXPORT, now, "Queued for clip export");
+        job.setLastWorkerHeartbeatAt(null);
         job.setStartedAt(job.getStartedAt() == null ? now : job.getStartedAt());
+        return candidate.getId();
     }
 
     private void resetAnalysisArtifacts(VodJob job) {
@@ -867,13 +1024,170 @@ public class VodJobService {
         silenceSegmentRepository.deleteAllByJobId(job.getId());
         analysisWindowRepository.deleteAllByJobId(job.getId());
         clipCandidateRepository.deleteAllByJobId(job.getId());
-        job.setStatus(JobStatus.QUEUED_FOR_DOWNLOAD);
         job.setStartedAt(null);
         job.setStorageAudioPath(null);
     }
 
     private static long nextProcessingVersion(VodJob job) {
         return job.getProcessingVersion() == null ? 1L : job.getProcessingVersion() + 1L;
+    }
+
+    private void cancelOpenWorkerState(Long jobId, Long processingVersion, Instant now, String reason) {
+        workerExecutionRepository.findAllByVodJobIdAndProcessingVersionAndStatusIn(
+                jobId,
+                processingVersion,
+                List.of(WorkerExecutionStatus.CLAIMED, WorkerExecutionStatus.RUNNING)
+        ).forEach(execution -> {
+            execution.setStatus(WorkerExecutionStatus.CANCELED);
+            execution.setLastHeartbeatAt(now);
+            execution.setFinishedAt(now);
+            execution.setFailureMessage(reason);
+            workerExecutionRepository.save(execution);
+        });
+        workerTaskRepository.findAllByVodJobIdAndProcessingVersionAndStatusIn(
+                jobId,
+                processingVersion,
+                List.of(WorkerTaskStatus.QUEUED, WorkerTaskStatus.CLAIMED, WorkerTaskStatus.RUNNING)
+        ).forEach(task -> {
+            task.markCanceled(now, reason);
+            workerTaskRepository.save(task);
+        });
+    }
+
+    @Transactional
+    public void recoverStaleExecutions() {
+        recoverStaleExecutions(Instant.now());
+    }
+
+    private void recoverStaleExecutions(Instant now) {
+        workerTaskRepository.findAllByStatusInOrderByIdAsc(
+                List.of(WorkerTaskStatus.CLAIMED, WorkerTaskStatus.RUNNING)
+        ).stream()
+                .filter(task -> isTaskStale(task, now))
+                .forEach(task -> recoverStaleTask(task, now));
+    }
+
+    private void recoverStaleTask(WorkerTask task, Instant now) {
+        VodJob job = task.getVodJob();
+        Optional<WorkerExecution> latestExecution = workerExecutionRepository.findFirstByWorkerTaskIdOrderByIdDesc(task.getId());
+        String recoverySubject = latestExecution.map(execution -> "Worker execution " + execution.getId())
+                .orElse("Worker task " + task.getId());
+        String recoveryMessage = recoverySubject + " timed out after heartbeat stall";
+
+        latestExecution.ifPresent(execution -> {
+            execution.setStatus(WorkerExecutionStatus.FAILED);
+            execution.setLastHeartbeatAt(now);
+            execution.setFinishedAt(now);
+            execution.setFailureMessage(recoveryMessage);
+            workerExecutionRepository.save(execution);
+        });
+        task.markQueued(now);
+        task.setFailureMessage(recoveryMessage);
+        workerTaskRepository.save(task);
+
+        switch (task.getTaskType()) {
+            case DOWNLOAD -> requeueRecoveredDownload(job, now, recoveryMessage);
+            case ANALYZE -> requeueRecoveredAnalyze(job, now, recoveryMessage);
+            case EXPORT -> requeueRecoveredExport(job, now, recoveryMessage);
+        }
+
+        jobEventRepository.save(JobEvent.create(
+                job,
+                EVENT_WORKER_EXECUTION_STALE,
+                recoveryMessage,
+                now
+        ));
+        log.warn(
+                "worker_execution_stale taskId={} executionId={} jobId={} taskType={}",
+                task.getId(),
+                latestExecution.map(WorkerExecution::getId).orElse(null),
+                job.getId(),
+                task.getTaskType()
+        );
+    }
+
+    private void requeueRecoveredDownload(VodJob job, Instant now, String recoveryMessage) {
+        String progressMessage = "Download worker lease expired and job was requeued";
+        JobProjection.applyQueuedTask(job, WorkerTaskType.DOWNLOAD, now, progressMessage);
+        job.setErrorMessage(recoveryMessage);
+        recomputeAndPersistJob(job);
+        job.setProgressMessage(progressMessage);
+        vodJobRepository.save(job);
+        jobEventRepository.save(JobEvent.create(
+                job,
+                EVENT_JOB_QUEUED_FOR_DOWNLOAD,
+                "Job requeued after stale download execution",
+                now
+        ));
+    }
+
+    private void requeueRecoveredAnalyze(VodJob job, Instant now, String recoveryMessage) {
+        String progressMessage = "Processing worker lease expired and job was requeued";
+        JobProjection.applyQueuedTask(job, WorkerTaskType.ANALYZE, now, progressMessage);
+        job.setErrorMessage(recoveryMessage);
+        recomputeAndPersistJob(job);
+        job.setProgressMessage(progressMessage);
+        vodJobRepository.save(job);
+        jobEventRepository.save(JobEvent.create(
+                job,
+                EVENT_JOB_QUEUED_FOR_PROCESSING,
+                "Job requeued after stale processing execution",
+                now
+        ));
+    }
+
+    private void requeueRecoveredExport(VodJob job, Instant now, String recoveryMessage) {
+        String progressMessage = "Export worker lease expired and export was requeued";
+        JobProjection.applyQueuedTask(job, WorkerTaskType.EXPORT, now, progressMessage);
+        job.setErrorMessage(recoveryMessage);
+        recomputeAndPersistJob(job);
+        job.setProgressMessage(progressMessage);
+        vodJobRepository.save(job);
+    }
+
+    private boolean isTaskStale(WorkerTask task, Instant now) {
+        Instant lastHeartbeatAt = task.getLastHeartbeatAt();
+        if (lastHeartbeatAt == null) {
+            return false;
+        }
+
+        Instant staleBefore = now.minus(workerExecutionProperties.resolveStaleTimeout(task.getTaskType()));
+        return lastHeartbeatAt.isBefore(staleBefore);
+    }
+
+    private Map<Long, WorkerExecution> latestExecutionByJobId(List<VodJob> jobs) {
+        if (jobs.isEmpty()) {
+            return Map.of();
+        }
+
+        List<Long> jobIds = jobs.stream()
+                .map(VodJob::getId)
+                .filter(Objects::nonNull)
+                .toList();
+
+        Map<Long, WorkerExecution> latestExecutionByJobId = new LinkedHashMap<>();
+        workerExecutionRepository.findAllByVodJobIdInOrderByVodJobIdAscIdAsc(jobIds)
+                .forEach(execution -> latestExecutionByJobId.put(execution.getVodJob().getId(), execution));
+        return latestExecutionByJobId;
+    }
+
+    private Map<Long, List<WorkerTask>> tasksByJobId(List<VodJob> jobs) {
+        if (jobs.isEmpty()) {
+            return Map.of();
+        }
+
+        List<Long> jobIds = jobs.stream()
+                .map(VodJob::getId)
+                .filter(Objects::nonNull)
+                .toList();
+
+        Map<Long, List<WorkerTask>> tasksByJobId = new LinkedHashMap<>();
+        workerTaskRepository.findAllByVodJobIdInOrderByVodJobIdAscIdAsc(jobIds)
+                .forEach(task -> tasksByJobId.computeIfAbsent(
+                        task.getVodJob().getId(),
+                        ignored -> new java.util.ArrayList<>()
+                ).add(task));
+        return tasksByJobId;
     }
 
     private VodJob requireJob(Long jobId) {
@@ -896,11 +1210,20 @@ public class VodJobService {
         return vodJobRepository.save(job);
     }
 
+    private VodJob recomputeAndPersistJob(VodJob job) {
+        JobProjection.recomputeFromTasks(
+                job,
+                workerTaskRepository.findAllByVodJobIdOrderByCreatedAtAscIdAsc(job.getId())
+        );
+        return vodJobRepository.save(job);
+    }
+
     private VodJob queueCreatedJob(VodJob job) {
         Instant queuedAt = Instant.now();
         queueJobForDownload(job, queuedAt);
 
         VodJob queuedJob = vodJobRepository.save(job);
+        queueWorkerTask(queuedJob, queuedJob.getProcessingVersion(), WorkerTaskType.DOWNLOAD, null, queuedAt);
         jobEventRepository.save(JobEvent.create(
                 queuedJob,
                 EVENT_JOB_CREATED,
@@ -1002,14 +1325,91 @@ public class VodJobService {
     }
 
     private void queueJobForDownload(VodJob job, Instant queuedAt) {
-        job.setStatus(JobStatus.QUEUED_FOR_DOWNLOAD);
-        job.setUpdatedAt(queuedAt);
-        job.setCurrentWorkerId(null);
+        JobProjection.applyQueuedTask(job, WorkerTaskType.DOWNLOAD, queuedAt, "Queued for download worker");
         job.setLastWorkerHeartbeatAt(null);
-        job.setProgressPercent(progressPercentFor(JobStatus.QUEUED_FOR_DOWNLOAD));
-        job.setProgressMessage("Queued for download worker");
         job.setFinishedAt(null);
         job.setErrorMessage(null);
+    }
+
+    private WorkerTask queueWorkerTask(
+            VodJob job,
+            Long processingVersion,
+            WorkerTaskType taskType,
+            Long candidateId,
+            Instant now
+    ) {
+        Optional<WorkerTask> existingTask = candidateId == null
+                ? workerTaskRepository.findFirstByVodJobIdAndProcessingVersionAndTaskTypeAndStatusInOrderByIdAsc(
+                        job.getId(),
+                        processingVersion,
+                        taskType,
+                        List.of(WorkerTaskStatus.QUEUED, WorkerTaskStatus.CLAIMED, WorkerTaskStatus.RUNNING)
+                )
+                : workerTaskRepository.findFirstByVodJobIdAndProcessingVersionAndTaskTypeAndCandidateIdAndStatusInOrderByIdAsc(
+                        job.getId(),
+                        processingVersion,
+                        taskType,
+                        candidateId,
+                        List.of(WorkerTaskStatus.QUEUED, WorkerTaskStatus.CLAIMED, WorkerTaskStatus.RUNNING)
+                );
+        if (existingTask.isPresent()) {
+            return existingTask.get();
+        }
+        WorkerTask task = WorkerTask.createQueued(job, processingVersion, taskType, candidateId, now);
+        return workerTaskRepository.save(task);
+    }
+
+    private WorkerTask requireQueuedTask(
+            Long jobId,
+            Long processingVersion,
+            WorkerTaskType taskType,
+            Long candidateId
+    ) {
+        return (candidateId == null
+                ? workerTaskRepository.findFirstByVodJobIdAndProcessingVersionAndTaskTypeAndStatusOrderByIdAsc(
+                        jobId,
+                        processingVersion,
+                        taskType,
+                        WorkerTaskStatus.QUEUED
+                )
+                : workerTaskRepository.findFirstByVodJobIdAndProcessingVersionAndTaskTypeAndCandidateIdAndStatusOrderByIdAsc(
+                        jobId,
+                        processingVersion,
+                        taskType,
+                        candidateId,
+                        WorkerTaskStatus.QUEUED
+                ))
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.CONFLICT,
+                        "Worker task is missing for job: " + jobId
+                ));
+    }
+
+    private void updateExecutionTaskAsRunning(WorkerExecution execution, Instant now) {
+        WorkerTask task = execution.getWorkerTask();
+        if (task == null) {
+            return;
+        }
+        task.markRunning(now);
+        workerTaskRepository.save(task);
+    }
+
+    private void completeExecutionTask(WorkerExecution execution, Instant now) {
+        WorkerTask task = execution.getWorkerTask();
+        if (task == null) {
+            return;
+        }
+        task.markSucceeded(now);
+        workerTaskRepository.save(task);
+    }
+
+    private void failExecutionTask(WorkerExecution execution, Instant now, String failureSummary) {
+        WorkerTask task = execution.getWorkerTask();
+        if (task == null) {
+            return;
+        }
+        task.markFailed(now, failureSummary);
+        workerTaskRepository.save(task);
     }
 
     private static String normalizeWorkerRole(String workerRole) {

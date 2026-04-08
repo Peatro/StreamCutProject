@@ -1,6 +1,10 @@
 package com.peatroxd.streamcutproject.vodjob.api;
 
+import com.peatroxd.streamcutproject.workerexecution.WorkerExecution;
+import com.peatroxd.streamcutproject.workertask.WorkerTask;
 import com.peatroxd.streamcutproject.vodjob.VodJob;
+
+import java.util.Optional;
 
 public final class JobMapper {
 
@@ -19,7 +23,11 @@ public final class JobMapper {
         );
     }
 
-    public static JobListItemResponse toListItemResponse(VodJob job) {
+    public static JobListItemResponse toListItemResponse(
+            VodJob job,
+            Optional<WorkerExecution> latestExecution,
+            Optional<WorkerTask> latestTask
+    ) {
         return new JobListItemResponse(
                 job.getId(),
                 job.getSourceType(),
@@ -31,11 +39,17 @@ public final class JobMapper {
                 job.getDurationSec(),
                 job.getLanguage(),
                 job.getProgressPercent(),
-                job.getProgressMessage()
+                job.getProgressMessage(),
+                latestExecution.map(JobMapper::toExecutionResponse).orElse(null),
+                latestTask.map(JobMapper::toTaskResponse).orElse(null)
         );
     }
 
-    public static JobDetailResponse toDetailResponse(VodJob job) {
+    public static JobDetailResponse toDetailResponse(
+            VodJob job,
+            Optional<WorkerExecution> latestExecution,
+            Optional<WorkerTask> latestTask
+    ) {
         return new JobDetailResponse(
                 job.getId(),
                 job.getSourceType(),
@@ -55,7 +69,40 @@ public final class JobMapper {
                 job.getCurrentWorkerId(),
                 job.getLastWorkerHeartbeatAt(),
                 job.getProgressPercent(),
-                job.getProgressMessage()
+                job.getProgressMessage(),
+                latestExecution.map(JobMapper::toExecutionResponse).orElse(null),
+                latestTask.map(JobMapper::toTaskResponse).orElse(null)
+        );
+    }
+
+    public static WorkerExecutionResponse toExecutionResponse(WorkerExecution execution) {
+        return new WorkerExecutionResponse(
+                execution.getId(),
+                execution.getTaskType().name(),
+                execution.getStatus().name(),
+                execution.getWorkerId(),
+                execution.getWorkerRole(),
+                execution.getProcessingVersion(),
+                execution.getCandidateId(),
+                execution.getClaimedAt(),
+                execution.getLastHeartbeatAt(),
+                execution.getFinishedAt(),
+                execution.getFailureMessage()
+        );
+    }
+
+    public static WorkerTaskResponse toTaskResponse(WorkerTask task) {
+        return new WorkerTaskResponse(
+                task.getId(),
+                task.getTaskType().name(),
+                task.getStatus().name(),
+                task.getProcessingVersion(),
+                task.getCandidateId(),
+                task.getCreatedAt(),
+                task.getClaimedAt(),
+                task.getLastHeartbeatAt(),
+                task.getFinishedAt(),
+                task.getFailureMessage()
         );
     }
 }

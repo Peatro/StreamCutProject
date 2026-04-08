@@ -10,9 +10,16 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import lombok.AccessLevel;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
 
 @Entity
 @Table(name = "silence_segment")
+@Getter
+@Setter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class SilenceSegment {
 
     @Id
@@ -32,9 +39,6 @@ public class SilenceSegment {
     @Column(name = "duration_sec", nullable = false)
     private Double durationSec;
 
-    protected SilenceSegment() {
-    }
-
     public static SilenceSegment create(VodJob vodJob, Double startSec, Double endSec, Double durationSec) {
         SilenceSegment segment = new SilenceSegment();
         segment.setVodJob(vodJob);
@@ -42,45 +46,5 @@ public class SilenceSegment {
         segment.setEndSec(endSec);
         segment.setDurationSec(durationSec);
         return segment;
-    }
-
-    public Long getId() {
-        return id;
-    }
-
-    public void setId(Long id) {
-        this.id = id;
-    }
-
-    public VodJob getVodJob() {
-        return vodJob;
-    }
-
-    public void setVodJob(VodJob vodJob) {
-        this.vodJob = vodJob;
-    }
-
-    public Double getStartSec() {
-        return startSec;
-    }
-
-    public void setStartSec(Double startSec) {
-        this.startSec = startSec;
-    }
-
-    public Double getEndSec() {
-        return endSec;
-    }
-
-    public void setEndSec(Double endSec) {
-        this.endSec = endSec;
-    }
-
-    public Double getDurationSec() {
-        return durationSec;
-    }
-
-    public void setDurationSec(Double durationSec) {
-        this.durationSec = durationSec;
     }
 }

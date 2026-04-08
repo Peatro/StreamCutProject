@@ -62,13 +62,15 @@ class TranscriptionServiceTests(unittest.TestCase):
                 )
             )
             service = FasterWhisperTranscriptionService(model=model, model_name="test-model")
+            progress_updates: list[tuple[float, float]] = []
 
             result = service.transcribe(
                 TranscriptionRequest(
                     job_id="job-1",
                     audio_path=audio_path,
                     model_size="small",
-                )
+                ),
+                on_progress=lambda processed, total: progress_updates.append((processed, total)),
             )
 
         self.assertIsInstance(result, TranscriptionResult)
@@ -85,6 +87,7 @@ class TranscriptionServiceTests(unittest.TestCase):
         self.assertEqual(payload["durationSec"], 2.8)
         self.assertEqual(payload["language"], "en")
         self.assertEqual(payload["transcriptSegments"][0]["wordCount"], 2)
+        self.assertEqual(progress_updates, [(1.2, 2.8), (2.8, 2.8), (2.8, 2.8)])
 
     def test_missing_audio_fails_fast(self) -> None:
         model = FakeWhisperModel(([], FakeInfo("en", 0.5, 0.0)))

@@ -60,6 +60,7 @@ class SourceMaterializerTests(unittest.TestCase):
             try:
                 result = materializer.materialize(
                     ClaimedJob(
+                        execution_id=301,
                         job_id=11,
                         processing_version=1,
                         task_type="ANALYZE",
@@ -85,6 +86,7 @@ class SourceMaterializerTests(unittest.TestCase):
 
             result = materializer.materialize(
                 ClaimedJob(
+                    execution_id=302,
                     job_id=12,
                     processing_version=1,
                     task_type="ANALYZE",
@@ -116,6 +118,7 @@ class SourceMaterializerTests(unittest.TestCase):
             try:
                 result = materializer.materialize(
                     ClaimedJob(
+                        execution_id=303,
                         job_id=13,
                         processing_version=1,
                         task_type="ANALYZE",
@@ -144,6 +147,7 @@ class SourceMaterializerTests(unittest.TestCase):
                 with self.assertRaises(SourceMaterializationError) as ctx:
                     materializer.materialize(
                         ClaimedJob(
+                            execution_id=304,
                             job_id=14,
                             processing_version=1,
                             task_type="ANALYZE",

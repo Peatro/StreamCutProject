@@ -1,5 +1,18 @@
 # MVP Release Checklist
 
+## Status
+
+- Lifecycle: active
+- Source of truth: repository
+- Mirror: none required yet
+- Maturity: active release gate for the `v1.0.0` service-hardening track
+
+## Related Documents
+
+- `Documentation/backlog.md`
+- `Documentation/runtime.md`
+- `Documentation/operations.md`
+
 ## Purpose
 This checklist is the release gate for moving the validated MVP from `develop` to `main`.
 

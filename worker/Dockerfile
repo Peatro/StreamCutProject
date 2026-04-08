@@ -4,6 +4,7 @@ ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV VIRTUAL_ENV=/opt/venv
 ENV PATH="/opt/venv/bin:${PATH}"
+ENV HF_HOME=/app/model-cache
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ffmpeg \

@@ -1,5 +1,19 @@
 # Runtime
 
+## Status
+
+- Lifecycle: active
+- Source of truth: repository
+- Mirror: none required yet
+- Maturity: active but still evolving with `TASK-059` through `TASK-063`
+
+## Related Documents
+
+- `Documentation/backlog.md`
+- `Documentation/operations.md`
+- `Documentation/STORAGE.md`
+- `Documentation/release-checklist.md`
+
 ## Upload Policy
 This is the explicit MVP upload policy for `POST /api/jobs/upload`.
 
@@ -53,6 +67,7 @@ Backend:
 Worker:
 - `APP_STORAGE_LOCAL_ROOT=/data/storage`
 - `PYTHONUNBUFFERED=1`
+- `HF_HOME=/model-cache` for `processing-worker` so the transcription model cache persists outside image builds
 
 PostgreSQL:
 - `POSTGRES_DB=streamcut`
@@ -124,6 +139,7 @@ PostgreSQL:
 
 ## Service Notes
 - Backend and worker share the same local data volume so future media and export steps can use one predictable artifact root.
+- The processing worker keeps its Hugging Face model cache in a separate named volume so rebuilding images does not force a model re-download.
 - PostgreSQL is a named volume, so local data persists across `docker compose down` and only resets with `-v`.
 - The worker container is isolated from the backend process and is expected to communicate through future integration points, not direct code coupling.
 - The compose setup is intentionally local-first and should remain simple until the MVP stabilizes.
@@ -139,4 +155,5 @@ PostgreSQL:
   - `streamcut-postgres` holds the database state
   - `streamcut-data` holds shared media and export files
   - `streamcut-minio` holds MinIO object storage data
+  - `streamcut-hf-cache` holds the processing worker transcription model cache
 - Contributors should treat `docker compose down -v` as the explicit cleanup/reset path when they need a clean slate.

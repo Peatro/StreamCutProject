@@ -13,6 +13,8 @@ import com.peatroxd.streamcutproject.vodjob.api.JobListItemResponse;
 import com.peatroxd.streamcutproject.vodjob.api.JobDetailResponse;
 import com.peatroxd.streamcutproject.vodjob.api.JobEventResponse;
 import com.peatroxd.streamcutproject.vodjob.api.TranscriptSegmentResponse;
+import com.peatroxd.streamcutproject.vodjob.api.WorkerExecutionResponse;
+import com.peatroxd.streamcutproject.vodjob.api.WorkerTaskResponse;
 import com.peatroxd.streamcutproject.vodjob.event.JobEvent;
 import com.peatroxd.streamcutproject.vodjob.event.JobEventRepository;
 import com.peatroxd.streamcutproject.silence.SilenceSegmentRepository;
@@ -31,6 +33,14 @@ import com.peatroxd.streamcutproject.workerdispatch.WorkerExportResultPayload;
 import com.peatroxd.streamcutproject.workerdispatch.WorkerFailureReportPayload;
 import com.peatroxd.streamcutproject.workerdispatch.WorkerProcessingResultPayload;
 import com.peatroxd.streamcutproject.workerdispatch.WorkerTransportAck;
+import com.peatroxd.streamcutproject.workerexecution.WorkerExecution;
+import com.peatroxd.streamcutproject.workerexecution.WorkerExecutionProperties;
+import com.peatroxd.streamcutproject.workerexecution.WorkerExecutionRepository;
+import com.peatroxd.streamcutproject.workerexecution.WorkerExecutionStatus;
+import com.peatroxd.streamcutproject.workerexecution.WorkerTaskType;
+import com.peatroxd.streamcutproject.workertask.WorkerTask;
+import com.peatroxd.streamcutproject.workertask.WorkerTaskRepository;
+import com.peatroxd.streamcutproject.workertask.WorkerTaskStatus;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -41,18 +51,20 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.Sort;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.http.MediaType;
-import org.springframework.data.domain.Pageable;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.lenient;
 import org.springframework.web.server.ResponseStatusException;
 
 @ExtendWith(MockitoExtension.class)
@@ -62,6 +74,7 @@ class VodJobServiceTest {
     Path tempDir;
 
     private final StorageProperties storageProperties = new StorageProperties();
+    private final WorkerExecutionProperties workerExecutionProperties = new WorkerExecutionProperties();
 
     @Mock
     private VodJobRepository vodJobRepository;
@@ -88,6 +101,12 @@ class VodJobServiceTest {
     private ArtifactStorageService artifactStorageService;
 
     @Mock
+    private WorkerExecutionRepository workerExecutionRepository;
+
+    @Mock
+    private WorkerTaskRepository workerTaskRepository;
+
+    @Mock
     private WorkerDispatchPort workerDispatchPort;
 
     @Mock
@@ -98,6 +117,7 @@ class VodJobServiceTest {
     @BeforeEach
     void setUp() {
         storageProperties.setLocalRoot(Path.of("/var/lib/streamcut"));
+        workerExecutionProperties.setStaleTimeout(Duration.ofMinutes(2));
         vodJobService = new VodJobService(
                 vodJobRepository,
                 jobEventRepository,
@@ -108,9 +128,32 @@ class VodJobServiceTest {
                 storageService,
                 artifactStorageService,
                 storageProperties,
+                workerExecutionProperties,
+                workerTaskRepository,
+                workerExecutionRepository,
                 workerDispatchPort,
                 workerDispatchPayloadFactory
         );
+        lenient().when(workerTaskRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        lenient().when(workerTaskRepository.findAllByVodJobIdAndProcessingVersionAndStatusIn(anyLong(), anyLong(), any()))
+                .thenReturn(List.of());
+        lenient().when(workerTaskRepository.findAllByStatusInAndLastHeartbeatAtBeforeOrderByIdAsc(any(), any()))
+                .thenReturn(List.of());
+        lenient().when(workerTaskRepository.findFirstByVodJobIdAndProcessingVersionAndTaskTypeAndStatusInOrderByIdAsc(
+                anyLong(), anyLong(), any(), any()
+        )).thenReturn(java.util.Optional.empty());
+        lenient().when(workerTaskRepository.findFirstByVodJobIdAndProcessingVersionAndTaskTypeAndCandidateIdAndStatusInOrderByIdAsc(
+                anyLong(), anyLong(), any(), anyLong(), any()
+        )).thenReturn(java.util.Optional.empty());
+        lenient().when(workerExecutionRepository.findFirstByWorkerTaskIdOrderByIdDesc(anyLong()))
+                .thenReturn(java.util.Optional.empty());
+        lenient().when(workerExecutionRepository.save(any(WorkerExecution.class))).thenAnswer(invocation -> {
+            WorkerExecution execution = invocation.getArgument(0);
+            if (execution.getId() == null) {
+                execution.setId(999L);
+            }
+            return execution;
+        });
     }
 
     @Test
@@ -205,14 +248,32 @@ class VodJobServiceTest {
         VodJob older = buildJob(1L, "https://example.com/older", Instant.parse("2026-04-05T10:00:00Z"));
         VodJob newer = buildJob(2L, "https://example.com/newer", Instant.parse("2026-04-05T11:00:00Z"));
         when(vodJobRepository.findAll(any(Sort.class))).thenReturn(List.of(older, newer));
+        when(workerExecutionRepository.findAllByVodJobIdInOrderByVodJobIdAscIdAsc(List.of(1L, 2L)))
+                .thenReturn(List.of(
+                        buildExecution(older, "worker-1", WorkerTaskType.DOWNLOAD, 91L),
+                        buildExecution(newer, "worker-2", WorkerTaskType.ANALYZE, 92L)
+                ));
+        when(workerTaskRepository.findAllByVodJobIdInOrderByVodJobIdAscIdAsc(List.of(1L, 2L)))
+                .thenReturn(List.of(
+                        buildQueuedTask(older, WorkerTaskType.DOWNLOAD, null),
+                        buildQueuedTask(newer, WorkerTaskType.ANALYZE, null)
+                ));
 
         List<JobListItemResponse> jobs = vodJobService.listJobs();
 
         assertThat(jobs).hasSize(2);
         assertThat(jobs.get(0).id()).isEqualTo(1L);
         assertThat(jobs.get(0).sourceUrl()).isEqualTo("https://example.com/older");
+        assertThat(jobs.get(0).latestExecution()).isNotNull();
+        assertThat(jobs.get(0).latestExecution().id()).isEqualTo(91L);
+        assertThat(jobs.get(0).latestTask()).isNotNull();
+        assertThat(jobs.get(0).latestTask().taskType()).isEqualTo("DOWNLOAD");
         assertThat(jobs.get(1).id()).isEqualTo(2L);
         assertThat(jobs.get(1).sourceUrl()).isEqualTo("https://example.com/newer");
+        assertThat(jobs.get(1).latestExecution()).isNotNull();
+        assertThat(jobs.get(1).latestExecution().id()).isEqualTo(92L);
+        assertThat(jobs.get(1).latestTask()).isNotNull();
+        assertThat(jobs.get(1).latestTask().taskType()).isEqualTo("ANALYZE");
     }
 
     @Test
@@ -227,17 +288,112 @@ class VodJobServiceTest {
         job.setLanguage("en");
         job.setStorageVideoPath("/data/video.mp4");
         job.setStorageAudioPath("/data/audio.wav");
+        job.setStatus(JobStatus.TRANSCRIBING);
         job.setProgressPercent(48);
         job.setProgressMessage("Worker is transcribing the audio");
+        WorkerTask latestTask = buildQueuedTask(job, WorkerTaskType.ANALYZE, null);
+        latestTask.setStatus(WorkerTaskStatus.RUNNING);
+        latestTask.setLastHeartbeatAt(Instant.parse("2026-04-05T10:02:00Z"));
         when(vodJobRepository.findById(1L)).thenReturn(java.util.Optional.of(job));
+        when(workerExecutionRepository.findFirstByVodJobIdOrderByIdDesc(1L))
+                .thenReturn(java.util.Optional.of(buildExecution(job, "worker-1", WorkerTaskType.ANALYZE, 77L)));
+        when(workerTaskRepository.findAllByVodJobIdOrderByCreatedAtAscIdAsc(1L))
+                .thenReturn(List.of(latestTask));
 
         JobDetailResponse response = vodJobService.getJob(1L);
 
         assertThat(response.id()).isEqualTo(1L);
-        assertThat(response.status()).isEqualTo("NEW");
+        assertThat(response.status()).isEqualTo("TRANSCRIBING");
         assertThat(response.sourceType()).isEqualTo("URL");
         assertThat(response.originalFilename()).isEqualTo("video.mp4");
         assertThat(response.storageAudioPath()).isEqualTo("/data/audio.wav");
+        assertThat(response.latestExecution()).isNotNull();
+        assertThat(response.latestExecution().id()).isEqualTo(77L);
+        assertThat(response.latestExecution().taskType()).isEqualTo("ANALYZE");
+        assertThat(response.latestTask()).isNotNull();
+        assertThat(response.latestTask().taskType()).isEqualTo("ANALYZE");
+    }
+
+    @Test
+    void listJobsRecomputesAggregateStatusFromLatestTask() {
+        VodJob job = buildJob(1L, "https://example.com/video", Instant.parse("2026-04-05T10:00:00Z"));
+        job.setStatus(JobStatus.NEW);
+        WorkerTask latestTask = WorkerTask.createQueued(
+                job,
+                job.getProcessingVersion(),
+                WorkerTaskType.ANALYZE,
+                null,
+                Instant.parse("2026-04-05T10:01:00Z")
+        );
+        latestTask.setStatus(WorkerTaskStatus.SUCCEEDED);
+        latestTask.setFinishedAt(Instant.parse("2026-04-05T10:05:00Z"));
+        when(vodJobRepository.findAll(any(Sort.class))).thenReturn(List.of(job));
+        when(workerExecutionRepository.findAllByVodJobIdInOrderByVodJobIdAscIdAsc(List.of(1L))).thenReturn(List.of());
+        when(workerTaskRepository.findAllByVodJobIdInOrderByVodJobIdAscIdAsc(List.of(1L))).thenReturn(List.of(latestTask));
+
+        List<JobListItemResponse> jobs = vodJobService.listJobs();
+
+        assertThat(jobs).hasSize(1);
+        assertThat(jobs.get(0).status()).isEqualTo("READY_FOR_REVIEW");
+        assertThat(jobs.get(0).progressPercent()).isEqualTo(100);
+    }
+
+    @Test
+    void listJobsPrefersOpenTaskOverNewerTerminalTask() {
+        VodJob job = buildJob(1L, "https://example.com/video", Instant.parse("2026-04-05T10:00:00Z"));
+        job.setStatus(JobStatus.NEW);
+        WorkerTask runningAnalyze = WorkerTask.createQueued(
+                job,
+                job.getProcessingVersion(),
+                WorkerTaskType.ANALYZE,
+                null,
+                Instant.parse("2026-04-05T10:01:00Z")
+        );
+        runningAnalyze.setStatus(WorkerTaskStatus.RUNNING);
+        runningAnalyze.setLastHeartbeatAt(Instant.parse("2026-04-05T10:04:00Z"));
+        WorkerTask newerFailedDownload = WorkerTask.createQueued(
+                job,
+                job.getProcessingVersion(),
+                WorkerTaskType.DOWNLOAD,
+                null,
+                Instant.parse("2026-04-05T10:05:00Z")
+        );
+        newerFailedDownload.setStatus(WorkerTaskStatus.FAILED);
+        newerFailedDownload.setFinishedAt(Instant.parse("2026-04-05T10:06:00Z"));
+        when(vodJobRepository.findAll(any(Sort.class))).thenReturn(List.of(job));
+        when(workerExecutionRepository.findAllByVodJobIdInOrderByVodJobIdAscIdAsc(List.of(1L))).thenReturn(List.of());
+        when(workerTaskRepository.findAllByVodJobIdInOrderByVodJobIdAscIdAsc(List.of(1L)))
+                .thenReturn(List.of(runningAnalyze, newerFailedDownload));
+
+        List<JobListItemResponse> jobs = vodJobService.listJobs();
+
+        assertThat(jobs).hasSize(1);
+        assertThat(jobs.get(0).status()).isEqualTo("EXTRACTING_AUDIO");
+        assertThat(jobs.get(0).latestTask()).isNotNull();
+        assertThat(jobs.get(0).latestTask().status()).isEqualTo("FAILED");
+    }
+
+    @Test
+    void getJobRecomputesAggregateStatusFromLatestTask() {
+        VodJob job = buildJob(1L, "https://example.com/video", Instant.parse("2026-04-05T10:00:00Z"));
+        job.setStatus(JobStatus.NEW);
+        WorkerTask latestTask = WorkerTask.createQueued(
+                job,
+                job.getProcessingVersion(),
+                WorkerTaskType.EXPORT,
+                7L,
+                Instant.parse("2026-04-05T10:06:00Z")
+        );
+        latestTask.setStatus(WorkerTaskStatus.SUCCEEDED);
+        latestTask.setFinishedAt(Instant.parse("2026-04-05T10:07:00Z"));
+        when(vodJobRepository.findById(1L)).thenReturn(java.util.Optional.of(job));
+        when(workerExecutionRepository.findFirstByVodJobIdOrderByIdDesc(1L)).thenReturn(java.util.Optional.empty());
+        when(workerTaskRepository.findAllByVodJobIdOrderByCreatedAtAscIdAsc(1L)).thenReturn(List.of(latestTask));
+
+        JobDetailResponse response = vodJobService.getJob(1L);
+
+        assertThat(response.status()).isEqualTo("COMPLETED");
+        assertThat(response.progressPercent()).isEqualTo(100);
     }
 
     @Test
@@ -415,6 +571,31 @@ class VodJobServiceTest {
     }
 
     @Test
+    void startExportReusesExistingOpenExportTask() {
+        VodJob job = buildJob(1L, "https://example.com/video", Instant.parse("2026-04-05T10:00:00Z"));
+        ClipCandidate candidate = ClipCandidate.create(job, 5.0, 12.0, 0.91, "first");
+        candidate.setId(7L);
+        WorkerTask existingTask = buildQueuedTask(job, WorkerTaskType.EXPORT, 7L);
+
+        when(clipCandidateRepository.findById(7L)).thenReturn(java.util.Optional.of(candidate));
+        when(storageService.resolveExportedClipPath(1L, 7L, ".mp4"))
+                .thenReturn(Path.of("/var/lib/streamcut/jobs/1/exports/candidate-7.mp4"));
+        when(clipCandidateRepository.save(candidate)).thenAnswer(invocation -> invocation.getArgument(0));
+        when(vodJobRepository.save(job)).thenAnswer(invocation -> invocation.getArgument(0));
+        when(workerTaskRepository.findFirstByVodJobIdAndProcessingVersionAndTaskTypeAndCandidateIdAndStatusInOrderByIdAsc(
+                job.getId(),
+                job.getProcessingVersion(),
+                WorkerTaskType.EXPORT,
+                candidate.getId(),
+                List.of(WorkerTaskStatus.QUEUED, WorkerTaskStatus.CLAIMED, WorkerTaskStatus.RUNNING)
+        )).thenReturn(java.util.Optional.of(existingTask));
+
+        vodJobService.startExport(7L);
+
+        verify(workerTaskRepository, Mockito.never()).save(any(WorkerTask.class));
+    }
+
+    @Test
     void getExportStatusReturnsCurrentPlaceholderPath() {
         VodJob job = buildJob(1L, "https://example.com/video", Instant.parse("2026-04-05T10:00:00Z"));
         ClipCandidate candidate = ClipCandidate.create(job, 5.0, 12.0, 0.91, "first");
@@ -440,6 +621,7 @@ class VodJobServiceTest {
         when(vodJobRepository.findById(1L)).thenReturn(java.util.Optional.of(job));
 
         WorkerDispatchPayload payload = new WorkerDispatchPayload(
+                null,
                 1L,
                 1L,
                 "ANALYZE",
@@ -451,7 +633,7 @@ class VodJobServiceTest {
                 null,
                 null
         );
-        when(workerDispatchPayloadFactory.fromDownloadJob(job)).thenReturn(payload);
+        when(workerDispatchPayloadFactory.fromDownloadJob(job, null)).thenReturn(payload);
 
         WorkerDispatchPayload result = vodJobService.dispatchJob(1L);
 
@@ -463,11 +645,44 @@ class VodJobServiceTest {
     }
 
     @Test
+    void dispatchJobReusesExistingOpenDownloadTask() {
+        VodJob job = buildJob(1L, "https://example.com/video", Instant.parse("2026-04-05T10:00:00Z"));
+        job.setStorageVideoPath("/var/lib/streamcut/jobs/1/source/video.mp4");
+        WorkerTask existingTask = buildQueuedTask(job, WorkerTaskType.DOWNLOAD, null);
+        when(vodJobRepository.findById(1L)).thenReturn(java.util.Optional.of(job));
+        when(workerTaskRepository.findFirstByVodJobIdAndProcessingVersionAndTaskTypeAndStatusInOrderByIdAsc(
+                job.getId(),
+                job.getProcessingVersion(),
+                WorkerTaskType.DOWNLOAD,
+                List.of(WorkerTaskStatus.QUEUED, WorkerTaskStatus.CLAIMED, WorkerTaskStatus.RUNNING)
+        )).thenReturn(java.util.Optional.of(existingTask));
+
+        WorkerDispatchPayload payload = new WorkerDispatchPayload(
+                null,
+                1L,
+                1L,
+                "ANALYZE",
+                "/var/lib/streamcut/jobs/1/source/video.mp4",
+                "URL",
+                "https://example.com/video",
+                null,
+                null,
+                null,
+                null
+        );
+        when(workerDispatchPayloadFactory.fromDownloadJob(job, null)).thenReturn(payload);
+
+        vodJobService.dispatchJob(1L);
+
+        verify(workerTaskRepository, Mockito.never()).save(any(WorkerTask.class));
+    }
+
+    @Test
     void dispatchJobThrowsWhenStorageVideoPathIsMissing() {
         VodJob job = buildJob(1L, "https://example.com/video", Instant.parse("2026-04-05T10:00:00Z"));
         when(vodJobRepository.findById(1L)).thenReturn(java.util.Optional.of(job));
 
-        when(workerDispatchPayloadFactory.fromDownloadJob(job))
+        when(workerDispatchPayloadFactory.fromDownloadJob(job, null))
                 .thenThrow(new IllegalStateException("Job 1 has no storage video path"));
 
         assertThatThrownBy(() -> vodJobService.dispatchJob(1L))
@@ -477,8 +692,10 @@ class VodJobServiceTest {
 
     @Test
     void claimNextQueuedJobReturnsEmptyWhenQueueIsEmpty() {
-        when(vodJobRepository.findAllByStatusForUpdate(Mockito.eq(JobStatus.QUEUED_FOR_DOWNLOAD), any(Pageable.class)))
-                .thenReturn(List.of());
+        when(workerTaskRepository.findFirstByTaskTypeAndStatusOrderByIdAsc(
+                WorkerTaskType.DOWNLOAD,
+                WorkerTaskStatus.QUEUED
+        )).thenReturn(java.util.Optional.empty());
 
         var result = vodJobService.claimNextQueuedJob("worker-1", "download");
 
@@ -490,9 +707,13 @@ class VodJobServiceTest {
         VodJob job = buildJob(1L, "https://example.com/video", Instant.parse("2026-04-05T10:00:00Z"));
         job.setStatus(JobStatus.QUEUED_FOR_DOWNLOAD);
         job.setStorageVideoPath("/var/lib/streamcut/jobs/1/source/video.mp4");
-        when(vodJobRepository.findAllByStatusForUpdate(Mockito.eq(JobStatus.QUEUED_FOR_DOWNLOAD), any(Pageable.class)))
-                .thenReturn(List.of(job));
+        WorkerTask queuedTask = buildQueuedTask(job, WorkerTaskType.DOWNLOAD, null);
+        when(workerTaskRepository.findFirstByTaskTypeAndStatusOrderByIdAsc(
+                WorkerTaskType.DOWNLOAD,
+                WorkerTaskStatus.QUEUED
+        )).thenReturn(java.util.Optional.of(queuedTask));
         WorkerDispatchPayload payload = new WorkerDispatchPayload(
+                91L,
                 1L,
                 1L,
                 "ANALYZE",
@@ -504,7 +725,7 @@ class VodJobServiceTest {
                 null,
                 null
         );
-        when(workerDispatchPayloadFactory.fromDownloadJob(job)).thenReturn(payload);
+        when(workerDispatchPayloadFactory.fromDownloadJob(Mockito.eq(job), anyLong())).thenReturn(payload);
 
         var result = vodJobService.claimNextQueuedJob("worker-1", "download");
 
@@ -513,6 +734,7 @@ class VodJobServiceTest {
         assertThat(job.getStartedAt()).isNotNull();
         assertThat(job.getUpdatedAt()).isNotNull();
         verify(vodJobRepository).save(job);
+        verify(workerExecutionRepository).save(any(WorkerExecution.class));
         verify(jobEventRepository).save(any(JobEvent.class));
     }
 
@@ -521,11 +743,17 @@ class VodJobServiceTest {
         VodJob job = buildJob(1L, "https://example.com/video", Instant.parse("2026-04-05T10:00:00Z"));
         job.setStatus(JobStatus.QUEUED_FOR_PROCESSING);
         job.setStorageVideoPath("/var/lib/streamcut/jobs/1/source/video.mp4");
-        when(clipCandidateRepository.findPendingExportsForUpdate(Mockito.eq(ExportStatus.IN_PROGRESS), any(Pageable.class)))
-                .thenReturn(List.of());
-        when(vodJobRepository.findAllByStatusForUpdate(Mockito.eq(JobStatus.QUEUED_FOR_PROCESSING), any(Pageable.class)))
-                .thenReturn(List.of(job));
+        WorkerTask queuedTask = buildQueuedTask(job, WorkerTaskType.ANALYZE, null);
+        when(workerTaskRepository.findFirstByTaskTypeAndStatusOrderByIdAsc(
+                WorkerTaskType.EXPORT,
+                WorkerTaskStatus.QUEUED
+        )).thenReturn(java.util.Optional.empty());
+        when(workerTaskRepository.findFirstByTaskTypeAndStatusOrderByIdAsc(
+                WorkerTaskType.ANALYZE,
+                WorkerTaskStatus.QUEUED
+        )).thenReturn(java.util.Optional.of(queuedTask));
         WorkerDispatchPayload payload = new WorkerDispatchPayload(
+                92L,
                 1L,
                 1L,
                 "ANALYZE",
@@ -537,7 +765,7 @@ class VodJobServiceTest {
                 null,
                 null
         );
-        when(workerDispatchPayloadFactory.fromAnalyzeJob(job)).thenReturn(payload);
+        when(workerDispatchPayloadFactory.fromAnalyzeJob(Mockito.eq(job), anyLong())).thenReturn(payload);
 
         var result = vodJobService.claimNextQueuedJob("processing-worker-1", "processing");
 
@@ -545,16 +773,139 @@ class VodJobServiceTest {
         assertThat(job.getStatus()).isEqualTo(JobStatus.EXTRACTING_AUDIO);
         assertThat(job.getUpdatedAt()).isNotNull();
         verify(vodJobRepository).save(job);
+        verify(workerExecutionRepository).save(any(WorkerExecution.class));
         verify(jobEventRepository).save(any(JobEvent.class));
+    }
+
+    @Test
+    void claimNextProcessingJobPrefersQueuedExportTask() {
+        VodJob job = buildJob(1L, "https://example.com/video", Instant.parse("2026-04-05T10:00:00Z"));
+        job.setStatus(JobStatus.EXPORTING_CLIP);
+        ClipCandidate candidate = ClipCandidate.create(job, 5.0, 12.0, 0.91, "first");
+        candidate.setId(7L);
+        candidate.setModerationStatus(ModerationStatus.APPROVED);
+        candidate.setExportStatus(ExportStatus.IN_PROGRESS);
+        WorkerTask queuedTask = buildQueuedTask(job, WorkerTaskType.EXPORT, candidate.getId());
+        WorkerDispatchPayload payload = new WorkerDispatchPayload(
+                93L,
+                1L,
+                1L,
+                "EXPORT",
+                null,
+                "URL",
+                "https://example.com/video",
+                7L,
+                null,
+                null,
+                "/var/lib/streamcut/jobs/1/exports/candidate-7.mp4"
+        );
+        when(workerTaskRepository.findFirstByTaskTypeAndStatusOrderByIdAsc(
+                WorkerTaskType.EXPORT,
+                WorkerTaskStatus.QUEUED
+        )).thenReturn(java.util.Optional.of(queuedTask));
+        when(clipCandidateRepository.findById(7L)).thenReturn(java.util.Optional.of(candidate));
+        when(workerDispatchPayloadFactory.fromExportCandidate(Mockito.eq(candidate), anyLong())).thenReturn(payload);
+
+        var result = vodJobService.claimNextQueuedJob("processing-worker-1", "processing");
+
+        assertThat(result).contains(payload);
+        assertThat(job.getCurrentWorkerId()).isEqualTo("processing-worker-1");
+        assertThat(job.getProgressPercent()).isEqualTo(92);
+        verify(vodJobRepository).save(job);
+        verify(workerExecutionRepository).save(any(WorkerExecution.class));
+        verify(jobEventRepository).save(any(JobEvent.class));
+    }
+
+    @Test
+    void claimNextQueuedJobRequeuesStaleAnalyzeExecutionBeforePollingQueue() {
+        java.util.EnumMap<WorkerTaskType, Duration> staleTimeoutOverrides = new java.util.EnumMap<>(WorkerTaskType.class);
+        staleTimeoutOverrides.put(WorkerTaskType.ANALYZE, Duration.ofMinutes(2));
+        workerExecutionProperties.setStaleTimeoutOverrides(staleTimeoutOverrides);
+        VodJob job = buildJob(1L, "https://example.com/video", Instant.parse("2026-04-05T10:00:00Z"));
+        job.setStatus(JobStatus.TRANSCRIBING);
+        job.setCurrentWorkerId("worker-1");
+        WorkerTask task = buildQueuedTask(job, WorkerTaskType.ANALYZE, null);
+        task.markRunning(Instant.now().minus(Duration.ofMinutes(10)));
+        WorkerExecution execution = buildExecution(job, task, "worker-1", WorkerTaskType.ANALYZE, 71L);
+        execution.setLastHeartbeatAt(Instant.now().minus(Duration.ofMinutes(10)));
+        when(workerTaskRepository.findAllByStatusInOrderByIdAsc(any()))
+                .thenReturn(List.of(task));
+        when(workerTaskRepository.findAllByVodJobIdOrderByCreatedAtAscIdAsc(1L)).thenReturn(List.of(task));
+        when(workerExecutionRepository.findFirstByWorkerTaskIdOrderByIdDesc(task.getId()))
+                .thenReturn(java.util.Optional.of(execution));
+        when(workerTaskRepository.findFirstByTaskTypeAndStatusOrderByIdAsc(
+                WorkerTaskType.EXPORT,
+                WorkerTaskStatus.QUEUED
+        )).thenReturn(java.util.Optional.empty());
+        when(workerTaskRepository.findFirstByTaskTypeAndStatusOrderByIdAsc(
+                WorkerTaskType.ANALYZE,
+                WorkerTaskStatus.QUEUED
+        )).thenReturn(java.util.Optional.empty());
+
+        var result = vodJobService.claimNextQueuedJob("processing-worker-2", "processing");
+
+        assertThat(result).isEmpty();
+        assertThat(execution.getStatus()).isEqualTo(WorkerExecutionStatus.FAILED);
+        assertThat(task.getStatus()).isEqualTo(WorkerTaskStatus.QUEUED);
+        assertThat(job.getStatus()).isEqualTo(JobStatus.QUEUED_FOR_PROCESSING);
+        assertThat(job.getCurrentWorkerId()).isNull();
+        assertThat(job.getProgressPercent()).isEqualTo(28);
+        assertThat(job.getProgressMessage()).contains("requeued");
+        assertThat(job.getErrorMessage()).contains("timed out");
+        verify(vodJobRepository, Mockito.atLeastOnce()).save(job);
+        verify(jobEventRepository, Mockito.atLeastOnce()).save(any(JobEvent.class));
+    }
+
+    @Test
+    void claimNextQueuedJobRequeuesStaleExportExecutionBeforePollingQueue() {
+        VodJob job = buildJob(1L, "https://example.com/video", Instant.parse("2026-04-05T10:00:00Z"));
+        job.setStatus(JobStatus.EXPORTING_CLIP);
+        job.setCurrentWorkerId("worker-1");
+        WorkerTask task = buildQueuedTask(job, WorkerTaskType.EXPORT, 7L);
+        task.markRunning(Instant.now().minus(Duration.ofMinutes(10)));
+        WorkerExecution execution = buildExecution(job, task, "worker-1", WorkerTaskType.EXPORT, 72L, 7L);
+        execution.setLastHeartbeatAt(Instant.now().minus(Duration.ofMinutes(10)));
+        when(workerTaskRepository.findAllByStatusInOrderByIdAsc(any()))
+                .thenReturn(List.of(task));
+        when(workerTaskRepository.findAllByVodJobIdOrderByCreatedAtAscIdAsc(1L)).thenReturn(List.of(task));
+        when(workerExecutionRepository.findFirstByWorkerTaskIdOrderByIdDesc(task.getId()))
+                .thenReturn(java.util.Optional.of(execution));
+        when(workerTaskRepository.findFirstByTaskTypeAndStatusOrderByIdAsc(
+                WorkerTaskType.EXPORT,
+                WorkerTaskStatus.QUEUED
+        )).thenReturn(java.util.Optional.empty());
+        when(workerTaskRepository.findFirstByTaskTypeAndStatusOrderByIdAsc(
+                WorkerTaskType.ANALYZE,
+                WorkerTaskStatus.QUEUED
+        )).thenReturn(java.util.Optional.empty());
+
+        var result = vodJobService.claimNextQueuedJob("processing-worker-2", "processing");
+
+        assertThat(result).isEmpty();
+        assertThat(execution.getStatus()).isEqualTo(WorkerExecutionStatus.FAILED);
+        assertThat(task.getStatus()).isEqualTo(WorkerTaskStatus.QUEUED);
+        assertThat(job.getStatus()).isEqualTo(JobStatus.EXPORTING_CLIP);
+        assertThat(job.getCurrentWorkerId()).isNull();
+        assertThat(job.getProgressPercent()).isEqualTo(92);
+        assertThat(job.getProgressMessage()).contains("requeued");
+        assertThat(job.getErrorMessage()).contains("timed out");
+        verify(vodJobRepository, Mockito.atLeastOnce()).save(job);
+        verify(jobEventRepository, Mockito.atLeastOnce()).save(any(JobEvent.class));
     }
 
     @Test
     void ingestWorkerResultReplacesGeneratedDataAndMarksReadyForReview() {
         VodJob job = buildJob(1L, "https://example.com/video", Instant.parse("2026-04-05T10:00:00Z"));
         job.setStatus(JobStatus.TRANSCRIBING);
+        job.setCurrentWorkerId("worker-1");
+        WorkerTask task = buildQueuedTask(job, WorkerTaskType.ANALYZE, null);
+        task.markRunning(Instant.parse("2026-04-05T10:01:00Z"));
         when(vodJobRepository.findById(1L)).thenReturn(java.util.Optional.of(job));
-
+        when(workerExecutionRepository.findById(51L))
+                .thenReturn(java.util.Optional.of(buildExecution(job, task, "worker-1", WorkerTaskType.ANALYZE, 51L)));
+        when(workerTaskRepository.findAllByVodJobIdOrderByCreatedAtAscIdAsc(1L)).thenReturn(List.of(task));
         WorkerProcessingResultPayload payload = new WorkerProcessingResultPayload(
+                51L,
                 1L,
                 "worker-1",
                 1L,
@@ -585,6 +936,7 @@ class VodJobServiceTest {
         verify(silenceSegmentRepository).saveAll(any());
         verify(analysisWindowRepository).saveAll(any());
         verify(clipCandidateRepository).saveAll(any());
+        verify(workerExecutionRepository, Mockito.atLeastOnce()).save(any(WorkerExecution.class));
         verify(jobEventRepository).save(any(JobEvent.class));
     }
 
@@ -593,10 +945,15 @@ class VodJobServiceTest {
         VodJob job = buildJob(1L, "https://example.com/video", Instant.parse("2026-04-05T10:00:00Z"));
         job.setStatus(JobStatus.DOWNLOADING);
         job.setCurrentWorkerId("download-worker-1");
+        WorkerTask task = buildQueuedTask(job, WorkerTaskType.DOWNLOAD, null);
+        task.markRunning(Instant.parse("2026-04-05T10:01:00Z"));
+        WorkerTask latestTask = buildQueuedTask(job, WorkerTaskType.ANALYZE, null);
         when(vodJobRepository.findById(1L)).thenReturn(java.util.Optional.of(job));
-
+        when(workerExecutionRepository.findById(52L))
+                .thenReturn(java.util.Optional.of(buildExecution(job, task, "download-worker-1", WorkerTaskType.DOWNLOAD, 52L)));
         WorkerTransportAck ack = vodJobService.ingestWorkerDownloadResult(
                 new WorkerDownloadResultPayload(
+                        52L,
                         1L,
                         "download-worker-1",
                         1L,
@@ -609,6 +966,7 @@ class VodJobServiceTest {
         assertThat(job.getStatus()).isEqualTo(JobStatus.QUEUED_FOR_PROCESSING);
         assertThat(job.getStorageVideoPath()).isEqualTo("/var/lib/streamcut/jobs/1/source/video.mp4");
         assertThat(job.getCurrentWorkerId()).isNull();
+        verify(workerExecutionRepository, Mockito.atLeastOnce()).save(any(WorkerExecution.class));
         verify(vodJobRepository).save(job);
         verify(jobEventRepository, Mockito.times(2)).save(any(JobEvent.class));
     }
@@ -619,9 +977,12 @@ class VodJobServiceTest {
         job.setStatus(JobStatus.DOWNLOADING);
         job.setCurrentWorkerId("download-worker-1");
         when(vodJobRepository.findById(1L)).thenReturn(java.util.Optional.of(job));
+        when(workerExecutionRepository.findById(52L))
+                .thenReturn(java.util.Optional.of(buildExecution(job, "download-worker-1", WorkerTaskType.DOWNLOAD, 52L)));
 
         assertThatThrownBy(() -> vodJobService.ingestWorkerDownloadResult(
                 new WorkerDownloadResultPayload(
+                        52L,
                         1L,
                         "download-worker-1",
                         1L,
@@ -635,9 +996,13 @@ class VodJobServiceTest {
     @Test
     void ingestWorkerResultRejectsVideoPathOutsideStorageRoot() {
         VodJob job = buildJob(1L, "https://example.com/video", Instant.parse("2026-04-05T10:00:00Z"));
+        job.setCurrentWorkerId("worker-1");
         when(vodJobRepository.findById(1L)).thenReturn(java.util.Optional.of(job));
+        when(workerExecutionRepository.findById(53L))
+                .thenReturn(java.util.Optional.of(buildExecution(job, "worker-1", WorkerTaskType.ANALYZE, 53L)));
 
         WorkerProcessingResultPayload payload = new WorkerProcessingResultPayload(
+                53L,
                 1L,
                 "worker-1",
                 1L,
@@ -657,19 +1022,51 @@ class VodJobServiceTest {
     }
 
     @Test
+    void ingestWorkerResultRejectsExecutionWithWrongTaskType() {
+        VodJob job = buildJob(1L, "https://example.com/video", Instant.parse("2026-04-05T10:00:00Z"));
+        job.setCurrentWorkerId("worker-1");
+        when(vodJobRepository.findById(1L)).thenReturn(java.util.Optional.of(job));
+        when(workerExecutionRepository.findById(53L))
+                .thenReturn(java.util.Optional.of(buildExecution(job, "worker-1", WorkerTaskType.DOWNLOAD, 53L)));
+
+        WorkerProcessingResultPayload payload = new WorkerProcessingResultPayload(
+                53L,
+                1L,
+                "worker-1",
+                1L,
+                120L,
+                "en",
+                "/var/lib/streamcut/jobs/1/source/video.mp4",
+                "/var/lib/streamcut/jobs/1/audio/audio.wav",
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of()
+        );
+
+        assertThatThrownBy(() -> vodJobService.ingestWorkerResult(payload))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("task type mismatch");
+    }
+
+    @Test
     void reportWorkerFailureMarksJobFailedAndStoresErrorMessage() {
         VodJob job = buildJob(1L, "https://example.com/video", Instant.parse("2026-04-05T10:00:00Z"));
         job.setStatus(JobStatus.TRANSCRIBING);
+        job.setCurrentWorkerId("worker-1");
         when(vodJobRepository.findById(1L)).thenReturn(java.util.Optional.of(job));
+        when(workerExecutionRepository.findById(54L))
+                .thenReturn(java.util.Optional.of(buildExecution(job, "worker-1", WorkerTaskType.ANALYZE, 54L)));
 
         WorkerTransportAck ack = vodJobService.reportWorkerFailure(
-                new WorkerFailureReportPayload(1L, "worker-1", 1L, "TRANSCRIBING", "transcription failed")
+                new WorkerFailureReportPayload(54L, 1L, "worker-1", 1L, "TRANSCRIBING", "transcription failed")
         );
 
         assertThat(ack.jobId()).isEqualTo(1L);
         assertThat(ack.status()).isEqualTo("FAILED");
         assertThat(job.getStatus()).isEqualTo(JobStatus.FAILED);
         assertThat(job.getErrorMessage()).isEqualTo("TRANSCRIBING: transcription failed");
+        verify(workerExecutionRepository, Mockito.atLeastOnce()).save(any(WorkerExecution.class));
         verify(vodJobRepository).save(job);
         verify(jobEventRepository).save(any(JobEvent.class));
     }
@@ -692,11 +1089,16 @@ class VodJobServiceTest {
     void ingestWorkerExportResultMarksJobCompletedAndPersistsArtifactPath() throws Exception {
         VodJob job = buildJob(1L, "https://example.com/video", Instant.parse("2026-04-05T10:00:00Z"));
         job.setStatus(JobStatus.EXPORTING_CLIP);
+        job.setCurrentWorkerId("worker-1");
+        WorkerTask task = buildQueuedTask(job, WorkerTaskType.EXPORT, 7L);
+        task.markRunning(Instant.parse("2026-04-05T10:01:00Z"));
         ClipCandidate candidate = ClipCandidate.create(job, 5.0, 12.0, 0.91, "first");
         candidate.setId(7L);
         candidate.setModerationStatus(ModerationStatus.APPROVED);
         candidate.setExportedClipPath("/var/lib/streamcut/jobs/1/exports/candidate-7.mp4");
         when(clipCandidateRepository.findById(7L)).thenReturn(java.util.Optional.of(candidate));
+        when(workerExecutionRepository.findById(55L))
+                .thenReturn(java.util.Optional.of(buildExecution(job, task, "worker-1", WorkerTaskType.EXPORT, 55L, 7L)));
         when(artifactStorageService.storeCompletedExport(
                 Mockito.eq(1L),
                 Mockito.eq(7L),
@@ -704,13 +1106,14 @@ class VodJobServiceTest {
         )).thenReturn("s3://streamcut-artifacts/exports/jobs/1/candidate-7.mp4");
 
         WorkerTransportAck ack = vodJobService.ingestWorkerExportResult(
-                new WorkerExportResultPayload(1L, "worker-1", 1L, 7L, "/var/lib/streamcut/jobs/1/exports/candidate-7.mp4")
+                new WorkerExportResultPayload(55L, 1L, "worker-1", 1L, 7L, "/var/lib/streamcut/jobs/1/exports/candidate-7.mp4")
         );
 
         assertThat(ack.jobId()).isEqualTo(1L);
         assertThat(ack.status()).isEqualTo("COMPLETED");
         assertThat(job.getStatus()).isEqualTo(JobStatus.COMPLETED);
         assertThat(candidate.getExportedClipPath()).isEqualTo("s3://streamcut-artifacts/exports/jobs/1/candidate-7.mp4");
+        verify(workerExecutionRepository, Mockito.atLeastOnce()).save(any(WorkerExecution.class));
         verify(clipCandidateRepository).save(candidate);
         verify(vodJobRepository).save(job);
         verify(jobEventRepository).save(any(JobEvent.class));
@@ -720,17 +1123,116 @@ class VodJobServiceTest {
     void ingestWorkerExportResultRejectsArtifactPathOutsideStorageRoot() {
         VodJob job = buildJob(1L, "https://example.com/video", Instant.parse("2026-04-05T10:00:00Z"));
         job.setStatus(JobStatus.EXPORTING_CLIP);
+        job.setCurrentWorkerId("worker-1");
         ClipCandidate candidate = ClipCandidate.create(job, 5.0, 12.0, 0.91, "first");
         candidate.setId(7L);
         candidate.setModerationStatus(ModerationStatus.APPROVED);
         candidate.setExportedClipPath("/var/lib/streamcut/jobs/1/exports/candidate-7.mp4");
         when(clipCandidateRepository.findById(7L)).thenReturn(java.util.Optional.of(candidate));
+        when(workerExecutionRepository.findById(55L))
+                .thenReturn(java.util.Optional.of(buildExecution(job, "worker-1", WorkerTaskType.EXPORT, 55L, 7L)));
 
         assertThatThrownBy(() -> vodJobService.ingestWorkerExportResult(
-                new WorkerExportResultPayload(1L, "worker-1", 1L, 7L, "/tmp/outside/candidate-7.mp4")
+                new WorkerExportResultPayload(55L, 1L, "worker-1", 1L, 7L, "/tmp/outside/candidate-7.mp4")
         ))
                 .isInstanceOf(ResponseStatusException.class)
                 .hasMessageContaining("worker export artifact path must stay within the configured storage root");
+    }
+
+    @Test
+    void ingestWorkerExportResultRejectsExecutionForDifferentCandidate() {
+        VodJob job = buildJob(1L, "https://example.com/video", Instant.parse("2026-04-05T10:00:00Z"));
+        job.setStatus(JobStatus.EXPORTING_CLIP);
+        job.setCurrentWorkerId("worker-1");
+        ClipCandidate candidate = ClipCandidate.create(job, 5.0, 12.0, 0.91, "first");
+        candidate.setId(7L);
+        candidate.setModerationStatus(ModerationStatus.APPROVED);
+        candidate.setExportedClipPath("/var/lib/streamcut/jobs/1/exports/candidate-7.mp4");
+        when(clipCandidateRepository.findById(7L)).thenReturn(java.util.Optional.of(candidate));
+        when(workerExecutionRepository.findById(55L))
+                .thenReturn(java.util.Optional.of(buildExecution(job, "worker-1", WorkerTaskType.EXPORT, 55L, 9L)));
+
+        assertThatThrownBy(() -> vodJobService.ingestWorkerExportResult(
+                new WorkerExportResultPayload(55L, 1L, "worker-1", 1L, 7L, "/var/lib/streamcut/jobs/1/exports/candidate-7.mp4")
+        ))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("does not belong to candidate");
+    }
+
+    @Test
+    void updateWorkerProgressRejectsCallbackWithoutActiveExecution() {
+        VodJob job = buildJob(1L, "https://example.com/video", Instant.parse("2026-04-05T10:00:00Z"));
+        job.setStatus(JobStatus.READY_FOR_REVIEW);
+        job.setCurrentWorkerId(null);
+        when(vodJobRepository.findById(1L)).thenReturn(java.util.Optional.of(job));
+        when(workerExecutionRepository.findById(56L)).thenReturn(java.util.Optional.empty());
+
+        assertThatThrownBy(() -> vodJobService.updateWorkerProgress(
+                new com.peatroxd.streamcutproject.workerdispatch.WorkerProgressUpdatePayload(
+                        56L,
+                        1L,
+                        "worker-1",
+                        1L,
+                        "TRANSCRIBING",
+                        60,
+                        "late callback"
+                )
+        ))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("unknown execution");
+    }
+
+    @Test
+    void recoverStaleExecutionsKeepsHealthyLongRunningAnalyzeTask() {
+        VodJob job = buildJob(1L, "https://example.com/video", Instant.parse("2026-04-05T10:00:00Z"));
+        job.setStatus(JobStatus.TRANSCRIBING);
+        WorkerTask task = buildQueuedTask(job, WorkerTaskType.ANALYZE, null);
+        task.setId(501L);
+        task.markRunning(Instant.now().minus(Duration.ofMinutes(6)));
+        task.setLastHeartbeatAt(Instant.now().minus(Duration.ofMinutes(5)));
+        when(workerTaskRepository.findAllByStatusInOrderByIdAsc(List.of(
+                WorkerTaskStatus.CLAIMED,
+                WorkerTaskStatus.RUNNING
+        ))).thenReturn(List.of(task));
+
+        vodJobService.recoverStaleExecutions();
+
+        assertThat(task.getStatus()).isEqualTo(WorkerTaskStatus.RUNNING);
+        assertThat(job.getStatus()).isEqualTo(JobStatus.TRANSCRIBING);
+        verify(workerTaskRepository, Mockito.never()).save(any(WorkerTask.class));
+        verify(workerExecutionRepository, Mockito.never()).save(any(WorkerExecution.class));
+        verify(jobEventRepository, Mockito.never()).save(any(JobEvent.class));
+    }
+
+    @Test
+    void recoverStaleExecutionsRequeuesAnalyzeTaskAfterAnalyzeTimeout() {
+        VodJob job = buildJob(1L, "https://example.com/video", Instant.parse("2026-04-05T10:00:00Z"));
+        job.setStatus(JobStatus.TRANSCRIBING);
+        WorkerTask task = buildQueuedTask(job, WorkerTaskType.ANALYZE, null);
+        task.setId(502L);
+        task.markRunning(Instant.now().minus(Duration.ofMinutes(26)));
+        task.setLastHeartbeatAt(Instant.now().minus(Duration.ofMinutes(25)));
+        WorkerExecution execution = buildExecution(job, task, "worker-1", WorkerTaskType.ANALYZE, 88L);
+        when(workerTaskRepository.findAllByStatusInOrderByIdAsc(List.of(
+                WorkerTaskStatus.CLAIMED,
+                WorkerTaskStatus.RUNNING
+        ))).thenReturn(List.of(task));
+        when(workerTaskRepository.findAllByVodJobIdOrderByCreatedAtAscIdAsc(1L)).thenReturn(List.of(task));
+        when(workerExecutionRepository.findFirstByWorkerTaskIdOrderByIdDesc(502L))
+                .thenReturn(java.util.Optional.of(execution));
+
+        vodJobService.recoverStaleExecutions();
+
+        assertThat(task.getStatus()).isEqualTo(WorkerTaskStatus.QUEUED);
+        assertThat(task.getFailureMessage()).contains("timed out after heartbeat stall");
+        assertThat(execution.getStatus()).isEqualTo(WorkerExecutionStatus.FAILED);
+        assertThat(job.getStatus()).isEqualTo(JobStatus.QUEUED_FOR_PROCESSING);
+        assertThat(job.getCurrentWorkerId()).isNull();
+        assertThat(job.getErrorMessage()).contains("timed out after heartbeat stall");
+        verify(workerTaskRepository).save(task);
+        verify(workerExecutionRepository).save(execution);
+        verify(vodJobRepository, Mockito.atLeastOnce()).save(job);
+        verify(jobEventRepository, Mockito.times(2)).save(any(JobEvent.class));
     }
 
     @Test
@@ -761,6 +1263,62 @@ class VodJobServiceTest {
     }
 
     @Test
+    void listWorkerExecutionsReturnsPersistedExecutionsInStableOrder() {
+        VodJob job = buildJob(1L, "https://example.com/video", Instant.parse("2026-04-05T10:00:00Z"));
+        WorkerExecution first = buildExecution(job, "worker-1", WorkerTaskType.DOWNLOAD, 81L);
+        first.setStatus(WorkerExecutionStatus.SUCCEEDED);
+        WorkerExecution second = buildExecution(job, "worker-2", WorkerTaskType.ANALYZE, 82L);
+        second.setStatus(WorkerExecutionStatus.RUNNING);
+        when(vodJobRepository.findById(1L)).thenReturn(java.util.Optional.of(job));
+        when(workerExecutionRepository.findAllByVodJobIdOrderByClaimedAtAscIdAsc(1L)).thenReturn(List.of(first, second));
+
+        List<WorkerExecutionResponse> executions = vodJobService.listWorkerExecutions(1L);
+
+        assertThat(executions).hasSize(2);
+        assertThat(executions.get(0).id()).isEqualTo(81L);
+        assertThat(executions.get(0).taskType()).isEqualTo("DOWNLOAD");
+        assertThat(executions.get(0).status()).isEqualTo("SUCCEEDED");
+        assertThat(executions.get(1).id()).isEqualTo(82L);
+        assertThat(executions.get(1).taskType()).isEqualTo("ANALYZE");
+        assertThat(executions.get(1).status()).isEqualTo("RUNNING");
+    }
+
+    @Test
+    void listWorkerTasksReturnsPersistedTasksInStableOrder() {
+        VodJob job = buildJob(1L, "https://example.com/video", Instant.parse("2026-04-05T10:00:00Z"));
+        WorkerTask first = WorkerTask.createQueued(
+                job,
+                job.getProcessingVersion(),
+                WorkerTaskType.DOWNLOAD,
+                null,
+                Instant.parse("2026-04-05T10:00:05Z")
+        );
+        first.setStatus(WorkerTaskStatus.SUCCEEDED);
+        first.setClaimedAt(Instant.parse("2026-04-05T10:00:06Z"));
+        first.setFinishedAt(Instant.parse("2026-04-05T10:00:10Z"));
+        WorkerTask second = WorkerTask.createQueued(
+                job,
+                job.getProcessingVersion(),
+                WorkerTaskType.ANALYZE,
+                null,
+                Instant.parse("2026-04-05T10:00:15Z")
+        );
+        second.setStatus(WorkerTaskStatus.RUNNING);
+        second.setClaimedAt(Instant.parse("2026-04-05T10:00:16Z"));
+        second.setLastHeartbeatAt(Instant.parse("2026-04-05T10:00:20Z"));
+        when(vodJobRepository.findById(1L)).thenReturn(java.util.Optional.of(job));
+        when(workerTaskRepository.findAllByVodJobIdOrderByCreatedAtAscIdAsc(1L)).thenReturn(List.of(first, second));
+
+        List<WorkerTaskResponse> tasks = vodJobService.listWorkerTasks(1L);
+
+        assertThat(tasks).hasSize(2);
+        assertThat(tasks.get(0).taskType()).isEqualTo("DOWNLOAD");
+        assertThat(tasks.get(0).status()).isEqualTo("SUCCEEDED");
+        assertThat(tasks.get(1).taskType()).isEqualTo("ANALYZE");
+        assertThat(tasks.get(1).status()).isEqualTo("RUNNING");
+    }
+
+    @Test
     void listJobEventsThrowsNotFoundForUnknownJob() {
         when(vodJobRepository.findById(99L)).thenReturn(java.util.Optional.empty());
 
@@ -780,5 +1338,56 @@ class VodJobServiceTest {
         job.setProcessingVersion(1L);
         job.setCurrentWorkerId("worker-1");
         return job;
+    }
+
+    private static WorkerExecution buildExecution(VodJob job, String workerId, WorkerTaskType taskType, Long executionId) {
+        return buildExecution(job, null, workerId, taskType, executionId, null);
+    }
+
+    private static WorkerExecution buildExecution(
+            VodJob job,
+            WorkerTask task,
+            String workerId,
+            WorkerTaskType taskType,
+            Long executionId
+    ) {
+        return buildExecution(job, task, workerId, taskType, executionId, null);
+    }
+
+    private static WorkerTask buildQueuedTask(VodJob job, WorkerTaskType taskType, Long candidateId) {
+        return WorkerTask.createQueued(job, job.getProcessingVersion(), taskType, candidateId, Instant.now());
+    }
+
+    private static WorkerExecution buildExecution(
+            VodJob job,
+            WorkerTask task,
+            String workerId,
+            WorkerTaskType taskType,
+            Long executionId,
+            Long candidateId
+    ) {
+        WorkerExecution execution = WorkerExecution.create(
+                job,
+                task,
+                job.getProcessingVersion(),
+                workerId,
+                "processing",
+                taskType,
+                candidateId,
+                Instant.parse("2026-04-05T10:00:30Z")
+        );
+        execution.setId(executionId);
+        execution.setStatus(WorkerExecutionStatus.RUNNING);
+        return execution;
+    }
+
+    private static WorkerExecution buildExecution(
+            VodJob job,
+            String workerId,
+            WorkerTaskType taskType,
+            Long executionId,
+            Long candidateId
+    ) {
+        return buildExecution(job, null, workerId, taskType, executionId, candidateId);
     }
 }

@@ -1,3 +1,8 @@
+> Status: historical planning context
+>
+> This file is preserved for earlier planning context.
+> It should not be used as the active source of truth for current backlog, roadmap, architecture, or runtime behavior.
+
 Отлично. Значит не распыляемся.
 
 ## Выбор зафиксирован

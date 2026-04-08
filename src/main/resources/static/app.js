@@ -4,6 +4,7 @@
     getJob: (id) => fetchJson(`/api/jobs/${id}`),
     getTranscript: (id) => fetchJson(`/api/jobs/${id}/transcript`),
     getEvents: (id) => fetchJson(`/api/jobs/${id}/events`),
+    getExecutions: (id) => fetchJson(`/api/jobs/${id}/executions`),
     getCandidates: (id) => fetchJson(`/api/jobs/${id}/candidates`),
     cancelJob: (id) => postJson(`/api/jobs/${id}/cancel`),
     restartJob: (id) => postJson(`/api/jobs/${id}/restart`),
@@ -59,6 +60,14 @@
     interactionReason: ""
   };
 
+  const reviewState = {
+    selectedCandidateId: null,
+    root: null,
+    keyHandler: null
+  };
+
+  let savedEventFilter = "all";
+
   const liveIntervals = {
     fast: 4000,
     steady: 12000,
@@ -110,84 +119,87 @@
   }
 
   async function renderJobPage(root, jobId, flashMessage = null, flashType = "info", pageData = null) {
-    const { job, transcript, events, candidates } = pageData || await loadJobPageData(jobId);
+    const { job, transcript, events, executions, candidates } = pageData || await loadJobPageData(jobId);
 
-    const candidateSummary = summarizeCandidates(candidates);
+    const queueSummary = summarizeCandidatesForHeader(candidates);
+    document.title = `Job #${job.id} - ${labelForJob(job)}`;
 
     root.innerHTML = `
       <div class="page-status" data-status-banner ${flashMessage ? "" : "hidden"}>
         ${flashMessage ? renderBanner(flashMessage, flashType) : ""}
       </div>
-      <div class="breadcrumbs"><a href="/index.html">Jobs</a> / Job #${escapeHtml(job.id)}</div>
-      ${renderJobFailureSummary(job, candidates)}
-      <section class="panel">
-        <div class="panel-header">
-          <div>
-            <span class="eyebrow">Job Details</span>
-            <h2 style="margin-top: 12px; font-size: 1.6rem;">${escapeHtml(labelForJob(job))}</h2>
-          </div>
-          <div class="header-actions">
-            <span class="live-indicator" data-live-indicator>Live updates booting...</span>
-            <button class="action-button action-button-neutral" type="button" data-page-refresh>Refresh</button>
-            <span class="pill ${statusClass(job.status)}">${escapeHtml(job.status)}</span>
-          </div>
-        </div>
-        <div class="details-grid">
-          <div class="info-list">
-            ${infoItem("Source Type", job.sourceType)}
-            ${infoItem("Source URL", job.sourceUrl || "n/a")}
-            ${infoItem("Original File", job.originalFilename || "n/a")}
-            ${infoItem("Created", formatDate(job.createdAt))}
-            ${infoItem("Updated", formatDate(job.updatedAt))}
-            ${infoItem("Duration", formatDuration(job.durationSec))}
-            ${infoItem("Language", job.language || "n/a")}
-          </div>
-          <div class="info-list">
-            ${infoItem("Started", formatDate(job.startedAt))}
-            ${infoItem("Finished", formatDate(job.finishedAt))}
-            ${infoItem("Storage Video Path", job.storageVideoPath || "n/a")}
-            ${infoItem("Storage Audio Path", job.storageAudioPath || "n/a")}
-            ${infoItem("Error", job.errorMessage || "none")}
-          </div>
-        </div>
-      </section>
-
-      ${renderWorkerRuntimePanel(job)}
-
-      <section class="summary-grid">
-        <article class="summary-card">
-          <div class="count">${candidateSummary.total}</div>
-          <div class="hint">Clip candidates</div>
-        </article>
-        <article class="summary-card">
-          <div class="count">${candidateSummary.approved}</div>
-          <div class="hint">Approved</div>
-        </article>
-        <article class="summary-card">
-          <div class="count">${candidateSummary.pending}</div>
-          <div class="hint">Pending review</div>
-        </article>
-      </section>
-
-      <section class="details-grid">
-        <div class="panel">
-          <div class="panel-header">
-            <div>
-              <h2>Transcript Preview</h2>
-              <p>Scan the first recovered segments and their coverage before you drill into clip candidates.</p>
+      <section class="page-header">
+        <div class="page-header-main">
+          <div class="breadcrumbs"><a href="/index.html">Jobs</a> / Job #${escapeHtml(job.id)}</div>
+          <div class="page-header-copy">
+            <div class="header-actions">
+              <span class="live-indicator" data-live-indicator>Live updates booting...</span>
+              ${renderStatusPill(job.status)}
             </div>
+            <h1>${escapeHtml(labelForJob(job))}</h1>
+            <p>Inspect pipeline state, review candidates, and pull finished clips without leaving the job surface.</p>
           </div>
-          ${renderTranscript(transcript)}
         </div>
-        <div class="panel">
-          <div class="panel-header">
-            <div>
-              <h2>Job Events</h2>
-              <p>A chronological feed of ingest, analysis, moderation, and export signals.</p>
+        <aside class="page-header-side">
+          <div class="header-card">
+            <div class="header-card-row">
+              <span class="eyebrow">Job Overview</span>
+              <button class="action-button action-button-neutral" type="button" data-page-refresh>Refresh</button>
             </div>
+            <strong>${escapeHtml(queueSummary)}</strong>
+            <span class="muted">Created ${formatRelativeDateTime(job.createdAt)}. Updated ${formatRelativeDateTime(job.updatedAt)}.</span>
           </div>
-          ${renderEvents(events)}
+        </aside>
+      </section>
+${renderJobFailureSummary(job, candidates)}
+      <section class="job-console-grid">
+        <div class="job-console-main">
+          <section class="panel panel-compact">
+            <div class="panel-header">
+              <span class="eyebrow">Job Details</span>
+            </div>
+            <div class="job-meta-grid">
+              ${infoItem("Source Type", job.sourceType)}
+              ${infoItem("Source URL", job.sourceUrl || "n/a")}
+              ${infoItem("Original File", job.originalFilename || "n/a")}
+              ${infoItem("Created", formatRelativeDateTime(job.createdAt))}
+              ${infoItem("Updated", formatRelativeDateTime(job.updatedAt))}
+              ${infoItem("Duration", formatDuration(job.durationSec))}
+              ${infoItem("Language", job.language || "n/a")}
+              ${infoItem("Started", formatRelativeDateTime(job.startedAt))}
+              ${infoItem("Finished", formatRelativeDateTime(job.finishedAt))}
+              ${infoItem("Storage Video Path", job.storageVideoPath || "n/a")}
+              ${infoItem("Storage Audio Path", job.storageAudioPath || "n/a")}
+              ${infoItem("Error", job.errorMessage || "none")}
+            </div>
+          </section>
+
+          ${renderWorkerRuntimePanel(job)}
+          ${renderExecutionHistoryPanel(executions)}
+
+          <!--
+          <section class="panel">
+            <div class="panel-header">
+              <div>
+                <h2>Transcript Preview</h2>
+                <p>Scan the first recovered segments and their coverage before you drill into clip candidates.</p>
+              </div>
+            </div>
+            ${renderTranscript(transcript)}
+          </section>
+          -->
         </div>
+        <aside class="job-console-side">
+          <div class="panel panel-sticky">
+            <div class="panel-header">
+              <div>
+                <h2>Job Events</h2>
+                <p>A chronological feed of ingest, analysis, moderation, and export signals.</p>
+              </div>
+            </div>
+            ${renderEvents(events)}
+          </div>
+        </aside>
       </section>
 
       <section class="panel">
@@ -196,6 +208,7 @@
             <h2>Candidate Review</h2>
             <p>Clip windows are ready to inspect immediately. Moderate only when you need curation, then download from the same surface.</p>
           </div>
+          <div class="shortcut-hint">Shortcuts: A approve | R reject | J/K next/prev</div>
         </div>
         ${renderCandidates(job, candidates)}
       </section>
@@ -203,31 +216,66 @@
 
     bindCandidateActions(root, jobId);
     bindJobPageActions(root, jobId);
+    bindEventControls(root);
     bindCandidatePreviewPlayers(root);
-    syncLiveSnapshot("job", buildJobPageSnapshot(job, transcript, events, candidates), root, jobId);
+    bindCandidateKeyboardShortcuts(root);
+    syncLiveSnapshot("job", buildJobPageSnapshot(job, transcript, events, executions, candidates), root, jobId);
     if (liveUpdates.mode === "job" && String(liveUpdates.jobId) === String(jobId)) {
       updateLiveIndicator(root, "live", describeJobLiveState(job, candidates));
     }
-    return { job, transcript, events, candidates };
+    return { job, transcript, events, executions, candidates };
   }
 
   async function renderJobsPage(root, flashMessage = null, flashType = "info", jobsData = null) {
     const jobs = jobsData || await api.listJobs();
     const summary = summarizeJobs(jobs);
+    document.title = "StreamCut Jobs";
 
     root.innerHTML = `
       <div class="page-status" data-status-banner ${flashMessage ? "" : "hidden"}>
         ${flashMessage ? renderBanner(flashMessage, flashType) : ""}
       </div>
+      <section class="page-header">
+        <div class="page-header-main">
+          <div class="page-header-copy">
+            <div class="header-actions">
+              <span class="live-indicator" data-live-indicator>Live updates booting...</span>
+            </div>
+            <h1>Jobs</h1>
+            <p>Queue overview for ingest, processing, moderation, and export. Built to scan fast, not to sell itself.</p>
+          </div>
+        </div>
+        <aside class="page-header-side">
+          <div class="header-card">
+            <div class="header-card-row">
+              <span class="eyebrow">Queue Summary</span>
+              <button class="action-button action-button-neutral" type="button" data-jobs-refresh>Refresh List</button>
+            </div>
+            <strong>${escapeHtml(`${summary.total} job${summary.total !== 1 ? "s" : ""} in queue`)}</strong>
+            <span class="muted">${summary.active} active · ${summary.ready} awaiting review · ${summary.finished} finished</span>
+          </div>
+        </aside>
+      </section>
+      <section class="stat-grid">
+        <article class="stat-card"><span class="label">Jobs</span><span class="value">${summary.total}</span></article>
+        <article class="stat-card ${summary.active > 0 ? "is-live" : ""}"><span class="label">Active</span><span class="value">${summary.active}${summary.active > 0 ? '<span class="stat-live-dot" aria-hidden="true"></span>' : ""}</span></article>
+        <article class="stat-card"><span class="label">Awaiting Review</span><span class="value">${summary.ready}</span></article>
+        <article class="stat-card"><span class="label">Finished</span><span class="value">${summary.finished}</span></article>
+      </section>
+      <section class="panel">
+        <div class="panel-header">
+          <div>
+            <h2>Job List</h2>
+            <p>Track jobs, source type, duration, and current status.</p>
+          </div>
+        </div>
+        ${renderJobsTable(jobs)}
+      </section>
       <section class="panel">
         <div class="panel-header">
           <div>
             <h2>Create Job</h2>
             <p>Submit a VOD URL or upload a local file.</p>
-          </div>
-          <div class="header-actions">
-            <span class="live-indicator" data-live-indicator>Live updates booting...</span>
-            <button class="action-button action-button-neutral" type="button" data-jobs-refresh>Refresh List</button>
           </div>
         </div>
         <div class="control-grid">
@@ -246,27 +294,11 @@
               <button class="action-button action-button-primary" type="submit">Upload Job</button>
             </div>
             <div class="upload-hint" aria-live="polite">
-              Single file only. Supported formats: MP4, MOV, MKV, WEBM, AVI, MPEG/MPG.
-              Max file size: 512 MB. Max request size: 520 MB.
+              Single file only. Supported formats: MP4, MOV, MKV, WEBM, AVI, MPEG/MPG. Max file size: 512 MB.
             </div>
             <div class="form-message" data-upload-job-message></div>
           </form>
         </div>
-      </section>
-      <section class="stat-grid">
-        <article class="stat-card"><span class="label">Jobs</span><span class="value">${summary.total}</span></article>
-        <article class="stat-card"><span class="label">Active</span><span class="value">${summary.active}</span></article>
-        <article class="stat-card"><span class="label">Ready</span><span class="value">${summary.ready}</span></article>
-        <article class="stat-card"><span class="label">Finished</span><span class="value">${summary.finished}</span></article>
-      </section>
-      <section class="panel">
-        <div class="panel-header">
-          <div>
-            <h2>Job List</h2>
-            <p>Track jobs, source type, duration, and current status.</p>
-          </div>
-        </div>
-        ${renderJobsTable(jobs)}
       </section>
     `;
 
@@ -278,10 +310,60 @@
     return jobs;
   }
 
+  function initUploadDragDrop(form) {
+    const fileInput = form.querySelector("[name='file']");
+    const hint = form.querySelector(".upload-hint");
+    if (!fileInput) {
+      return;
+    }
+
+    let dragDepth = 0;
+
+    form.addEventListener("dragenter", (e) => {
+      e.preventDefault();
+      dragDepth++;
+      form.dataset.dragOver = "";
+    });
+
+    form.addEventListener("dragleave", () => {
+      dragDepth--;
+      if (dragDepth <= 0) {
+        dragDepth = 0;
+        delete form.dataset.dragOver;
+      }
+    });
+
+    form.addEventListener("dragover", (e) => e.preventDefault());
+
+    form.addEventListener("drop", (e) => {
+      e.preventDefault();
+      dragDepth = 0;
+      delete form.dataset.dragOver;
+      const file = e.dataTransfer?.files?.[0];
+      if (!file) {
+        return;
+      }
+      try {
+        const dt = new DataTransfer();
+        dt.items.add(file);
+        fileInput.files = dt.files;
+        if (hint) {
+          hint.textContent = `${file.name} ready to upload.`;
+        }
+      } catch {
+        // DataTransfer assignment not supported — skip
+      }
+    });
+  }
+
   function bindJobsPageActions(root) {
     const refreshButton = root.querySelector("[data-jobs-refresh]");
     const urlForm = root.querySelector("[data-url-job-form]");
     const uploadForm = root.querySelector("[data-upload-job-form]");
+
+    if (uploadForm) {
+      initUploadDragDrop(uploadForm);
+    }
 
     refreshButton?.addEventListener("click", async () => {
       setLiveInteractionLock(true, "Manual refresh in progress.");
@@ -460,14 +542,15 @@
   }
 
   async function loadJobPageData(jobId) {
-    const [job, transcript, events, candidates] = await Promise.all([
+    const [job, transcript, events, executions, candidates] = await Promise.all([
       api.getJob(jobId),
       api.getTranscript(jobId),
       api.getEvents(jobId),
+      api.getExecutions(jobId),
       api.getCandidates(jobId)
     ]);
 
-    return { job, transcript, events, candidates };
+    return { job, transcript, events, executions, candidates };
   }
 
   function startJobsLiveUpdates(root, jobs) {
@@ -484,7 +567,7 @@
     liveUpdates.mode = "job";
     liveUpdates.root = root;
     liveUpdates.jobId = String(jobId);
-    liveUpdates.snapshot = buildJobPageSnapshot(pageData.job, pageData.transcript, pageData.events, pageData.candidates);
+    liveUpdates.snapshot = buildJobPageSnapshot(pageData.job, pageData.transcript, pageData.events, pageData.executions, pageData.candidates);
     updateLiveIndicator(root, "live", describeJobLiveState(pageData.job, pageData.candidates));
     scheduleLiveRefresh(computeJobLiveDelay(pageData.job, pageData.candidates));
   }
@@ -586,7 +669,7 @@
 
     try {
       pageData = await loadJobPageData(liveUpdates.jobId);
-      const snapshot = buildJobPageSnapshot(pageData.job, pageData.transcript, pageData.events, pageData.candidates);
+      const snapshot = buildJobPageSnapshot(pageData.job, pageData.transcript, pageData.events, pageData.executions, pageData.candidates);
       const currentPauseReason = getJobLivePauseReason(root);
       if (currentPauseReason) {
         updateLiveIndicator(root, "paused", currentPauseReason);
@@ -618,7 +701,7 @@
     ]));
   }
 
-  function buildJobPageSnapshot(job, transcript, events, candidates) {
+  function buildJobPageSnapshot(job, transcript, events, executions, candidates) {
     return JSON.stringify({
       job: {
         id: job?.id,
@@ -641,6 +724,18 @@
         event.eventType,
         event.createdAt,
         event.message
+      ]),
+      executions: (executions || []).map((execution) => [
+        execution.id,
+        execution.taskType,
+        execution.status,
+        execution.workerId,
+        execution.processingVersion,
+        execution.candidateId,
+        execution.claimedAt,
+        execution.lastHeartbeatAt,
+        execution.finishedAt,
+        execution.failureMessage
       ]),
       candidates: (candidates || []).map((candidate) => [
         candidate.id,
@@ -753,12 +848,10 @@
   }
 
   function updateLiveIndicator(root, state, message) {
-    const indicator = root.querySelector("[data-live-indicator]");
-    if (!indicator) {
-      return;
-    }
-    indicator.dataset.state = state;
-    indicator.textContent = message;
+    root.querySelectorAll("[data-live-indicator]").forEach((indicator) => {
+      indicator.dataset.state = state;
+      indicator.textContent = message;
+    });
   }
 
   function formatLiveClock() {
@@ -774,26 +867,24 @@
     const canRestart = isJobRestartable(job);
     const progressLabel = job?.progressMessage || defaultProgressMessage(job);
     const phaseLabel = formatEventType(currentStatus);
-    const heartbeatLabel = formatWorkerHeartbeat(job?.lastWorkerHeartbeatAt);
+    const heartbeat = describeWorkerHeartbeat(job);
+    const stageProgress = describeStageProgress(job);
     const workerLabel = job?.currentWorkerId || "Awaiting worker claim";
 
-    return `
-      <section class="panel worker-runtime-panel">
-        <div class="panel-header">
-          <div>
-            <span class="eyebrow">Worker Runtime</span>
-            <h2 style="margin-top: 12px; font-size: 1.45rem;">${escapeHtml(phaseLabel)}</h2>
-            <p>${escapeHtml(progressLabel)}</p>
-          </div>
-          <div class="header-actions">
-            ${canRestart ? '<button class="action-button action-button-primary" type="button" data-job-control="restart">Restart Worker Run</button>' : ""}
-            ${canCancel ? '<button class="action-button action-button-reject" type="button" data-job-control="cancel">Cancel Worker Run</button>' : ""}
-          </div>
+    const runtimeBody = `
+      <div class="worker-runtime-body">
+        <div class="header-actions">
+          ${canRestart ? '<button class="action-button action-button-primary" type="button" data-job-control="restart">Restart Worker Run</button>' : ""}
+          ${canCancel ? '<button class="action-button action-button-reject" type="button" data-job-control="cancel">Cancel Worker Run</button>' : ""}
         </div>
         <div class="worker-progress-shell ${activeWorkerStatuses.has(currentStatus) ? "is-active" : ""}">
           <div class="worker-progress-meta">
             <span class="worker-progress-pill">${escapeHtml(`${progressPercent}%`)}</span>
             <span class="worker-progress-copy">${escapeHtml(progressLabel)}</span>
+          </div>
+          <div class="worker-progress-detail-row">
+            <span class="worker-progress-detail">${escapeHtml(stageProgress.label)}</span>
+            <span class="worker-heartbeat-badge worker-heartbeat-${escapeHtml(heartbeat.state)}">${escapeHtml(heartbeat.badge)}</span>
           </div>
           <div class="worker-progress-track" aria-hidden="true">
             <div class="worker-progress-fill" style="width: ${escapeHtml(progressPercent)}%;"></div>
@@ -807,7 +898,7 @@
             </article>
             <article class="micro-card">
               <span class="micro-card-label">Last Heartbeat</span>
-              <strong class="micro-card-value micro-card-value-compact">${escapeHtml(heartbeatLabel)}</strong>
+              <strong class="micro-card-value micro-card-value-compact">${escapeHtml(heartbeat.label)}</strong>
             </article>
             <article class="micro-card">
               <span class="micro-card-label">Execution</span>
@@ -816,7 +907,104 @@
           </div>
           <div class="footer-note">${escapeHtml(workerActionHint(job))}</div>
         </div>
+      </div>
+    `;
+
+    if (terminalJobStatuses.has(currentStatus)) {
+      return `
+        <details class="panel worker-runtime-panel worker-runtime-disclosure">
+          <summary class="worker-runtime-summary">
+            <div class="worker-runtime-summary-copy">
+              <span class="worker-runtime-summary-title">Worker Runtime ${renderStatusPill(job.status)}</span>
+              <span class="worker-runtime-summary-meta">${escapeHtml(progressLabel)}</span>
+            </div>
+            <span class="worker-runtime-summary-toggle" aria-hidden="true"></span>
+          </summary>
+          ${runtimeBody}
+        </details>
+      `;
+    }
+
+    return `
+      <section class="panel worker-runtime-panel">
+        <div class="panel-header">
+          <div>
+            <span class="eyebrow">Worker Runtime</span>
+            <h2 class="panel-eyebrow-h2">${escapeHtml(phaseLabel)}</h2>
+            <p>${escapeHtml(progressLabel)}</p>
+          </div>
+        </div>
+        ${runtimeBody}
       </section>
+    `;
+  }
+
+  function renderExecutionHistoryPanel(executions) {
+    if (!executions || !executions.length) {
+      return `
+        <section class="panel execution-history-panel">
+          <div class="panel-header">
+            <div>
+              <span class="eyebrow">Execution History</span>
+              <h2 class="panel-eyebrow-h2">No executions yet</h2>
+              <p>The worker has not claimed this job yet.</p>
+            </div>
+          </div>
+          <div class="empty-state">Execution claims, retries, recoveries, and completions will appear here.</div>
+        </section>
+      `;
+    }
+
+    const latestExecution = executions[executions.length - 1];
+    const latestLabel = latestExecution?.status === "RUNNING"
+      ? "Latest execution is active."
+      : `Latest execution ${formatEventType(latestExecution?.status || "UNKNOWN").toLowerCase()}.`;
+
+    return `
+      <section class="panel execution-history-panel">
+        <div class="panel-header">
+          <div>
+            <span class="eyebrow">Execution History</span>
+            <h2 class="panel-eyebrow-h2">${escapeHtml(`${executions.length} execution${executions.length === 1 ? "" : "s"}`)}</h2>
+            <p>${escapeHtml(latestLabel)}</p>
+          </div>
+        </div>
+        <div class="execution-history-stack">
+          ${executions.slice().reverse().map((execution, index) => renderExecutionHistoryItem(execution, index === 0)).join("")}
+        </div>
+      </section>
+    `;
+  }
+
+  function renderExecutionHistoryItem(execution, isLatest) {
+    const heartbeatLabel = execution.lastHeartbeatAt
+      ? `${formatRelativeDateTime(execution.lastHeartbeatAt)} (${formatElapsedBetween(execution.claimedAt, execution.lastHeartbeatAt)})`
+      : "No heartbeat";
+    const finishedLabel = execution.finishedAt ? formatRelativeDateTime(execution.finishedAt) : "Still open";
+    const candidateLabel = execution.candidateId ? `Candidate #${execution.candidateId}` : "Job-wide execution";
+    const failureMessage = execution.failureMessage || "No failure recorded";
+
+    return `
+      <article class="execution-history-item ${isLatest ? "is-latest" : ""}">
+        <div class="execution-history-top">
+          <div class="execution-history-main">
+            <span class="pill ${statusClass(execution.status)}">${escapeHtml(execution.taskType)}</span>
+            <strong class="execution-history-title">Execution #${escapeHtml(execution.id)}</strong>
+            ${isLatest ? '<span class="execution-history-latest">Latest</span>' : ""}
+          </div>
+          ${renderStatusPill(execution.status)}
+        </div>
+        <div class="execution-history-grid">
+          ${infoItem("Worker", execution.workerId || "n/a")}
+          ${infoItem("Role", execution.workerRole || "n/a")}
+          ${infoItem("Version", execution.processingVersion ? `v${execution.processingVersion}` : "n/a")}
+          ${infoItem("Scope", candidateLabel)}
+          ${infoItem("Claimed", formatRelativeDateTime(execution.claimedAt))}
+          ${infoItem("Last Heartbeat", heartbeatLabel)}
+          ${infoItem("Finished", finishedLabel)}
+          ${infoItem("Failure", failureMessage)}
+        </div>
+      </article>
     `;
   }
 
@@ -869,7 +1057,109 @@
     if (!value) {
       return "No heartbeat recorded";
     }
-    return formatDate(value);
+    return formatRelativeDateTime(value);
+  }
+
+  function describeWorkerHeartbeat(job) {
+    const status = String(job?.status || "").toUpperCase();
+    if (!job?.lastWorkerHeartbeatAt) {
+      return {
+        state: activeWorkerStatuses.has(status) ? "missing" : "idle",
+        badge: activeWorkerStatuses.has(status) ? "No heartbeat" : "Idle",
+        label: "No heartbeat recorded"
+      };
+    }
+
+    const heartbeatTime = new Date(job.lastWorkerHeartbeatAt);
+    if (Number.isNaN(heartbeatTime.getTime())) {
+      return {
+        state: "missing",
+        badge: "Unknown",
+        label: String(job.lastWorkerHeartbeatAt)
+      };
+    }
+
+    const ageSec = Math.max(0, Math.floor((Date.now() - heartbeatTime.getTime()) / 1000));
+    const active = activeWorkerStatuses.has(status);
+    const staleThresholdSec = status === "TRANSCRIBING" ? 90 : 60;
+    const stalledThresholdSec = status === "TRANSCRIBING" ? 240 : 150;
+
+    if (!active) {
+      return {
+        state: "idle",
+        badge: "Idle",
+        label: `${formatRelativeDateTime(job.lastWorkerHeartbeatAt)} (${formatElapsedSeconds(ageSec)} ago)`
+      };
+    }
+
+    if (ageSec >= stalledThresholdSec) {
+      return {
+        state: "stalled",
+        badge: "Possibly stalled",
+        label: `${formatRelativeDateTime(job.lastWorkerHeartbeatAt)} (${formatElapsedSeconds(ageSec)} ago)`
+      };
+    }
+
+    if (ageSec >= staleThresholdSec) {
+      return {
+        state: "stale",
+        badge: "Heartbeat late",
+        label: `${formatRelativeDateTime(job.lastWorkerHeartbeatAt)} (${formatElapsedSeconds(ageSec)} ago)`
+      };
+    }
+
+    return {
+      state: "fresh",
+      badge: "Heartbeat fresh",
+      label: `${formatRelativeDateTime(job.lastWorkerHeartbeatAt)} (${formatElapsedSeconds(ageSec)} ago)`
+    };
+  }
+
+  function describeStageProgress(job) {
+    const status = String(job?.status || "").toUpperCase();
+    const overallPercent = normalizedProgressPercent(job);
+    const stages = {
+      QUEUED_FOR_DOWNLOAD: { label: "Queued for download", range: [0, 5] },
+      DOWNLOADING: { label: "Download", range: [5, 18] },
+      QUEUED_FOR_PROCESSING: { label: "Queued for processing", range: [18, 28] },
+      EXTRACTING_AUDIO: { label: "Audio extraction", range: [28, 36] },
+      TRANSCRIBING: { label: "Transcription", range: [48, 67] },
+      DETECTING_SILENCE: { label: "Silence detection", range: [68, 84] },
+      ANALYZING_WINDOWS: { label: "Window analysis", range: [84, 94] },
+      GENERATING_CANDIDATES: { label: "Candidate generation", range: [94, 100] },
+      EXPORTING_CLIP: { label: "Clip export", range: [92, 100] }
+    };
+
+    const stage = stages[status];
+    if (!stage) {
+      return {
+        label: "Overall pipeline",
+        detail: `Overall pipeline ${overallPercent}%`
+      };
+    }
+
+    const [start, end] = stage.range;
+    const span = Math.max(1, end - start);
+    const stagePercent = Math.max(0, Math.min(Math.round(((overallPercent - start) / span) * 100), 100));
+
+    return {
+      label: `${stage.label} in progress`,
+      detail: `${stage.label} ${stagePercent}% of stage`
+    };
+  }
+
+  function formatElapsedSeconds(seconds) {
+    if (seconds < 60) {
+      return `${seconds}s`;
+    }
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
+    if (minutes < 60) {
+      return remainingSeconds > 0 ? `${minutes}m ${remainingSeconds}s` : `${minutes}m`;
+    }
+    const hours = Math.floor(minutes / 60);
+    const remainingMinutes = minutes % 60;
+    return remainingMinutes > 0 ? `${hours}h ${remainingMinutes}m` : `${hours}h`;
   }
 
   function isJobCancelable(job) {
@@ -904,8 +1194,17 @@
     return `
       <div class="stack">
         ${candidates.map((candidate) => `
-          <article class="candidate-card" data-candidate-card>
-            <div class="candidate-preview-shell" data-preview-shell data-preview-state="loading">
+          <details class="candidate-card" data-candidate-card data-candidate-id="${escapeHtml(candidate.id)}" ${shouldExpandCandidate(candidate) ? "open" : ""}>
+            <summary class="candidate-summary">
+              <div class="candidate-summary-main">
+                <span class="candidate-summary-text">${timeRange(candidate.startSec, candidate.endSec)}</span>
+                ${renderScoreBar(candidate.score)}
+                ${renderStatusPill(candidate.moderationStatus)}
+              </div>
+              <span class="candidate-summary-toggle" aria-hidden="true">▾</span>
+            </summary>
+            <div class="candidate-body">
+              <div class="candidate-preview-shell" data-preview-shell data-preview-state="loading">
               <div class="candidate-preview-head">
                 <span class="candidate-preview-chip">Instant preview</span>
                 <span class="candidate-preview-chip candidate-preview-chip-muted">${timeRange(candidate.startSec, candidate.endSec)}</span>
@@ -927,29 +1226,27 @@
                 </div>
                 <div class="candidate-preview-note" data-preview-note>Loading clip window...</div>
               </div>
-            </div>
-            <div class="candidate-top">
-              <div>
-                <strong>${timeRange(candidate.startSec, candidate.endSec)}</strong>
-                <div class="muted">Score ${formatScore(candidate.score)}</div>
               </div>
-              <span class="pill ${statusClass(candidate.moderationStatus)}">${escapeHtml(candidate.moderationStatus)}</span>
+              <div class="candidate-top">
+                <strong>${timeRange(candidate.startSec, candidate.endSec)}</strong>
+                ${renderStatusPill(candidate.moderationStatus)}
+              </div>
+              <div class="candidate-excerpt">${escapeHtml(candidate.transcriptExcerpt || "No transcript excerpt available.")}</div>
+              <div class="candidate-meta">
+                <span>${escapeHtml(candidate.moderatorNote || "No moderator note yet.")}</span>
+                <span>${candidate.exportReady
+                  ? `<a href="/api/exports/${encodeURIComponent(candidate.id)}/file">Download clip</a>`
+                  : (candidate.exportStatus === "IN_PROGRESS" ? "Clip is being prepared" : "Click download to prepare the clip")}</span>
+              </div>
+              ${renderCandidateRuntimeState(candidate)}
+              <div class="candidate-actions">
+                <button class="action-button action-button-approve" type="button" title="Approve candidate (A)" data-shortcut="A" data-candidate-action="approve" data-candidate-id="${escapeHtml(candidate.id)}" ${candidate.moderationStatus === "APPROVED" ? "disabled" : ""}>Approve</button>
+                <button class="action-button action-button-reject" type="button" title="Reject candidate (R)" data-shortcut="R" data-candidate-action="reject" data-candidate-id="${escapeHtml(candidate.id)}" ${candidate.moderationStatus === "REJECTED" ? "disabled" : ""}>Reject</button>
+                <button class="action-button action-button-export" type="button" title="${candidate.exportReady ? "Download the prepared clip" : "Prepare and download the clip"}" data-candidate-action="download" data-candidate-id="${escapeHtml(candidate.id)}" data-export-ready="${candidate.exportReady}" ${candidate.exportStatus === "IN_PROGRESS" ? "disabled" : ""}>${candidate.exportReady ? "Download" : "Export & Download"}</button>
+              </div>
+              <div class="candidate-message" data-candidate-message></div>
             </div>
-            <div class="candidate-excerpt">${escapeHtml(candidate.transcriptExcerpt || "No transcript excerpt available.")}</div>
-            <div class="candidate-meta">
-              <span>${escapeHtml(candidate.moderatorNote || "No moderator note yet.")}</span>
-              <span>${candidate.exportReady
-                ? `<a href="/api/exports/${encodeURIComponent(candidate.id)}/file">Download clip</a>`
-                : (candidate.exportStatus === "IN_PROGRESS" ? "Clip is being prepared" : "Click download to prepare the clip")}</span>
-            </div>
-            ${renderCandidateRuntimeState(candidate)}
-            <div class="candidate-actions">
-              <button class="action-button action-button-approve" type="button" data-candidate-action="approve" data-candidate-id="${escapeHtml(candidate.id)}" ${candidate.moderationStatus === "APPROVED" ? "disabled" : ""}>Approve</button>
-              <button class="action-button action-button-reject" type="button" data-candidate-action="reject" data-candidate-id="${escapeHtml(candidate.id)}" ${candidate.moderationStatus === "REJECTED" ? "disabled" : ""}>Reject</button>
-              <button class="action-button action-button-export" type="button" data-candidate-action="download" data-candidate-id="${escapeHtml(candidate.id)}" data-export-ready="${candidate.exportReady}" ${candidate.exportStatus === "IN_PROGRESS" ? "disabled" : ""}>Download</button>
-            </div>
-            <div class="candidate-message" data-candidate-message></div>
-          </article>
+          </details>
         `).join("")}
       </div>
     `;
@@ -1045,6 +1342,106 @@
     }
 
     return "";
+  }
+
+  function shouldExpandCandidate(candidate) {
+    return !["APPROVED", "REJECTED"].includes(String(candidate?.moderationStatus || "").toUpperCase());
+  }
+
+  function bindCandidateKeyboardShortcuts(root) {
+    reviewState.root = root;
+    const cards = Array.from(root.querySelectorAll("[data-candidate-card]"));
+    if (!cards.length) {
+      return;
+    }
+
+    cards.forEach((card) => {
+      const summary = card.querySelector(".candidate-summary");
+      summary?.addEventListener("click", () => {
+        setSelectedCandidate(card.dataset.candidateId);
+      });
+      card.addEventListener("toggle", () => {
+        if (card.open) {
+          setSelectedCandidate(card.dataset.candidateId);
+        }
+      });
+    });
+
+    const selectedId = cards.some((card) => card.dataset.candidateId === reviewState.selectedCandidateId)
+      ? reviewState.selectedCandidateId
+      : cards.find((card) => card.open)?.dataset.candidateId || cards[0].dataset.candidateId;
+
+    setSelectedCandidate(selectedId);
+
+    if (!reviewState.keyHandler) {
+      reviewState.keyHandler = (event) => {
+        if (document.body.dataset.page !== "job") {
+          return;
+        }
+        if (event.metaKey || event.ctrlKey || event.altKey) {
+          return;
+        }
+        const target = event.target;
+        const tagName = target?.tagName;
+        if (target?.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(tagName)) {
+          return;
+        }
+
+        if (event.key === "j" || event.key === "k") {
+          event.preventDefault();
+          moveSelectedCandidate(event.key === "j" ? 1 : -1);
+          return;
+        }
+
+        if (event.key === "a" || event.key === "r") {
+          const activeCard = getSelectedCandidateCard();
+          if (!activeCard) {
+            return;
+          }
+          const action = event.key === "a" ? "approve" : "reject";
+          const button = activeCard.querySelector(`[data-candidate-action="${action}"]:not(:disabled)`);
+          if (button) {
+            event.preventDefault();
+            button.click();
+          }
+        }
+      };
+      document.addEventListener("keydown", reviewState.keyHandler);
+    }
+  }
+
+  function getCandidateCards() {
+    return Array.from(reviewState.root?.querySelectorAll("[data-candidate-card]") || []);
+  }
+
+  function getSelectedCandidateCard() {
+    return getCandidateCards().find((card) => card.dataset.candidateId === reviewState.selectedCandidateId) || null;
+  }
+
+  function setSelectedCandidate(candidateId) {
+    reviewState.selectedCandidateId = candidateId;
+    getCandidateCards().forEach((card) => {
+      const isSelected = card.dataset.candidateId === candidateId;
+      card.classList.toggle("is-selected", isSelected);
+    });
+  }
+
+  function moveSelectedCandidate(direction) {
+    const cards = getCandidateCards();
+    if (!cards.length) {
+      return;
+    }
+
+    const currentIndex = Math.max(0, cards.findIndex((card) => card.dataset.candidateId === reviewState.selectedCandidateId));
+    const nextIndex = Math.max(0, Math.min(cards.length - 1, currentIndex + direction));
+    const nextCard = cards[nextIndex];
+    if (!nextCard) {
+      return;
+    }
+
+    nextCard.open = true;
+    setSelectedCandidate(nextCard.dataset.candidateId);
+    nextCard.scrollIntoView({ block: "nearest", behavior: "smooth" });
   }
 
   function bindCandidatePreviewPlayers(root) {
@@ -1209,10 +1606,10 @@
     const rows = jobs.map((job) => `
       <tr>
         <td><a href="/job.html?id=${encodeURIComponent(job.id)}">Job #${escapeHtml(job.id)}</a></td>
-        <td><span class="pill ${statusClass(job.status)}">${escapeHtml(job.status)}</span></td>
+        <td>${renderStatusPill(job.status)}</td>
         <td>${renderCompactProgress(job)}</td>
         <td>${escapeHtml(sourceLabel(job))}</td>
-        <td>${escapeHtml(formatDate(job.createdAt))}</td>
+        <td title="${escapeHtml(formatDate(job.createdAt))}">${escapeHtml(formatRelativeDateTime(job.createdAt))}</td>
         <td>${escapeHtml(formatDuration(job.durationSec))}</td>
       </tr>
     `).join("");
@@ -1224,7 +1621,7 @@
             <tr>
               <th>Job</th>
               <th>Status</th>
-              <th>Worker</th>
+              <th>Progress</th>
               <th>Source</th>
               <th>Created</th>
               <th>Duration</th>
@@ -1239,15 +1636,33 @@
   function renderCompactProgress(job) {
     const progressPercent = normalizedProgressPercent(job);
     const progressLabel = job?.progressMessage || defaultProgressMessage(job);
+    const stageProgress = describeStageProgress(job);
+    const heartbeat = describeWorkerHeartbeat(job);
+    const latestExecution = job?.latestExecution || null;
+    const executionSummary = latestExecution ? summarizeLatestExecution(latestExecution) : "No execution yet";
     return `
       <div class="table-progress">
         <div class="table-progress-copy">${escapeHtml(progressLabel)}</div>
         <div class="table-progress-track" aria-hidden="true">
           <span class="table-progress-fill" style="width: ${escapeHtml(progressPercent)}%;"></span>
         </div>
-        <div class="table-progress-meta">${escapeHtml(`${progressPercent}%`)}${job?.currentWorkerId ? ` · ${escapeHtml(job.currentWorkerId)}` : ""}</div>
+        <div class="table-progress-meta">${escapeHtml(`${progressPercent}% | ${stageProgress.label}`)}</div>
+        <div class="table-progress-meta table-progress-meta-secondary">${escapeHtml(heartbeat.badge)}${job?.currentWorkerId ? ` | ${escapeHtml(job.currentWorkerId)}` : ""}</div>
+        <div class="table-progress-meta table-progress-meta-secondary">${escapeHtml(executionSummary)}</div>
       </div>
     `;
+  }
+
+  function summarizeLatestExecution(execution) {
+    const task = formatEventType(execution.taskType || "UNKNOWN");
+    const status = formatEventType(execution.status || "UNKNOWN");
+    if (execution.failureMessage) {
+      return `${task} | ${status} | ${execution.failureMessage}`;
+    }
+    if (execution.workerId) {
+      return `${task} | ${status} | ${execution.workerId}`;
+    }
+    return `${task} | ${status}`;
   }
 
   function renderTranscript(transcript) {
@@ -1291,36 +1706,295 @@
     }
 
     const latestEvent = events[events.length - 1];
+    const importantEvents = events.filter((event, index) => isImportantEvent(event, index, events));
+    const visibleImportantEvents = importantEvents.slice(-7);
+    const hiddenImportantCount = Math.max(importantEvents.length - visibleImportantEvents.length, 0);
+    const rawPreviewEvents = events.slice(-6).reverse();
+    const hiddenRawCount = Math.max(events.length - rawPreviewEvents.length, 0);
+    const phaseSummary = summarizeEventPhases(events);
+    const totalElapsed = formatElapsedBetween(events[0]?.createdAt, latestEvent?.createdAt);
 
     return `
-      <div class="panel-micro-grid">
-        <article class="micro-card">
-          <span class="micro-card-label">Recorded</span>
-          <strong class="micro-card-value">${events.length}</strong>
+      <div class="event-overview">
+        <article class="event-hero-card">
+          <span class="micro-card-label">Current Phase</span>
+          <strong class="event-hero-title">${escapeHtml(formatEventType(latestEvent.eventType))}</strong>
+          <div class="event-hero-meta">
+            <span>${escapeHtml(formatRelativeDateTime(latestEvent.createdAt))}</span>
+            <span>${escapeHtml(totalElapsed)} total elapsed</span>
+          </div>
+          <p class="event-hero-copy">${escapeHtml(latestEvent.message || "No event message recorded.")}</p>
         </article>
-        <article class="micro-card">
-          <span class="micro-card-label">Latest</span>
-          <strong class="micro-card-value micro-card-value-compact">${escapeHtml(formatEventType(latestEvent.eventType))}</strong>
-        </article>
-      </div>
-      <div class="event-feed">
-        ${events.map((event, index) => `
-          <article class="event-row">
-            <div class="event-rail" aria-hidden="true">
-              <span class="event-node ${eventToneClass(event.eventType)}"></span>
-              ${index === events.length - 1 ? "" : '<span class="event-rail-line"></span>'}
-            </div>
-            <div class="event-card ${eventToneClass(event.eventType)}">
-              <div class="event-meta">
-                <span class="event-type-pill ${eventToneClass(event.eventType)}">${escapeHtml(formatEventType(event.eventType))}</span>
-                <span class="event-time">${escapeHtml(formatDate(event.createdAt))}</span>
+        <div class="event-phase-grid">
+          ${phaseSummary.map((phase) => `
+            <article class="event-phase-card ${phase.tone}">
+              <div class="event-phase-top">
+                <span class="event-phase-label">${escapeHtml(phase.label)}</span>
+                <span class="event-phase-icon" aria-hidden="true">${escapeHtml(phase.icon)}</span>
               </div>
-              <p class="event-message">${escapeHtml(event.message || "No event message recorded.")}</p>
-            </div>
-          </article>
-        `).join("")}
+              <strong class="event-phase-title">${escapeHtml(phase.title)}</strong>
+              <div class="event-phase-meta">
+                <span>${escapeHtml(formatRelativeDateTime(phase.createdAt))}</span>
+                <span>${escapeHtml(phase.elapsed)}</span>
+              </div>
+            </article>
+          `).join("")}
+        </div>
       </div>
+      <div class="event-panel">
+        <div class="event-panel-head">
+          <div>
+            <h3>Operator Timeline</h3>
+            <p>Important transitions only by default. Raw worker log stays available below.</p>
+          </div>
+          <div class="event-filter-bar" data-event-filters>
+            ${renderEventFilterButton("all", "All", savedEventFilter === "all")}
+            ${renderEventFilterButton("important", "Important", savedEventFilter === "important")}
+            ${renderEventFilterButton("worker", "Worker", savedEventFilter === "worker")}
+            ${renderEventFilterButton("moderation", "Moderation", savedEventFilter === "moderation")}
+            ${renderEventFilterButton("errors", "Errors", savedEventFilter === "errors")}
+          </div>
+        </div>
+        ${hiddenImportantCount > 0 ? `<div class="footer-note">Showing the last ${visibleImportantEvents.length} important events. ${hiddenImportantCount} earlier transitions are folded into the raw log.</div>` : ""}
+        <div class="event-feed event-feed-compact" data-event-feed>
+          ${visibleImportantEvents.map((event, index) => renderImportantEventRow(event, index, visibleImportantEvents)).join("")}
+        </div>
+      </div>
+      <details class="raw-events-panel">
+        <summary class="raw-events-summary">
+          <div class="raw-events-summary-copy">
+            <span class="raw-events-title">Raw Event Log</span>
+            <span class="raw-events-meta">${hiddenRawCount > 0 ? `${hiddenRawCount} earlier events hidden` : "Showing latest worker log entries"}</span>
+          </div>
+          <span class="raw-events-toggle" aria-hidden="true"></span>
+        </summary>
+        <div class="raw-events-list">
+          ${rawPreviewEvents.map((event) => renderRawEventItem(event)).join("")}
+          ${hiddenRawCount > 0 ? `<div class="footer-note">Latest ${rawPreviewEvents.length} raw events shown. Full event history remains available from the backend API.</div>` : ""}
+        </div>
+      </details>
     `;
+  }
+
+  function bindEventControls(root) {
+    const container = root.querySelector("[data-event-filters]");
+    const feed = root.querySelector("[data-event-feed]");
+    if (!container || !feed) {
+      return;
+    }
+
+    container.querySelectorAll("[data-event-filter-control]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const filter = button.dataset.eventFilterControl || "all";
+        savedEventFilter = filter;
+        container.querySelectorAll("[data-event-filter-control]").forEach((control) => {
+          control.dataset.active = String(control === button);
+        });
+        feed.querySelectorAll("[data-event-item]").forEach((item) => {
+          const categories = (item.dataset.eventCategories || "").split(" ");
+          const visible = filter === "all" || categories.includes(filter);
+          item.hidden = !visible;
+        });
+      });
+    });
+
+    if (savedEventFilter !== "all") {
+      feed.querySelectorAll("[data-event-item]").forEach((item) => {
+        const categories = (item.dataset.eventCategories || "").split(" ");
+        item.hidden = !categories.includes(savedEventFilter);
+      });
+    }
+  }
+
+  function renderEventFilterButton(value, label, active = false) {
+    return `<button class="event-filter-button" type="button" data-event-filter-control="${escapeHtml(value)}" data-active="${active ? "true" : "false"}">${escapeHtml(label)}</button>`;
+  }
+
+  function renderImportantEventRow(event, index, events) {
+    const categories = eventCategories(event).join(" ");
+    const previousEvent = index > 0 ? events[index - 1] : null;
+    return `
+      <article class="event-row event-row-compact ${eventToneClass(event.eventType)}" data-event-item data-event-categories="${escapeHtml(categories)}">
+        <div class="event-rail" aria-hidden="true">
+          <span class="event-node ${eventToneClass(event.eventType)}"></span>
+          ${index === events.length - 1 ? "" : '<span class="event-rail-line"></span>'}
+        </div>
+        <div class="event-card ${eventToneClass(event.eventType)}">
+          <div class="event-meta">
+            <span class="event-type-pill ${eventToneClass(event.eventType)}">${escapeHtml(`${eventIcon(event.eventType)} ${formatEventType(event.eventType)}`)}</span>
+            <span class="event-time">${escapeHtml(formatRelativeDateTime(event.createdAt))}</span>
+          </div>
+          <p class="event-message">${escapeHtml(event.message || "No event message recorded.")}</p>
+          <div class="event-row-foot">
+            <span>${escapeHtml(formatEventPhaseLabel(event.eventType))}</span>
+            <span>${escapeHtml(formatElapsedBetween(previousEvent?.createdAt, event.createdAt))}</span>
+          </div>
+        </div>
+      </article>
+    `;
+  }
+
+  function renderRawEventItem(event) {
+    return `
+      <details class="raw-event-item">
+        <summary class="raw-event-summary">
+          <div class="raw-event-main">
+            <span class="raw-event-icon" aria-hidden="true">${escapeHtml(eventIcon(event.eventType))}</span>
+            <span class="raw-event-type">${escapeHtml(formatEventType(event.eventType))}</span>
+          </div>
+          <span class="raw-event-time">${escapeHtml(formatRelativeDateTime(event.createdAt))}</span>
+        </summary>
+        <div class="raw-event-body">
+          <div class="raw-event-body-row"><span>Phase</span><strong>${escapeHtml(formatEventPhaseLabel(event.eventType))}</strong></div>
+          <div class="raw-event-body-row"><span>Type</span><strong>${escapeHtml(event.eventType || "n/a")}</strong></div>
+          <p class="raw-event-message">${escapeHtml(event.message || "No event message recorded.")}</p>
+        </div>
+      </details>
+    `;
+  }
+
+  function summarizeEventPhases(events) {
+    const phases = ["ingest", "processing", "moderation", "export", "failure"];
+    return phases
+      .map((phase) => {
+        const phaseEvents = events.filter((event) => eventPhase(event.eventType) === phase);
+        if (!phaseEvents.length) {
+          return null;
+        }
+        const firstEvent = phaseEvents[0];
+        const latestEvent = phaseEvents[phaseEvents.length - 1];
+        return {
+          label: phaseLabel(phase),
+          title: formatEventType(latestEvent.eventType),
+          createdAt: latestEvent.createdAt,
+          elapsed: formatElapsedBetween(firstEvent.createdAt, latestEvent.createdAt),
+          icon: phaseIcon(phase),
+          tone: `tone-${phaseTone(phase)}`
+        };
+      })
+      .filter(Boolean);
+  }
+
+  function isImportantEvent(event, index, events) {
+    const type = String(event?.eventType || "").toUpperCase();
+    const importantTypes = new Set([
+      "JOB_CREATED",
+      "JOB_QUEUED_FOR_DOWNLOAD",
+      "JOB_DOWNLOAD_COMPLETED",
+      "JOB_QUEUED_FOR_PROCESSING",
+      "JOB_READY_FOR_REVIEW",
+      "EXPORT_STARTED",
+      "EXPORT_COMPLETED",
+      "JOB_FAILED",
+      "JOB_CANCELED",
+      "JOB_RESTARTED"
+    ]);
+    if (importantTypes.has(type)) {
+      return true;
+    }
+    return index === 0 || index === events.length - 1;
+  }
+
+  function eventCategories(event) {
+    const phase = eventPhase(event.eventType);
+    const categories = ["all", "important"];
+    if (["ingest", "processing", "export"].includes(phase)) {
+      categories.push("worker");
+    }
+    if (phase === "moderation") {
+      categories.push("moderation");
+    }
+    if (phase === "failure") {
+      categories.push("worker", "errors");
+    }
+    return Array.from(new Set(categories));
+  }
+
+  function formatEventPhaseLabel(eventType) {
+    return phaseLabel(eventPhase(eventType));
+  }
+
+  function phaseLabel(phase) {
+    const labels = {
+      ingest: "Ingest",
+      processing: "Processing",
+      moderation: "Moderation",
+      export: "Export",
+      failure: "Failure",
+      system: "System"
+    };
+    return labels[phase] || "System";
+  }
+
+  function phaseIcon(phase) {
+    const icons = {
+      ingest: "↓",
+      processing: "⚙",
+      moderation: "✎",
+      export: "⬇",
+      failure: "✕",
+      system: "•"
+    };
+    return icons[phase] || "•";
+  }
+
+  function phaseTone(phase) {
+    if (phase === "failure") {
+      return "danger";
+    }
+    if (phase === "moderation" || phase === "export") {
+      return "accent";
+    }
+    return "success";
+  }
+
+  function eventPhase(eventType) {
+    const value = String(eventType || "").toUpperCase();
+    if (value.includes("FAILED") || value.includes("CANCELED")) {
+      return "failure";
+    }
+    if (value.includes("EXPORT")) {
+      return "export";
+    }
+    if (value.includes("REVIEW")) {
+      return "moderation";
+    }
+    if (value.includes("DOWNLOAD") || value.includes("CREATED")) {
+      return "ingest";
+    }
+    if (value.includes("PROCESSING") || value.includes("CLAIMED") || value.includes("RESTARTED")) {
+      return "processing";
+    }
+    return "system";
+  }
+
+  function eventIcon(eventType) {
+    return phaseIcon(eventPhase(eventType));
+  }
+
+  function formatElapsedBetween(startValue, endValue) {
+    if (!startValue || !endValue) {
+      return "n/a";
+    }
+    const start = new Date(startValue);
+    const end = new Date(endValue);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+      return "n/a";
+    }
+    const diffSeconds = Math.max(0, Math.floor((end.getTime() - start.getTime()) / 1000));
+    if (diffSeconds < 60) {
+      return `${diffSeconds}s`;
+    }
+    const hours = Math.floor(diffSeconds / 3600);
+    const minutes = Math.floor((diffSeconds % 3600) / 60);
+    const seconds = diffSeconds % 60;
+    if (hours > 0) {
+      return `${hours}h ${minutes}m`;
+    }
+    if (minutes > 0 && seconds > 0) {
+      return `${minutes}m ${seconds}s`;
+    }
+    return `${minutes}m`;
   }
 
   function summarizeJobs(jobs) {
@@ -1355,6 +2029,12 @@
     }, { total: 0, approved: 0, pending: 0 });
   }
 
+  function summarizeCandidatesForHeader(candidates) {
+    const rejected = candidates.filter((candidate) => candidate.moderationStatus === "REJECTED").length;
+    const summary = summarizeCandidates(candidates);
+    return `${summary.pending} pending | ${summary.approved} approved | ${rejected} rejected`;
+  }
+
   function sourceLabel(job) {
     if (job.sourceType === "FILE") {
       return job.originalFilename || "Uploaded file";
@@ -1379,6 +2059,33 @@
 
   function statusClass(status) {
     return `status-${String(status || "").toLowerCase()}`;
+  }
+
+  function renderStatusPill(status) {
+    const label = String(status || "UNKNOWN");
+    return `
+      <span class="pill ${statusClass(label)}">
+        <span class="pill-icon" aria-hidden="true">${escapeHtml(statusIcon(label))}</span>
+        <span>${escapeHtml(label)}</span>
+      </span>
+    `;
+  }
+
+  function statusIcon(status) {
+    const value = String(status || "").toUpperCase();
+    if (["COMPLETED", "APPROVED"].includes(value)) {
+      return "✓";
+    }
+    if (["FAILED", "REJECTED"].includes(value)) {
+      return "✕";
+    }
+    if (["PENDING"].includes(value)) {
+      return "◌";
+    }
+    if (activeWorkerStatuses.has(value) || ["READY_FOR_REVIEW", "EXPORTING_CLIP", "IN_PROGRESS"].includes(value)) {
+      return "●";
+    }
+    return "◌";
   }
 
   function formatEventType(eventType) {
@@ -1414,6 +2121,22 @@
     return Number(score).toFixed(2);
   }
 
+  function renderScoreBar(score) {
+    const numericScore = Number(score);
+    const normalized = Number.isNaN(numericScore)
+      ? 0
+      : Math.max(0, Math.min(Math.round(numericScore * 100), 100));
+
+    return `
+      <span class="score-bar">
+        <span class="score-track" aria-hidden="true">
+          <span class="score-fill" style="width: ${normalized}%;"></span>
+        </span>
+        <span class="score-value">${escapeHtml(formatScore(score))}</span>
+      </span>
+    `;
+  }
+
   function formatDuration(durationSec) {
     if (durationSec === null || durationSec === undefined) {
       return "n/a";
@@ -1442,6 +2165,57 @@
       dateStyle: "medium",
       timeStyle: "short"
     }).format(date);
+  }
+
+  function formatShortDate(value) {
+    if (!value) {
+      return "n/a";
+    }
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+      return String(value);
+    }
+    return new Intl.DateTimeFormat(undefined, {
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false
+    }).format(date);
+  }
+
+  function formatRelativeDate(value) {
+    if (!value) {
+      return "n/a";
+    }
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+      return String(value);
+    }
+
+    const diffMs = Date.now() - date.getTime();
+    if (diffMs < 0) {
+      return formatShortDate(value);
+    }
+
+    const diffMinutes = Math.floor(diffMs / 60000);
+    if (diffMinutes < 60) {
+      if (diffMinutes <= 0) {
+        return "just now";
+      }
+      return `${diffMinutes} min ago`;
+    }
+
+    const diffHours = Math.floor(diffMinutes / 60);
+    if (diffHours < 24) {
+      return `${diffHours} hour${diffHours === 1 ? "" : "s"} ago`;
+    }
+
+    return formatShortDate(value);
+  }
+
+  function formatRelativeDateTime(value) {
+    return formatRelativeDate(value);
   }
 
   function formatClipTimestamp(seconds) {

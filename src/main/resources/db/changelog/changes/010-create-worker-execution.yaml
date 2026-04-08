@@ -1,0 +1,82 @@
+databaseChangeLog:
+  - changeSet:
+      id: 010-create-worker-execution
+      author: codex
+      comment: Create worker_execution table to track active and completed worker runs independently from vod_job summary state.
+      changes:
+        - createTable:
+            tableName: worker_execution
+            columns:
+              - column:
+                  name: id
+                  type: BIGINT
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: job_id
+                  type: BIGINT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: processing_version
+                  type: BIGINT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: worker_id
+                  type: VARCHAR(128)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: worker_role
+                  type: VARCHAR(32)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: task_type
+                  type: VARCHAR(32)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: status
+                  type: VARCHAR(32)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: candidate_id
+                  type: BIGINT
+              - column:
+                  name: claimed_at
+                  type: TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: last_heartbeat_at
+                  type: TIMESTAMP
+              - column:
+                  name: finished_at
+                  type: TIMESTAMP
+              - column:
+                  name: failure_message
+                  type: VARCHAR(1000)
+        - addForeignKeyConstraint:
+            baseTableName: worker_execution
+            baseColumnNames: job_id
+            referencedTableName: vod_job
+            referencedColumnNames: id
+            constraintName: fk_worker_execution_job
+            onDelete: CASCADE
+        - createIndex:
+            tableName: worker_execution
+            indexName: idx_worker_execution_active_lookup
+            columns:
+              - column:
+                  name: job_id
+              - column:
+                  name: processing_version
+              - column:
+                  name: worker_id
+              - column:
+                  name: status

@@ -58,6 +58,11 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
     volumes:
       - streamcut-data:/data
 
@@ -73,7 +78,7 @@ services:
       PYTHONUNBUFFERED: "1"
     depends_on:
       backend:
-        condition: service_started
+        condition: service_healthy
     volumes:
       - streamcut-data:/data
 
@@ -84,16 +89,19 @@ services:
     environment:
       BACKEND_BASE_URL: http://backend:8080
       APP_STORAGE_LOCAL_ROOT: /data/storage
+      HF_HOME: /model-cache
       WORKER_ID: processing-worker-1
       WORKER_ROLE: processing
       PYTHONUNBUFFERED: "1"
     depends_on:
       backend:
-        condition: service_started
+        condition: service_healthy
     volumes:
       - streamcut-data:/data
+      - streamcut-hf-cache:/model-cache
 
 volumes:
   streamcut-postgres:
   streamcut-data:
   streamcut-minio:
+  streamcut-hf-cache:

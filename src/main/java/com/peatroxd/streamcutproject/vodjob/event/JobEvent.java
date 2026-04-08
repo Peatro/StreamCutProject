@@ -10,11 +10,18 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import lombok.AccessLevel;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
 
 import java.time.Instant;
 
 @Entity
 @Table(name = "job_event")
+@Getter
+@Setter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class JobEvent {
 
     @Id
@@ -34,9 +41,6 @@ public class JobEvent {
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
-    protected JobEvent() {
-    }
-
     public static JobEvent create(VodJob vodJob, String eventType, String message, Instant createdAt) {
         JobEvent event = new JobEvent();
         event.setVodJob(vodJob);
@@ -44,45 +48,5 @@ public class JobEvent {
         event.setMessage(message);
         event.setCreatedAt(createdAt);
         return event;
-    }
-
-    public Long getId() {
-        return id;
-    }
-
-    public void setId(Long id) {
-        this.id = id;
-    }
-
-    public VodJob getVodJob() {
-        return vodJob;
-    }
-
-    public void setVodJob(VodJob vodJob) {
-        this.vodJob = vodJob;
-    }
-
-    public String getEventType() {
-        return eventType;
-    }
-
-    public void setEventType(String eventType) {
-        this.eventType = eventType;
-    }
-
-    public String getMessage() {
-        return message;
-    }
-
-    public void setMessage(String message) {
-        this.message = message;
-    }
-
-    public Instant getCreatedAt() {
-        return createdAt;
-    }
-
-    public void setCreatedAt(Instant createdAt) {
-        this.createdAt = createdAt;
     }
 }

@@ -12,9 +12,16 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import lombok.AccessLevel;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
 
 @Entity
 @Table(name = "clip_candidate")
+@Getter
+@Setter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class ClipCandidate {
 
     @Id
@@ -51,9 +58,6 @@ public class ClipCandidate {
     @Column(name = "export_status", nullable = false, length = 20)
     private ExportStatus exportStatus;
 
-    protected ClipCandidate() {
-    }
-
     public static ClipCandidate create(
             VodJob vodJob,
             Double startSec,
@@ -70,85 +74,5 @@ public class ClipCandidate {
         candidate.setModerationStatus(ModerationStatus.PENDING);
         candidate.setExportStatus(ExportStatus.NOT_REQUESTED);
         return candidate;
-    }
-
-    public Long getId() {
-        return id;
-    }
-
-    public void setId(Long id) {
-        this.id = id;
-    }
-
-    public VodJob getVodJob() {
-        return vodJob;
-    }
-
-    public void setVodJob(VodJob vodJob) {
-        this.vodJob = vodJob;
-    }
-
-    public Double getStartSec() {
-        return startSec;
-    }
-
-    public void setStartSec(Double startSec) {
-        this.startSec = startSec;
-    }
-
-    public Double getEndSec() {
-        return endSec;
-    }
-
-    public void setEndSec(Double endSec) {
-        this.endSec = endSec;
-    }
-
-    public Double getScore() {
-        return score;
-    }
-
-    public void setScore(Double score) {
-        this.score = score;
-    }
-
-    public String getTranscriptExcerpt() {
-        return transcriptExcerpt;
-    }
-
-    public void setTranscriptExcerpt(String transcriptExcerpt) {
-        this.transcriptExcerpt = transcriptExcerpt;
-    }
-
-    public ModerationStatus getModerationStatus() {
-        return moderationStatus;
-    }
-
-    public void setModerationStatus(ModerationStatus moderationStatus) {
-        this.moderationStatus = moderationStatus;
-    }
-
-    public String getModeratorNote() {
-        return moderatorNote;
-    }
-
-    public void setModeratorNote(String moderatorNote) {
-        this.moderatorNote = moderatorNote;
-    }
-
-    public String getExportedClipPath() {
-        return exportedClipPath;
-    }
-
-    public void setExportedClipPath(String exportedClipPath) {
-        this.exportedClipPath = exportedClipPath;
-    }
-
-    public ExportStatus getExportStatus() {
-        return exportStatus;
-    }
-
-    public void setExportStatus(ExportStatus exportStatus) {
-        this.exportStatus = exportStatus;
     }
 }

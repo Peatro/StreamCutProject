@@ -16,7 +16,14 @@ from streamcut_worker.models import (
 
 
 class BackendTransportError(RuntimeError):
-    pass
+    def __init__(self, message: str, *, status_code: int | None = None, url: str | None = None) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+        self.url = url
+
+    @property
+    def is_conflict(self) -> bool:
+        return self.status_code == 409
 
 
 @dataclass(slots=True)
@@ -34,6 +41,7 @@ class BackendClient:
             return None
 
         return ClaimedJob(
+            execution_id=int(response["executionId"]),
             job_id=int(response["jobId"]),
             processing_version=int(response["processingVersion"]),
             task_type=str(response["taskType"]),
@@ -93,10 +101,13 @@ class BackendClient:
                 return None
             raise BackendTransportError(
                 f"Backend request failed with HTTP {exc.code}: {url}",
+                status_code=exc.code,
+                url=url,
             ) from exc
         except error.URLError as exc:
             raise BackendTransportError(
                 f"Backend request failed: {url}",
+                url=url,
             ) from exc
 
 
