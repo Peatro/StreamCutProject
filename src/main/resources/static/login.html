@@ -281,13 +281,9 @@
         statusMessage.textContent = "Your session is missing or expired. Sign in again to continue.";
         statusMessage.dataset.tone = "warning";
         statusMessage.hidden = false;
-      } else if (reason === "logout" || query.has("logout")) {
+      } else if (reason === "logout") {
         statusMessage.textContent = "You have been signed out.";
         statusMessage.dataset.tone = "warning";
-        statusMessage.hidden = false;
-      } else if (query.has("error")) {
-        statusMessage.textContent = "Incorrect username or password.";
-        statusMessage.dataset.tone = "error";
         statusMessage.hidden = false;
       }
 
