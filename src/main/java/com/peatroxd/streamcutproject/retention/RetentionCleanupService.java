@@ -11,9 +11,10 @@ import com.peatroxd.streamcutproject.vodjob.VodJob;
 import com.peatroxd.streamcutproject.vodjob.VodJobRepository;
 import com.peatroxd.streamcutproject.vodjob.event.JobEvent;
 import com.peatroxd.streamcutproject.vodjob.event.JobEventRepository;
-import lombok.RequiredArgsConstructor;
+import jakarta.persistence.EntityManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -27,7 +28,6 @@ import java.util.List;
 import java.util.Set;
 
 @Service
-@RequiredArgsConstructor
 public class RetentionCleanupService {
 
     private static final Logger log = LoggerFactory.getLogger(RetentionCleanupService.class);
@@ -42,6 +42,45 @@ public class RetentionCleanupService {
     private final ArtifactStorageService artifactStorageService;
     private final StorageProperties storageProperties;
     private final RetentionProperties retentionProperties;
+    private final EntityManager entityManager;
+
+    @Autowired
+    public RetentionCleanupService(
+            VodJobRepository vodJobRepository,
+            ClipCandidateRepository clipCandidateRepository,
+            JobEventRepository jobEventRepository,
+            ArtifactStorageService artifactStorageService,
+            StorageProperties storageProperties,
+            RetentionProperties retentionProperties,
+            EntityManager entityManager
+    ) {
+        this.vodJobRepository = vodJobRepository;
+        this.clipCandidateRepository = clipCandidateRepository;
+        this.jobEventRepository = jobEventRepository;
+        this.artifactStorageService = artifactStorageService;
+        this.storageProperties = storageProperties;
+        this.retentionProperties = retentionProperties;
+        this.entityManager = entityManager;
+    }
+
+    public RetentionCleanupService(
+            VodJobRepository vodJobRepository,
+            ClipCandidateRepository clipCandidateRepository,
+            JobEventRepository jobEventRepository,
+            ArtifactStorageService artifactStorageService,
+            StorageProperties storageProperties,
+            RetentionProperties retentionProperties
+    ) {
+        this(
+                vodJobRepository,
+                clipCandidateRepository,
+                jobEventRepository,
+                artifactStorageService,
+                storageProperties,
+                retentionProperties,
+                null
+        );
+    }
 
     public RetentionCleanupResult cleanupExpiredFiles() {
         return new RetentionCleanupResult(cleanupSourceFiles(), cleanupArtifactFiles());
@@ -94,7 +133,24 @@ public class RetentionCleanupService {
     }
 
     private boolean cleanupSourceFile(VodJob job, Instant cleanupTime) {
-        String sourcePath = job.getStorageVideoPath();
+        VodJob currentJob = reloadJob(job);
+        if (currentJob == null) {
+            log.warn(
+                    "source_cleanup_skipped jobId={} reason=job_not_found_during_revalidation",
+                    job.getId()
+            );
+            return false;
+        }
+        if (!SOURCE_RETENTION_STATUSES.contains(currentJob.getStatus())) {
+            log.warn(
+                    "source_cleanup_skipped jobId={} status={} reason=status_changed_before_delete",
+                    currentJob.getId(),
+                    currentJob.getStatus()
+            );
+            return false;
+        }
+
+        String sourcePath = currentJob.getStorageVideoPath();
         if (sourcePath == null || sourcePath.isBlank()) {
             return false;
         }
@@ -107,28 +163,52 @@ public class RetentionCleanupService {
             );
             boolean existed = Files.exists(resolvedPath);
             Files.deleteIfExists(resolvedPath);
-            job.setStorageVideoPath(null);
-            vodJobRepository.save(job);
+            currentJob.setStorageVideoPath(null);
+            vodJobRepository.save(currentJob);
             jobEventRepository.save(JobEvent.create(
-                    job,
+                    currentJob,
                     EVENT_SOURCE_CLEANED,
                     sourceCleanupMessage(existed),
                     cleanupTime
             ));
             log.info(
                     "source_cleaned jobId={} path={} deleted={}",
-                    job.getId(),
+                    currentJob.getId(),
                     resolvedPath,
                     existed
             );
             return true;
         } catch (InvalidPathException | IOException ex) {
-            log.warn("source_cleanup_failed jobId={} path={} message={}", job.getId(), sourcePath, ex.getMessage());
+            log.warn(
+                    "source_cleanup_failed jobId={} path={} message={}",
+                    currentJob.getId(),
+                    sourcePath,
+                    ex.getMessage()
+            );
             return false;
         }
     }
 
     private boolean cleanupArtifactFile(VodJob job, ClipCandidate candidate, Instant cleanupTime) {
+        VodJob currentJob = reloadJob(job);
+        if (currentJob == null) {
+            log.warn(
+                    "artifact_cleanup_skipped jobId={} candidateId={} reason=job_not_found_during_revalidation",
+                    job.getId(),
+                    candidate.getId()
+            );
+            return false;
+        }
+        if (currentJob.getStatus() != JobStatus.COMPLETED) {
+            log.warn(
+                    "artifact_cleanup_skipped jobId={} candidateId={} status={} reason=status_changed_before_delete",
+                    currentJob.getId(),
+                    candidate.getId(),
+                    currentJob.getStatus()
+            );
+            return false;
+        }
+
         String reference = candidate.getExportedClipPath();
         if (reference == null || reference.isBlank() || candidate.getExportStatus() != ExportStatus.COMPLETED) {
             return false;
@@ -142,14 +222,14 @@ public class RetentionCleanupService {
             candidate.setExportedClipPath(null);
             clipCandidateRepository.save(candidate);
             jobEventRepository.save(JobEvent.create(
-                    job,
+                    currentJob,
                     EVENT_ARTIFACT_CLEANED,
                     artifactCleanupMessage(candidate.getId(), existed),
                     cleanupTime
             ));
             log.info(
                     "artifact_cleaned jobId={} candidateId={} reference={} deleted={}",
-                    job.getId(),
+                    currentJob.getId(),
                     candidate.getId(),
                     reference,
                     existed
@@ -158,13 +238,23 @@ public class RetentionCleanupService {
         } catch (IOException ex) {
             log.warn(
                     "artifact_cleanup_failed jobId={} candidateId={} reference={} message={}",
-                    job.getId(),
+                    currentJob.getId(),
                     candidate.getId(),
                     reference,
                     ex.getMessage()
             );
             return false;
         }
+    }
+
+    private VodJob reloadJob(VodJob job) {
+        if (entityManager == null) {
+            return job;
+        }
+        if (entityManager.contains(job)) {
+            entityManager.detach(job);
+        }
+        return vodJobRepository.findById(job.getId()).orElse(null);
     }
 
     private boolean isSourceCleanupEligible(VodJob job, Instant retainedBefore) {

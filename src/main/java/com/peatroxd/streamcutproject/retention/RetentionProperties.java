@@ -16,6 +16,7 @@ public class RetentionProperties {
 
     private Duration sourceRetention = DEFAULT_SOURCE_RETENTION;
     private Duration artifactRetention = DEFAULT_ARTIFACT_RETENTION;
+    private boolean cleanupEnabled = true;
     private String cleanupCron = "0 0 3 * * *";
     private String cleanupZone = "UTC";
 

@@ -28,6 +28,7 @@ app:
       ANALYZE: ${APP_WORKER_EXECUTION_ANALYZE_STALE_TIMEOUT:20m}
     reconcile-interval: ${APP_WORKER_EXECUTION_RECONCILE_INTERVAL:30s}
   retention:
+    cleanup-enabled: ${APP_RETENTION_CLEANUP_ENABLED:true}
     source-retention: ${APP_RETENTION_SOURCE_RETENTION:7d}
     artifact-retention: ${APP_RETENTION_ARTIFACT_RETENTION:30d}
     cleanup-cron: ${APP_RETENTION_CLEANUP_CRON:0 0 3 * * *}
