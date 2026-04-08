@@ -1,5 +1,6 @@
 package com.peatroxd.streamcutproject.storage;
 
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
@@ -11,13 +12,10 @@ import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 
 @Service
+@RequiredArgsConstructor
 public class LocalFileSystemStorageService implements StorageService {
 
     private final StorageProperties storageProperties;
-
-    public LocalFileSystemStorageService(StorageProperties storageProperties) {
-        this.storageProperties = storageProperties;
-    }
 
     @Override
     public Path resolveJobRoot(long jobId) {

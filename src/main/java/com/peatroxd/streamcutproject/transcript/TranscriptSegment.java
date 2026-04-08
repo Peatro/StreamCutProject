@@ -10,9 +10,16 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import lombok.AccessLevel;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
 
 @Entity
 @Table(name = "transcript_segment")
+@Getter
+@Setter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class TranscriptSegment {
 
     @Id
@@ -35,9 +42,6 @@ public class TranscriptSegment {
     @Column(name = "word_count", nullable = false)
     private Integer wordCount;
 
-    protected TranscriptSegment() {
-    }
-
     public static TranscriptSegment create(
             VodJob vodJob,
             Double startSec,
@@ -52,53 +56,5 @@ public class TranscriptSegment {
         segment.setText(text);
         segment.setWordCount(wordCount);
         return segment;
-    }
-
-    public Long getId() {
-        return id;
-    }
-
-    public void setId(Long id) {
-        this.id = id;
-    }
-
-    public VodJob getVodJob() {
-        return vodJob;
-    }
-
-    public void setVodJob(VodJob vodJob) {
-        this.vodJob = vodJob;
-    }
-
-    public Double getStartSec() {
-        return startSec;
-    }
-
-    public void setStartSec(Double startSec) {
-        this.startSec = startSec;
-    }
-
-    public Double getEndSec() {
-        return endSec;
-    }
-
-    public void setEndSec(Double endSec) {
-        this.endSec = endSec;
-    }
-
-    public String getText() {
-        return text;
-    }
-
-    public void setText(String text) {
-        this.text = text;
-    }
-
-    public Integer getWordCount() {
-        return wordCount;
-    }
-
-    public void setWordCount(Integer wordCount) {
-        this.wordCount = wordCount;
     }
 }

@@ -45,6 +45,7 @@ import com.peatroxd.streamcutproject.workerexecution.WorkerTaskType;
 import com.peatroxd.streamcutproject.workertask.WorkerTask;
 import com.peatroxd.streamcutproject.workertask.WorkerTaskRepository;
 import com.peatroxd.streamcutproject.workertask.WorkerTaskStatus;
+import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -69,6 +70,7 @@ import java.util.Optional;
 import java.util.Set;
 
 @Service
+@RequiredArgsConstructor
 public class VodJobService {
 
     private static final Logger log = LoggerFactory.getLogger(VodJobService.class);
@@ -139,37 +141,6 @@ public class VodJobService {
     private final WorkerExecutionRepository workerExecutionRepository;
     private final WorkerDispatchPort workerDispatchPort;
     private final WorkerDispatchPayloadFactory workerDispatchPayloadFactory;
-
-    public VodJobService(
-            VodJobRepository vodJobRepository,
-            JobEventRepository jobEventRepository,
-            TranscriptSegmentRepository transcriptSegmentRepository,
-            SilenceSegmentRepository silenceSegmentRepository,
-            AnalysisWindowRepository analysisWindowRepository,
-            ClipCandidateRepository clipCandidateRepository,
-            StorageService storageService,
-            ArtifactStorageService artifactStorageService,
-            StorageProperties storageProperties,
-            WorkerExecutionProperties workerExecutionProperties,
-            WorkerTaskRepository workerTaskRepository,
-            WorkerExecutionRepository workerExecutionRepository,
-            WorkerDispatchPort workerDispatchPort,
-            WorkerDispatchPayloadFactory workerDispatchPayloadFactory) {
-        this.vodJobRepository = vodJobRepository;
-        this.jobEventRepository = jobEventRepository;
-        this.transcriptSegmentRepository = transcriptSegmentRepository;
-        this.silenceSegmentRepository = silenceSegmentRepository;
-        this.analysisWindowRepository = analysisWindowRepository;
-        this.clipCandidateRepository = clipCandidateRepository;
-        this.storageService = storageService;
-        this.artifactStorageService = artifactStorageService;
-        this.storageProperties = storageProperties;
-        this.workerExecutionProperties = workerExecutionProperties;
-        this.workerTaskRepository = workerTaskRepository;
-        this.workerExecutionRepository = workerExecutionRepository;
-        this.workerDispatchPort = workerDispatchPort;
-        this.workerDispatchPayloadFactory = workerDispatchPayloadFactory;
-    }
 
     @Transactional
     public JobSummaryResponse createUrlJob(String url) {

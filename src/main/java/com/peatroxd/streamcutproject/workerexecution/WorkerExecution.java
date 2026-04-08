@@ -13,11 +13,18 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import lombok.AccessLevel;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
 
 import java.time.Instant;
 
 @Entity
 @Table(name = "worker_execution")
+@Getter
+@Setter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class WorkerExecution {
 
     @Id
@@ -64,9 +71,6 @@ public class WorkerExecution {
     @Column(name = "failure_message", length = 1000)
     private String failureMessage;
 
-    protected WorkerExecution() {
-    }
-
     public static WorkerExecution create(
             VodJob vodJob,
             WorkerTask workerTask,
@@ -89,109 +93,5 @@ public class WorkerExecution {
         execution.setClaimedAt(claimedAt);
         execution.setLastHeartbeatAt(claimedAt);
         return execution;
-    }
-
-    public Long getId() {
-        return id;
-    }
-
-    public void setId(Long id) {
-        this.id = id;
-    }
-
-    public VodJob getVodJob() {
-        return vodJob;
-    }
-
-    public void setVodJob(VodJob vodJob) {
-        this.vodJob = vodJob;
-    }
-
-    public WorkerTask getWorkerTask() {
-        return workerTask;
-    }
-
-    public void setWorkerTask(WorkerTask workerTask) {
-        this.workerTask = workerTask;
-    }
-
-    public Long getProcessingVersion() {
-        return processingVersion;
-    }
-
-    public void setProcessingVersion(Long processingVersion) {
-        this.processingVersion = processingVersion;
-    }
-
-    public String getWorkerId() {
-        return workerId;
-    }
-
-    public void setWorkerId(String workerId) {
-        this.workerId = workerId;
-    }
-
-    public String getWorkerRole() {
-        return workerRole;
-    }
-
-    public void setWorkerRole(String workerRole) {
-        this.workerRole = workerRole;
-    }
-
-    public WorkerTaskType getTaskType() {
-        return taskType;
-    }
-
-    public void setTaskType(WorkerTaskType taskType) {
-        this.taskType = taskType;
-    }
-
-    public WorkerExecutionStatus getStatus() {
-        return status;
-    }
-
-    public void setStatus(WorkerExecutionStatus status) {
-        this.status = status;
-    }
-
-    public Long getCandidateId() {
-        return candidateId;
-    }
-
-    public void setCandidateId(Long candidateId) {
-        this.candidateId = candidateId;
-    }
-
-    public Instant getClaimedAt() {
-        return claimedAt;
-    }
-
-    public void setClaimedAt(Instant claimedAt) {
-        this.claimedAt = claimedAt;
-    }
-
-    public Instant getLastHeartbeatAt() {
-        return lastHeartbeatAt;
-    }
-
-    public void setLastHeartbeatAt(Instant lastHeartbeatAt) {
-        this.lastHeartbeatAt = lastHeartbeatAt;
-    }
-
-    public Instant getFinishedAt() {
-        return finishedAt;
-    }
-
-    public void setFinishedAt(Instant finishedAt) {
-        this.finishedAt = finishedAt;
-    }
-
-    public String getFailureMessage() {
-        return failureMessage;
-    }
-
-    public void setFailureMessage(String failureMessage) {
-        this.failureMessage = failureMessage;
     }
 }

@@ -10,6 +10,7 @@ import com.peatroxd.streamcutproject.vodjob.api.TranscriptSegmentResponse;
 import com.peatroxd.streamcutproject.vodjob.api.WorkerExecutionResponse;
 import com.peatroxd.streamcutproject.vodjob.api.WorkerTaskResponse;
 import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -26,13 +27,10 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/api/jobs")
+@RequiredArgsConstructor
 public class VodJobController {
 
     private final VodJobService vodJobService;
-
-    public VodJobController(VodJobService vodJobService) {
-        this.vodJobService = vodJobService;
-    }
 
     @PostMapping("/url")
     @ResponseStatus(HttpStatus.CREATED)

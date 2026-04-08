@@ -13,11 +13,18 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import lombok.AccessLevel;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
 
 import java.time.Instant;
 
 @Entity
 @Table(name = "worker_task")
+@Getter
+@Setter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class WorkerTask {
 
     @Id
@@ -59,9 +66,6 @@ public class WorkerTask {
 
     @Column(name = "failure_message", length = 1000)
     private String failureMessage;
-
-    protected WorkerTask() {
-    }
 
     public static WorkerTask createQueued(
             VodJob vodJob,
@@ -125,98 +129,6 @@ public class WorkerTask {
         this.updatedAt = now;
         this.lastHeartbeatAt = now;
         this.finishedAt = now;
-        this.failureMessage = failureMessage;
-    }
-
-    public Long getId() {
-        return id;
-    }
-
-    public VodJob getVodJob() {
-        return vodJob;
-    }
-
-    public void setVodJob(VodJob vodJob) {
-        this.vodJob = vodJob;
-    }
-
-    public Long getProcessingVersion() {
-        return processingVersion;
-    }
-
-    public void setProcessingVersion(Long processingVersion) {
-        this.processingVersion = processingVersion;
-    }
-
-    public WorkerTaskType getTaskType() {
-        return taskType;
-    }
-
-    public void setTaskType(WorkerTaskType taskType) {
-        this.taskType = taskType;
-    }
-
-    public WorkerTaskStatus getStatus() {
-        return status;
-    }
-
-    public void setStatus(WorkerTaskStatus status) {
-        this.status = status;
-    }
-
-    public Long getCandidateId() {
-        return candidateId;
-    }
-
-    public void setCandidateId(Long candidateId) {
-        this.candidateId = candidateId;
-    }
-
-    public Instant getCreatedAt() {
-        return createdAt;
-    }
-
-    public void setCreatedAt(Instant createdAt) {
-        this.createdAt = createdAt;
-    }
-
-    public Instant getUpdatedAt() {
-        return updatedAt;
-    }
-
-    public void setUpdatedAt(Instant updatedAt) {
-        this.updatedAt = updatedAt;
-    }
-
-    public Instant getClaimedAt() {
-        return claimedAt;
-    }
-
-    public void setClaimedAt(Instant claimedAt) {
-        this.claimedAt = claimedAt;
-    }
-
-    public Instant getLastHeartbeatAt() {
-        return lastHeartbeatAt;
-    }
-
-    public void setLastHeartbeatAt(Instant lastHeartbeatAt) {
-        this.lastHeartbeatAt = lastHeartbeatAt;
-    }
-
-    public Instant getFinishedAt() {
-        return finishedAt;
-    }
-
-    public void setFinishedAt(Instant finishedAt) {
-        this.finishedAt = finishedAt;
-    }
-
-    public String getFailureMessage() {
-        return failureMessage;
-    }
-
-    public void setFailureMessage(String failureMessage) {
         this.failureMessage = failureMessage;
     }
 }
