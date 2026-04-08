@@ -2082,7 +2082,7 @@ ${renderJobFailureSummary(job, candidates)}
   function renderStatusPill(status) {
     const label = String(status || "UNKNOWN");
     return `
-      <span class="pill ${statusClass(label)}">
+      <span class="pill ${statusClass(label)}" data-status-pill="${escapeHtml(label)}">
         <span class="pill-icon" aria-hidden="true">${escapeHtml(statusIcon(label))}</span>
         <span>${escapeHtml(label)}</span>
       </span>

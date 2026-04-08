@@ -47,7 +47,7 @@ public class SecurityConfiguration {
                 )
                 .logout(logout -> logout
                         .logoutUrl("/logout")
-                        .logoutSuccessUrl("/login.html?logout")
+                        .logoutSuccessUrl("/login.html?reason=logout")
                 )
                 .exceptionHandling(exceptionHandling -> exceptionHandling
                         .authenticationEntryPoint((request, response, authException) -> {
