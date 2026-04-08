@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import logging
 from pathlib import Path
 import threading
 from typing import Callable, TypeVar
@@ -21,6 +22,8 @@ from streamcut_worker.transcription import (
     TranscriptionRequest,
     create_default_transcription_service,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class WorkerJobRunnerError(RuntimeError):
@@ -73,10 +76,13 @@ class WorkerJobRunner:
             return self._export(job, worker_id)
 
         source_video_path = self._resolve_analysis_source(job)
+        logger.info("stage_started jobId=%s stage=%s", job.job_id, "EXTRACTING_AUDIO")
         self._notify_progress(on_progress, "EXTRACTING_AUDIO", 36, "Processing worker is extracting the audio track")
         audio_result = self._extract_audio(source_video_path)
+        logger.info("stage_started jobId=%s stage=%s", job.job_id, "TRANSCRIBING")
         self._notify_progress(on_progress, "TRANSCRIBING", 48, "Worker is transcribing the audio")
         transcription_result = self._transcribe(job, audio_result.audio_path, on_progress)
+        logger.info("stage_started jobId=%s stage=%s", job.job_id, "DETECTING_SILENCE")
         self._notify_progress(
             on_progress,
             "DETECTING_SILENCE",
@@ -84,6 +90,7 @@ class WorkerJobRunner:
             "Worker is detecting silence spans",
         )
         silence_result = self._detect_silence(source_video_path, on_progress)
+        logger.info("stage_started jobId=%s stage=%s", job.job_id, "ANALYZING_WINDOWS")
         self._notify_progress(
             on_progress,
             "ANALYZING_WINDOWS",
@@ -212,21 +219,47 @@ class WorkerJobRunner:
             raise WorkerJobRunnerError("TRANSCRIBING", "No transcription service available for this worker role")
 
         heartbeat_stop = threading.Event()
-        heartbeat_thread = self._start_transcription_heartbeat(on_progress, heartbeat_stop)
+        heartbeat_thread = self._start_transcription_heartbeat(job.job_id, on_progress, heartbeat_stop)
+        last_logged_percent: int | None = None
+
+        def handle_progress(processed_sec: float, total_sec: float) -> None:
+            nonlocal last_logged_percent
+
+            progress_percent = self._transcription_progress_percent(processed_sec, total_sec)
+            if last_logged_percent is None or progress_percent - last_logged_percent >= 10:
+                logger.info(
+                    "transcription_progress jobId=%s percent=%s processedSec=%.0f totalSec=%.0f",
+                    job.job_id,
+                    progress_percent,
+                    processed_sec,
+                    total_sec,
+                )
+                last_logged_percent = progress_percent
+
+            self._notify_progress(
+                on_progress,
+                "TRANSCRIBING",
+                progress_percent,
+                self._transcription_progress_message(processed_sec, total_sec),
+            )
+
+        logger.info("transcription_started jobId=%s audioPath=%s", job.job_id, audio_path)
 
         try:
-            return self.transcription_service.transcribe(
+            transcription_result = self.transcription_service.transcribe(
                 TranscriptionRequest(
                     job_id=str(job.job_id),
                     audio_path=audio_path,
                 ),
-                on_progress=lambda processed_sec, total_sec: self._notify_progress(
-                    on_progress,
-                    "TRANSCRIBING",
-                    self._transcription_progress_percent(processed_sec, total_sec),
-                    self._transcription_progress_message(processed_sec, total_sec),
-                ),
+                on_progress=handle_progress,
             )
+            logger.info(
+                "transcription_completed jobId=%s durationSec=%.0f segmentCount=%s",
+                job.job_id,
+                transcription_result.duration_sec,
+                len(transcription_result.transcript_segments),
+            )
+            return transcription_result
         except Exception as exc:
             raise WorkerJobRunnerError("TRANSCRIBING", str(exc)) from exc
         finally:
@@ -236,6 +269,7 @@ class WorkerJobRunner:
 
     def _start_transcription_heartbeat(
         self,
+        job_id: int,
         on_progress: Callable[[str, int, str], None] | None,
         stop_event: threading.Event,
     ) -> threading.Thread | None:
@@ -245,6 +279,7 @@ class WorkerJobRunner:
             status="TRANSCRIBING",
             progress_percent=self.TRANSCRIPTION_PROGRESS_START,
             message="Worker is still transcribing the audio",
+            on_heartbeat=lambda: logger.debug("transcription_heartbeat jobId=%s", job_id),
         )
 
     def _start_stage_heartbeat(
@@ -255,12 +290,15 @@ class WorkerJobRunner:
         status: str,
         progress_percent: int,
         message: str,
+        on_heartbeat: Callable[[], None] | None = None,
     ) -> threading.Thread | None:
         if on_progress is None:
             return None
 
         def heartbeat() -> None:
             while not stop_event.wait(self.STAGE_HEARTBEAT_SEC):
+                if on_heartbeat is not None:
+                    on_heartbeat()
                 self._notify_progress(
                     on_progress,
                     status,
