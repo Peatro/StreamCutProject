@@ -4,10 +4,10 @@
 worker-agent
 
 ## Summary
-Implement a real long-running worker loop that polls backend for queued jobs and hands claimed payloads to the processing runner.
+Implement a real long-running worker loop that polls backend for queued work and hands claimed payloads to the processing runner.
 
 ## Context
-The current worker stays alive but does not actually consume jobs. The service cannot function end-to-end until the worker repeatedly claims and processes real work.
+The current worker stays alive but does not actually consume work. The service cannot function end-to-end until the worker repeatedly claims and processes real tasks.
 
 ## Scope
 - add backend polling client to worker
@@ -39,10 +39,12 @@ The current worker stays alive but does not actually consume jobs. The service c
 - worker must speak only through the transport contract
 
 ## Acceptance Criteria
-- worker can poll backend for queued jobs
-- claimed jobs are passed into worker processing flow
+- worker can poll backend for queued tasks
+- claimed tasks are passed into worker processing flow
 - worker sends success or failure payloads back to backend
 - local runtime can leave the worker running without manual intervention
 
 ## Notes
 The worker loop should be interruptible and suitable for Docker execution.
+
+Legacy endpoint naming may still mention `job` in some places, but the processing loop should be understood as task-centric.

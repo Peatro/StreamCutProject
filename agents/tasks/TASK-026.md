@@ -7,7 +7,7 @@ backend-agent
 Define and implement the MVP transport contract between backend and worker using a stable HTTP polling/callback model.
 
 ## Context
-The current project has worker payload DTOs and a no-op dispatch port, but it does not yet have a real transport model for claiming work and returning results. This must be fixed before the service can process jobs end-to-end.
+The current project has worker payload DTOs and a no-op dispatch port, but it does not yet have a real transport model for claiming work and returning results. This must be fixed before the service can process VOD processing end-to-end.
 
 ## Scope
 - choose the concrete MVP worker transport approach
@@ -16,7 +16,7 @@ The current project has worker payload DTOs and a no-op dispatch port, but it do
 - align `worker-protocol.md` and `api-contracts.md` with the chosen flow
 
 ## Out of Scope
-- job claim implementation
+- task claim implementation
 - result ingestion implementation
 - worker polling loop
 - media processing
@@ -45,3 +45,5 @@ The current project has worker payload DTOs and a no-op dispatch port, but it do
 
 ## Notes
 Prefer HTTP polling plus result callback for MVP. Avoid queue infrastructure unless the current stack proves insufficient.
+
+Legacy wording in downstream tasks may still say `job claim`, but this contract should now be interpreted through the current task-centric execution model.

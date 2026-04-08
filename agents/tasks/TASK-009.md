@@ -4,15 +4,15 @@
 backend-agent
 
 ## Summary
-Implement backend-side preparation and dispatch of worker input payloads for processing jobs.
+Implement backend-side preparation of worker dispatch payloads for operational processing tasks.
 
 ## Context
-The backend must hand off jobs to the Python worker without coupling domain code to Python internals.
+The backend must hand off operational work to the Python worker without coupling domain code to Python internals.
 
 ## Scope
 - build worker input payload according to contract
 - introduce a dispatch service boundary
-- mark job as QUEUED when dispatch is requested
+- mark aggregate state for queued worker processing when dispatch is requested
 - record dispatch-related job events
 
 ## Out of Scope
@@ -39,6 +39,10 @@ The backend must hand off jobs to the Python worker without coupling domain code
 
 ## Acceptance Criteria
 - backend can build valid worker input payloads
-- dispatch request moves job to QUEUED
+- dispatch request moves the aggregate into the next queued processing state
 - dispatch writes a job event
 - tests verify payload shape and state update
+
+## Historical Note
+This early task predates the current `worker_task` and `worker_execution` model.
+Interpret its original `job` wording as aggregate-facing queue preparation rather than as the long-term operational execution identity.

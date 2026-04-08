@@ -1,16 +1,16 @@
-# TASK-033 Implement Worker Job Runner
+# TASK-033 Implement Worker Task Runner
 
 ## Agent
 worker-agent
 
 ## Summary
-Implement the worker-side orchestration runner that executes the processing pipeline for one claimed job.
+Implement the worker-side orchestration runner that executes the processing pipeline for one claimed task.
 
 ## Context
-The worker already has service modules for extraction, transcription, silence detection, analysis, and export, but it lacks a real pipeline coordinator that connects them into one job execution.
+The worker already has service modules for extraction, transcription, silence detection, analysis, and export, but it lacks a real pipeline coordinator that connects them into one execution flow.
 
 ## Scope
-- create a worker job runner service
+- create a worker task runner service
 - execute source intake or local source resolution
 - run audio extraction, transcription, silence detection, and analysis in order
 - build a final success payload matching the worker protocol
@@ -38,10 +38,12 @@ The worker already has service modules for extraction, transcription, silence de
 - fail fast with clear stage-level errors
 
 ## Acceptance Criteria
-- a claimed job can be processed through the existing worker services
+- a claimed task can be processed through the existing worker services
 - the runner produces a valid worker success payload
 - failures include enough context for backend failure reporting
 - runner logic stays separate from transport/polling concerns
 
 ## Notes
 This task is the worker-side equivalent of stitching together existing modules into a usable pipeline.
+
+For historical compatibility, aggregate context may still be centered on `jobId`, but execution semantics should be read as task-centric.
