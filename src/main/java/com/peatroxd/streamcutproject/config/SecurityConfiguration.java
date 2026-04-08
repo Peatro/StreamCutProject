@@ -32,7 +32,7 @@ public class SecurityConfiguration {
                 )
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED))
                 .authorizeHttpRequests(authorize -> authorize
-                        .requestMatchers("/health", "/login.html", "/csrf", "/error").permitAll()
+                        .requestMatchers("/health", "/health/**", "/login.html", "/csrf", "/error").permitAll()
                         .requestMatchers("/api/internal/worker/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/").authenticated()
                         .requestMatchers(HttpMethod.GET, "/index.html", "/job.html").authenticated()

@@ -91,6 +91,21 @@ class SecurityConfigurationIntegrationTest {
     }
 
     @Test
+    void exposesWorkerHealthEndpointsPublicly() throws Exception {
+        mockMvc.perform(get("/health/ready"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.status").value("READY"));
+
+        mockMvc.perform(get("/health/workers"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.status").value("UP"))
+                .andExpect(jsonPath("$.roles.download.role").value("download"))
+                .andExpect(jsonPath("$.roles.processing.role").value("processing"));
+    }
+
+    @Test
     void authenticatesOperatorAndAllowsProtectedApiAccess() throws Exception {
         when(vodJobService.listJobs()).thenReturn(List.of(
                 new JobListItemResponse(

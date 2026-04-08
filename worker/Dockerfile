@@ -18,6 +18,4 @@ COPY src ./src
 RUN python -m venv "${VIRTUAL_ENV}" \
     && pip install --no-cache-dir .
 
-RUN python -c "from faster_whisper import WhisperModel; WhisperModel('large-v3-turbo', device='cpu', compute_type='int8')"
-
 CMD ["python", "-m", "streamcut_worker"]

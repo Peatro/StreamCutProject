@@ -248,6 +248,84 @@ class WorkerPollingLoopTests(unittest.TestCase):
         self.assertEqual(len(backend.results), 0)
         self.assertEqual(len(backend.failures), 0)
 
+    def test_polling_loop_treats_conflict_callback_as_lost_lease(self) -> None:
+        backend = FakeBackendClient(
+            claimed_job=ClaimedJob(
+                execution_id=107,
+                job_id=13,
+                processing_version=2,
+                task_type="ANALYZE",
+                source_type="FILE",
+                video_path=Path("/tmp/video.mp4"),
+                source_url=None,
+            ),
+            result_error=BackendTransportError("Backend request failed with HTTP 409", status_code=409),
+        )
+        runner = FakeJobRunner(
+            result=WorkerProcessingPayload(
+                execution_id=107,
+                job_id=13,
+                worker_id="processing-worker-1",
+                processing_version=2,
+                duration_sec=120,
+                language="en",
+                video_path="/tmp/video.mp4",
+                audio_path="/tmp/audio.wav",
+                transcript_segments=[],
+                silence_segments=[],
+                analysis_windows=[],
+                clip_candidates=[],
+            )
+        )
+        loop = WorkerPollingLoop(
+            backend_client=backend,
+            job_runner=runner,
+            worker_id="processing-worker-1",
+            worker_role="processing",
+            poll_interval_sec=0,
+        )
+
+        iterations = iter([True, False])
+        loop.run_forever(lambda: next(iterations))
+
+        self.assertEqual(backend.claim_calls, 1)
+        self.assertEqual(len(backend.results), 0)
+        self.assertEqual(len(backend.failures), 0)
+
+    def test_polling_loop_survives_failure_callback_transport_error(self) -> None:
+        backend = FakeBackendClient(
+            claimed_job=ClaimedJob(
+                execution_id=108,
+                job_id=14,
+                processing_version=1,
+                task_type="DOWNLOAD",
+                source_type="URL",
+                video_path=None,
+                source_url="https://example.com/video.mp4",
+            )
+        )
+        backend.result_error = BackendTransportError("not used")
+        original_submit_failure = backend.submit_failure
+
+        def failing_submit_failure(payload):
+            raise BackendTransportError("Backend request failed with HTTP 409", status_code=409)
+
+        backend.submit_failure = failing_submit_failure  # type: ignore[method-assign]
+        runner = FakeJobRunner(error=WorkerJobRunnerError("DOWNLOADING", "download failed"))
+        loop = WorkerPollingLoop(
+            backend_client=backend,
+            job_runner=runner,
+            worker_id="download-worker-1",
+            worker_role="download",
+            poll_interval_sec=0,
+        )
+
+        iterations = iter([True, False])
+        loop.run_forever(lambda: next(iterations))
+
+        self.assertEqual(backend.claim_calls, 1)
+        self.assertEqual(len(backend.failures), 0)
+
     def test_polling_loop_submits_export_result(self) -> None:
         backend = FakeBackendClient(
             claimed_job=ClaimedJob(

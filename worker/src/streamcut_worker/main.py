@@ -35,13 +35,24 @@ def main() -> None:
     if worker_role not in {"download", "processing"}:
         raise ValueError("WORKER_ROLE must be 'download' or 'processing'")
 
+    if worker_role == "processing":
+        logging.info(
+            "Processing worker is preparing the transcription model cache at %s",
+            os.getenv("HF_HOME", "/app/model-cache"),
+        )
+
+    job_runner = create_default_job_runner(
+        storage_root=storage_root,
+        emotion_keywords=emotion_keywords,
+        load_transcription_model=(worker_role == "processing"),
+    )
+
+    if worker_role == "processing":
+        logging.info("Processing worker transcription model is ready")
+
     polling_loop = WorkerPollingLoop(
         backend_client=BackendClient(base_url=backend_base_url),
-        job_runner=create_default_job_runner(
-            storage_root=storage_root,
-            emotion_keywords=emotion_keywords,
-            load_transcription_model=(worker_role == "processing"),
-        ),
+        job_runner=job_runner,
         worker_id=worker_id,
         worker_role=worker_role,
         poll_interval_sec=poll_interval_sec,
