@@ -1,5 +1,7 @@
 # Operations Guide
 
+Primary step-by-step operator procedures now live in [runbook.md](./runbook.md).
+
 ## Status
 
 - Lifecycle: active
