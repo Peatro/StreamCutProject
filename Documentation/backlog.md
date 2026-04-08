@@ -6,13 +6,24 @@ It tracks:
 - completed work already implemented
 - work currently in progress
 - remaining work required to stabilize the MVP and finish the service through `v1.0.0`
+- the next architecture track after `v1.0.0`
 
 Last updated: 2026-04-08
-Branch snapshot: `develop`
+Branch snapshot: `feature/whisper-large-v3-turbo`
+Synced note: Obsidian backlog mirror in `StreamCutProject`
+
+## Sync Policy
+- `Documentation/backlog.md` is the source of truth inside the repository.
+- the Obsidian backlog mirror in `StreamCutProject` is a synchronized mirror for planning and note-taking.
+- Backlog status, ordering, and task inventory should be updated here first and then mirrored into the Obsidian note.
 
 ## Current Status
 - The MVP now runs as a real full-cycle local service on Docker Compose.
 - Backend, PostgreSQL, Liquibase, worker runtime, UI, local storage, and backend <-> worker HTTP transport are wired together.
+- The execution model is no longer purely job-status-based:
+  - `worker_task` and `worker_execution` exist in source and are persisted in PostgreSQL
+  - stale heartbeat recovery is implemented
+  - download and processing work are already split operationally
 - URL ingest was validated end-to-end on 2026-04-06:
   - create job
   - auto-queue
@@ -63,6 +74,47 @@ Branch snapshot: `develop`
   - `download-worker` claimed and completed the download/materialization step
   - backend persisted `JOB_DOWNLOAD_COMPLETED` and `JOB_QUEUED_FOR_PROCESSING`
   - `processing-worker` claimed the same job and advanced it through analysis to `READY_FOR_REVIEW`
+- The execution model has now moved beyond the original split-worker slice:
+  - `worker_task` and `worker_execution` are both active persistence concepts
+  - claim flow is task-centric rather than raw `VodJob.status`-centric
+  - stale recovery is driven by task heartbeat ownership
+  - `VodJob` is increasingly treated as a projection over task state instead of the primary orchestration source
+  - task and execution history are exposed in the API, and latest task/execution summaries are visible in the UI
+- The current codebase is best described as being at the end of `TASK-060` and already partway into the post-`v1.0.0` task-model track:
+  - retries, backoff, and dead-letter semantics are still missing
+  - a dedicated `TaskTransitionService` does not exist yet
+  - export still runs on the `processing-worker`
+  - durable-storage-first execution and broker-backed queue semantics are still future work
+
+## Task Status Index
+
+### Completed
+- `TASK-055` Add Authentication And Protected Operator Access
+- `TASK-056` Add Security Baseline And Input Hardening
+- `TASK-057` Introduce Production Runtime Profiles And Secret Handling
+- `TASK-058` Replace MVP Container Strategy And Add Production Edge Runtime
+
+### In Progress
+- `TASK-060` Harden Queue Reliability And Stuck-Job Recovery
+
+### Planned For `v1.0.0`
+- `TASK-059` Add Health, Readiness, And Worker Diagnostics
+- `TASK-061` Add Operator Recovery Controls
+- `TASK-062` Add Metrics And Alertable Observability
+- `TASK-063` Add Source And Artifact Retention Cleanup
+- `TASK-064` Add Browser E2E Regression And CI Gate
+- `TASK-065` Write Operator Runbook, Backup Restore, And Upgrade Notes
+- `TASK-067` Run Backup Restore And Rollback Drill
+- `TASK-066` Prepare And Execute `v1.0.0` Release
+
+### Planned Post-`v1.0.0`
+- `TASK-068` Expand Task Model With Retry, Backoff, And Dead-Letter Semantics
+- `TASK-069` Extract Task Transition Service And Task-Centric Claim Flow
+- `TASK-070` Introduce Dedicated `export-worker` Pool
+- `TASK-071` Move Artifact Delivery To Signed URLs And Reduce Backend Media Proxying
+- `TASK-072` Make Object Storage The Durable Artifact Contract
+- `TASK-073` Add Product Quotas And Runtime Limits
+- `TASK-074` Prepare Queue Delivery Abstraction For Broker Migration
 
 ## DONE
 
@@ -190,7 +242,8 @@ Branch snapshot: `develop`
 - Current staged execution:
   - Phase 1: completed, role-aware worker claims and explicit `DOWNLOAD -> QUEUED_FOR_PROCESSING -> ANALYZE` flow are now implemented and validated in tests
   - Phase 2: completed, local and production runtime wiring for one `download-worker` and one `processing-worker` is implemented and locally validated on Docker against a live upload job
-  - Phase 3: active, follow-up diagnostics, lease recovery, and operator controls on top of the split worker model
+  - Phase 3: completed in source beyond the original target, with `worker_task`, `worker_execution`, stale recovery scheduling, task-centric claim flow, task/execution history APIs, and `VodJob` projection/recompute groundwork in place
+  - Phase 4: active, closing the remaining `v1.0.0` diagnostics and operator-control gaps while preparing the retry/backoff/dead-letter expansion that the current task model now enables
 - Export remains on the `processing-worker` for now.
 
 ## NEXT
@@ -198,16 +251,24 @@ Branch snapshot: `develop`
 ### Immediate
 - `TASK-059` Add Health, Readiness, And Worker Diagnostics
 - surface role-specific diagnostics in the UI and health endpoints
+- expose task-aware stuck-run diagnostics and operator-facing recovery visibility
 
 ### Validation
 - The MVP release baseline has been promoted to `main`.
 
 ### Stabilization
-- `TASK-058` Replace MVP Container Strategy And Add Production Edge Runtime
 - `TASK-059` Add Health, Readiness, And Worker Diagnostics
 - `TASK-060` Harden Queue Reliability And Stuck-Job Recovery
+- `TASK-061` Add Operator Recovery Controls
+- `TASK-062` Add Metrics And Alertable Observability
 - validate the split worker flow against large URL ingest so download time no longer blocks processing capacity
-- add stuck-download and stuck-processing lease recovery on top of the new role split
+- harden long-running stage heartbeat behavior so stale recovery does not preempt a still-live processing lease
+- finish task-aware diagnostics and recovery controls on top of the now-persisted `worker_task` / `worker_execution` model
+
+### Architectural Follow-Up After `v1.0.0`
+- the current `v1.0.0` track hardens the service for a small authenticated operator team
+- the next architecture track should build on the now-present task-centric execution model instead of introducing it from scratch
+- this follow-up should not preempt the current release gate, but it should already be visible in the source backlog so the project does not drift back into a monolithic `VodJobService` orchestration model
 
 ### Release Checklist
 - `release-checklist.md` is the current gate document for moving `develop` to `main`.
@@ -250,12 +311,22 @@ Status: completed locally on 2026-04-06
 - `TASK-067` Run Backup Restore And Rollback Drill
 - `TASK-066` Prepare And Execute `v1.0.0` Release
 
+### Post-`v1.0.0` Target Architecture Track
+- `TASK-068` Expand Task Model With Retry, Backoff, And Dead-Letter Semantics
+- `TASK-069` Extract Task Transition Service And Task-Centric Claim Flow
+- `TASK-070` Introduce Dedicated `export-worker` Pool
+- `TASK-071` Move Artifact Delivery To Signed URLs And Reduce Backend Media Proxying
+- `TASK-072` Make Object Storage The Durable Artifact Contract
+- `TASK-073` Add Product Quotas And Runtime Limits
+- `TASK-074` Prepare Queue Delivery Abstraction For Broker Migration
+
 ### Execution Order
 1. finish the current MVP release baseline
 2. add authentication and security hardening
 3. replace local-first runtime compromises with deployable runtime packaging
 4. harden recovery, diagnostics, and operator controls
 5. add CI, browser regression coverage, runbooks, and a restore drill before release
+6. after `v1.0.0`, complete the task-centric architecture slice before introducing a separate queue broker or Kubernetes
 
 ### Parallelism Notes
 - `TASK-043` has been merged into `develop` and no longer gates the current release baseline.
@@ -263,15 +334,27 @@ Status: completed locally on 2026-04-06
 - `TASK-055` should complete before `TASK-056`, because the security baseline depends on the chosen auth model.
 - `TASK-057` and `TASK-058` can run in parallel once runtime secrets and deployment assumptions are clear.
 - `TASK-059` through `TASK-063` can overlap, but `TASK-060` owns recovery semantics and should define the contract for `TASK-061` and parts of `TASK-062`.
-- The worker-role split is being executed as the first implementation slice under `TASK-060`, because recovery and diagnostics depend on clear ownership of download versus processing work.
+- The worker-role split and the first task-centric execution slice are already in source under `TASK-060`; remaining work is now diagnostics, operator controls, and retry-policy hardening on top of that base.
 - `TASK-064` should start after the main browser flows and negative paths are already stable enough to avoid flaky E2E coverage.
 - `TASK-067` should consume the concrete procedures written in `TASK-065`, not invent them during the drill.
 - `TASK-066` must not start until every preceding phase has documented evidence.
+- `TASK-068` should now expand the already-implemented task model with retry budgets, backoff, and dead-letter handling instead of introducing task persistence from scratch.
+- `TASK-069` should extract a dedicated transition/orchestration layer from the current `VodJobService` and projection code now that the task model exists.
+- `TASK-070` depends on `TASK-069`, because export routing should sit on explicit task ownership rather than the current mixed processing role.
+- `TASK-071` and `TASK-072` can overlap after the durable artifact contract is clear, but `TASK-072` owns the long-term storage contract.
+- `TASK-073` should start only after the execution model is explicit enough to enforce concurrency and cost controls coherently.
+- `TASK-074` should happen after `TASK-068` and `TASK-069`; broker migration without a clear task contract would just move the current ambiguity into another component.
 
 ## LATER
 
 ### Product Gaps Still Open
 - Error handling and observability are still MVP-level, not hardened operations-grade.
+- The current pipeline still stops short of the target architecture described for larger-scale operation:
+  - no dedicated `export-worker`
+  - no task-level retry budget with dead-letter semantics
+  - no explicit `TaskTransitionService`
+  - no quotas or fairness controls
+  - no durable-storage-first contract for all critical artifacts
 
 ### Engineering Follow-Up
 - Add a single progress/status document under `agents/` if team workflow needs per-task lifecycle tracking.
@@ -288,12 +371,20 @@ Status: completed locally on 2026-04-06
 - The dedicated `download-worker` / `processing-worker` split is now implemented in source, but it still needs live-stack validation and role-specific diagnostics before it can be treated as an operationally closed recovery story.
 - Negative-path recovery behavior is partially known from smoke tests, but not yet documented as release-safe behavior.
 - `TASK-045` QA found that export retries are allowed, export failure correctly marks the job `FAILED`, and the stale-artifact behavior was addressed in `TASK-054`.
+- The current task model is still too thin for scale-out work:
+  - no persisted `attempt`
+  - no `available_at` / retry backoff control
+  - no dead-letter state
+  - no task priority or fairness input
+- Backend media streaming endpoints still exist for source and export delivery, which is acceptable for the MVP but not the desired long-term contract.
 
 ## Recommended Next Sequence
 1. `TASK-059` Add Health, Readiness, And Worker Diagnostics.
-2. add role-specific worker diagnostics and stuck-run visibility on top of the validated split worker flow.
-3. `TASK-060` Harden Queue Reliability And Stuck-Job Recovery.
+2. add role-specific worker diagnostics and stuck-run visibility on top of the validated split worker flow and new task model.
+3. finish the remaining `TASK-060` operator-facing recovery gaps, especially long-running-stage heartbeat behavior.
 4. `TASK-061` Add Operator Recovery Controls.
+5. `TASK-062` Add Metrics And Alertable Observability.
+6. after `v1.0.0`, continue with `TASK-068` and `TASK-069` on top of the already-implemented `worker_task` / `worker_execution` base before any broker or cluster work.
 
 ## Path To Service v1.0.0
 
@@ -341,6 +432,22 @@ Status: completed locally on 2026-04-06
 - `TASK-065` Write Operator Runbook, Backup Restore, And Upgrade Notes
 - `TASK-067` Run Backup Restore And Rollback Drill
 - `TASK-066` Prepare And Execute `v1.0.0` Release
+
+### Post-`v1.0.0` Architecture Phase
+1. expand the existing task lifecycle with retries, backoff, and dead-letter behavior
+2. separate orchestration from `VodJobService` into a dedicated transition layer
+3. split export work into its own pool
+4. move media delivery toward signed URLs and durable object storage references
+5. add quotas and queue-delivery abstraction only after the execution model is stable
+
+### Post-`v1.0.0` Architecture Task Queue
+- `TASK-068` Expand Task Model With Retry, Backoff, And Dead-Letter Semantics
+- `TASK-069` Extract Task Transition Service And Task-Centric Claim Flow
+- `TASK-070` Introduce Dedicated `export-worker` Pool
+- `TASK-071` Move Artifact Delivery To Signed URLs And Reduce Backend Media Proxying
+- `TASK-072` Make Object Storage The Durable Artifact Contract
+- `TASK-073` Add Product Quotas And Runtime Limits
+- `TASK-074` Prepare Queue Delivery Abstraction For Broker Migration
 
 ### Critical Path To v1.0.0
 1. Finish the current release baseline and move it intentionally to `main`.

@@ -1,5 +1,10 @@
 # Design System: Linear
 
+> Status: reference only
+>
+> This file is not the active StreamCut architecture or design source of truth.
+> Treat it as external design reference material unless it is later rewritten for the project.
+
 ## 1. Visual Theme & Atmosphere
 
 Linear's website is a masterclass in dark-mode-first product design — a near-black canvas (`#08090a`) where content emerges from darkness like starlight. The overall impression is one of extreme precision engineering: every element exists in a carefully calibrated hierarchy of luminance, from barely-visible borders (`rgba(255,255,255,0.05)`) to soft, luminous text (`#f7f8f8`). This is not a dark theme applied to a light design — it is darkness as the native medium, where information density is managed through subtle gradations of white opacity rather than color variation.
