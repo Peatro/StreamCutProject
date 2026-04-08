@@ -9,6 +9,7 @@ import com.peatroxd.streamcutproject.vodjob.api.JobListItemResponse;
 import com.peatroxd.streamcutproject.vodjob.api.JobSummaryResponse;
 import com.peatroxd.streamcutproject.vodjob.api.TranscriptSegmentResponse;
 import com.peatroxd.streamcutproject.vodjob.api.WorkerExecutionResponse;
+import com.peatroxd.streamcutproject.vodjob.api.WorkerTaskResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -141,6 +142,18 @@ class VodJobControllerTest {
                                 Instant.parse("2026-04-05T10:00:20Z"),
                                 null,
                                 null
+                        ),
+                        new WorkerTaskResponse(
+                                31L,
+                                "DOWNLOAD",
+                                "RUNNING",
+                                1L,
+                                null,
+                                Instant.parse("2026-04-05T10:00:05Z"),
+                                Instant.parse("2026-04-05T10:00:10Z"),
+                                Instant.parse("2026-04-05T10:00:20Z"),
+                                null,
+                                null
                         )
                 )
         ));
@@ -151,7 +164,8 @@ class VodJobControllerTest {
                 .andExpect(jsonPath("$[0].id").value(1))
                 .andExpect(jsonPath("$[0].status").value("NEW"))
                 .andExpect(jsonPath("$[0].sourceType").value("URL"))
-                .andExpect(jsonPath("$[0].sourceUrl").value("https://example.com/video"));
+                .andExpect(jsonPath("$[0].sourceUrl").value("https://example.com/video"))
+                .andExpect(jsonPath("$[0].latestTask.taskType").value("DOWNLOAD"));
     }
 
     @Test
@@ -176,7 +190,19 @@ class VodJobControllerTest {
                 null,
                 5,
                 "Queued for worker processing",
-                null
+                null,
+                new WorkerTaskResponse(
+                        41L,
+                        "DOWNLOAD",
+                        "QUEUED",
+                        1L,
+                        null,
+                        Instant.parse("2026-04-05T10:00:01Z"),
+                        null,
+                        null,
+                        null,
+                        null
+                )
         ));
 
         mockMvc.perform(get("/api/jobs/1"))
@@ -186,7 +212,8 @@ class VodJobControllerTest {
                 .andExpect(jsonPath("$.status").value("NEW"))
                 .andExpect(jsonPath("$.sourceType").value("URL"))
                 .andExpect(jsonPath("$.sourceUrl").value("https://example.com/video"))
-                .andExpect(jsonPath("$.originalFilename").value("video.mp4"));
+                .andExpect(jsonPath("$.originalFilename").value("video.mp4"))
+                .andExpect(jsonPath("$.latestTask.taskType").value("DOWNLOAD"));
     }
 
     @Test
@@ -285,6 +312,46 @@ class VodJobControllerTest {
                 .andExpect(jsonPath("$[0].taskType").value("DOWNLOAD"))
                 .andExpect(jsonPath("$[0].status").value("SUCCEEDED"))
                 .andExpect(jsonPath("$[1].id").value(22))
+                .andExpect(jsonPath("$[1].taskType").value("ANALYZE"))
+                .andExpect(jsonPath("$[1].status").value("RUNNING"));
+    }
+
+    @Test
+    void listsWorkerTasks() throws Exception {
+        when(vodJobService.listWorkerTasks(1L)).thenReturn(List.of(
+                new WorkerTaskResponse(
+                        31L,
+                        "DOWNLOAD",
+                        "SUCCEEDED",
+                        1L,
+                        null,
+                        Instant.parse("2026-04-05T10:00:10Z"),
+                        Instant.parse("2026-04-05T10:00:12Z"),
+                        Instant.parse("2026-04-05T10:00:15Z"),
+                        Instant.parse("2026-04-05T10:00:20Z"),
+                        null
+                ),
+                new WorkerTaskResponse(
+                        32L,
+                        "ANALYZE",
+                        "RUNNING",
+                        1L,
+                        null,
+                        Instant.parse("2026-04-05T10:00:30Z"),
+                        Instant.parse("2026-04-05T10:00:31Z"),
+                        Instant.parse("2026-04-05T10:01:00Z"),
+                        null,
+                        null
+                )
+        ));
+
+        mockMvc.perform(get("/api/jobs/1/tasks"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$[0].id").value(31))
+                .andExpect(jsonPath("$[0].taskType").value("DOWNLOAD"))
+                .andExpect(jsonPath("$[0].status").value("SUCCEEDED"))
+                .andExpect(jsonPath("$[1].id").value(32))
                 .andExpect(jsonPath("$[1].taskType").value("ANALYZE"))
                 .andExpect(jsonPath("$[1].status").value("RUNNING"));
     }

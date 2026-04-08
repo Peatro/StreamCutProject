@@ -105,6 +105,7 @@ class SecurityConfigurationIntegrationTest {
                         null,
                         5,
                         "Queued for download worker",
+                        null,
                         null
                 )
         ));

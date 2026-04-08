@@ -33,5 +33,7 @@ public interface WorkerExecutionRepository extends JpaRepository<WorkerExecution
 
     Optional<WorkerExecution> findFirstByVodJobIdOrderByIdDesc(Long jobId);
 
+    Optional<WorkerExecution> findFirstByWorkerTaskIdOrderByIdDesc(Long workerTaskId);
+
     Optional<WorkerExecution> findById(Long id);
 }

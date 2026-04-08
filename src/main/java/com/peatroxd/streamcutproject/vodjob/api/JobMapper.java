@@ -1,6 +1,7 @@
 package com.peatroxd.streamcutproject.vodjob.api;
 
 import com.peatroxd.streamcutproject.workerexecution.WorkerExecution;
+import com.peatroxd.streamcutproject.workertask.WorkerTask;
 import com.peatroxd.streamcutproject.vodjob.VodJob;
 
 import java.util.Optional;
@@ -22,7 +23,11 @@ public final class JobMapper {
         );
     }
 
-    public static JobListItemResponse toListItemResponse(VodJob job, Optional<WorkerExecution> latestExecution) {
+    public static JobListItemResponse toListItemResponse(
+            VodJob job,
+            Optional<WorkerExecution> latestExecution,
+            Optional<WorkerTask> latestTask
+    ) {
         return new JobListItemResponse(
                 job.getId(),
                 job.getSourceType(),
@@ -35,11 +40,16 @@ public final class JobMapper {
                 job.getLanguage(),
                 job.getProgressPercent(),
                 job.getProgressMessage(),
-                latestExecution.map(JobMapper::toExecutionResponse).orElse(null)
+                latestExecution.map(JobMapper::toExecutionResponse).orElse(null),
+                latestTask.map(JobMapper::toTaskResponse).orElse(null)
         );
     }
 
-    public static JobDetailResponse toDetailResponse(VodJob job, Optional<WorkerExecution> latestExecution) {
+    public static JobDetailResponse toDetailResponse(
+            VodJob job,
+            Optional<WorkerExecution> latestExecution,
+            Optional<WorkerTask> latestTask
+    ) {
         return new JobDetailResponse(
                 job.getId(),
                 job.getSourceType(),
@@ -60,7 +70,8 @@ public final class JobMapper {
                 job.getLastWorkerHeartbeatAt(),
                 job.getProgressPercent(),
                 job.getProgressMessage(),
-                latestExecution.map(JobMapper::toExecutionResponse).orElse(null)
+                latestExecution.map(JobMapper::toExecutionResponse).orElse(null),
+                latestTask.map(JobMapper::toTaskResponse).orElse(null)
         );
     }
 
@@ -77,6 +88,21 @@ public final class JobMapper {
                 execution.getLastHeartbeatAt(),
                 execution.getFinishedAt(),
                 execution.getFailureMessage()
+        );
+    }
+
+    public static WorkerTaskResponse toTaskResponse(WorkerTask task) {
+        return new WorkerTaskResponse(
+                task.getId(),
+                task.getTaskType().name(),
+                task.getStatus().name(),
+                task.getProcessingVersion(),
+                task.getCandidateId(),
+                task.getCreatedAt(),
+                task.getClaimedAt(),
+                task.getLastHeartbeatAt(),
+                task.getFinishedAt(),
+                task.getFailureMessage()
         );
     }
 }

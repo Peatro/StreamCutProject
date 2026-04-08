@@ -121,7 +121,8 @@ class VodJobApiIntegrationTest {
 
         mockMvc.perform(get("/api/jobs/{id}", job.getId()))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("DOWNLOADING"));
+                .andExpect(jsonPath("$.status").value("DOWNLOADING"))
+                .andExpect(jsonPath("$.latestTask.taskType").value("DOWNLOAD"));
 
         assertThat(jobEventRepository.findAllByJobIdOrderByCreatedAtAscIdAsc(job.getId()))
                 .extracting(event -> event.getEventType())

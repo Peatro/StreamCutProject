@@ -14,6 +14,7 @@ public record JobListItemResponse(
         String language,
         Integer progressPercent,
         String progressMessage,
-        WorkerExecutionResponse latestExecution
+        WorkerExecutionResponse latestExecution,
+        WorkerTaskResponse latestTask
 ) {
 }
