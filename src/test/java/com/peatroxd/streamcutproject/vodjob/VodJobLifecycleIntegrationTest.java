@@ -115,6 +115,7 @@ class VodJobLifecycleIntegrationTest {
         vodJobRepository.save(job);
         WorkerExecution processingExecution = workerExecutionRepository.save(WorkerExecution.create(
                 job,
+                null,
                 job.getProcessingVersion(),
                 "worker-1",
                 "processing",
@@ -158,6 +159,7 @@ class VodJobLifecycleIntegrationTest {
         vodJobRepository.save(job);
         WorkerExecution processingExecution = workerExecutionRepository.save(WorkerExecution.create(
                 job,
+                null,
                 job.getProcessingVersion(),
                 "worker-1",
                 "processing",
@@ -196,6 +198,7 @@ class VodJobLifecycleIntegrationTest {
         vodJobRepository.save(exportingJob);
         WorkerExecution exportExecution = workerExecutionRepository.save(WorkerExecution.create(
                 exportingJob,
+                null,
                 exportingJob.getProcessingVersion(),
                 "worker-1",
                 "processing",

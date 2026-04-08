@@ -37,6 +37,9 @@ import com.peatroxd.streamcutproject.workerexecution.WorkerExecutionProperties;
 import com.peatroxd.streamcutproject.workerexecution.WorkerExecutionRepository;
 import com.peatroxd.streamcutproject.workerexecution.WorkerExecutionStatus;
 import com.peatroxd.streamcutproject.workerexecution.WorkerTaskType;
+import com.peatroxd.streamcutproject.workertask.WorkerTask;
+import com.peatroxd.streamcutproject.workertask.WorkerTaskRepository;
+import com.peatroxd.streamcutproject.workertask.WorkerTaskStatus;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -101,6 +104,9 @@ class VodJobServiceTest {
     private WorkerExecutionRepository workerExecutionRepository;
 
     @Mock
+    private WorkerTaskRepository workerTaskRepository;
+
+    @Mock
     private WorkerDispatchPort workerDispatchPort;
 
     @Mock
@@ -123,10 +129,14 @@ class VodJobServiceTest {
                 artifactStorageService,
                 storageProperties,
                 workerExecutionProperties,
+                workerTaskRepository,
                 workerExecutionRepository,
                 workerDispatchPort,
                 workerDispatchPayloadFactory
         );
+        lenient().when(workerTaskRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        lenient().when(workerTaskRepository.findAllByVodJobIdAndProcessingVersionAndStatusIn(anyLong(), anyLong(), any()))
+                .thenReturn(List.of());
         lenient().when(workerExecutionRepository.findAllByStatusInAndLastHeartbeatAtBeforeOrderByIdAsc(any(), any()))
                 .thenReturn(List.of());
         lenient().when(workerExecutionRepository.save(any(WorkerExecution.class))).thenAnswer(invocation -> {
@@ -530,8 +540,15 @@ class VodJobServiceTest {
         VodJob job = buildJob(1L, "https://example.com/video", Instant.parse("2026-04-05T10:00:00Z"));
         job.setStatus(JobStatus.QUEUED_FOR_DOWNLOAD);
         job.setStorageVideoPath("/var/lib/streamcut/jobs/1/source/video.mp4");
+        WorkerTask queuedTask = buildQueuedTask(job, WorkerTaskType.DOWNLOAD, null);
         when(vodJobRepository.findAllByStatusForUpdate(Mockito.eq(JobStatus.QUEUED_FOR_DOWNLOAD), any(Pageable.class)))
                 .thenReturn(List.of(job));
+        when(workerTaskRepository.findFirstByVodJobIdAndProcessingVersionAndTaskTypeAndStatusOrderByIdAsc(
+                job.getId(),
+                job.getProcessingVersion(),
+                WorkerTaskType.DOWNLOAD,
+                WorkerTaskStatus.QUEUED
+        )).thenReturn(java.util.Optional.of(queuedTask));
         WorkerDispatchPayload payload = new WorkerDispatchPayload(
                 91L,
                 1L,
@@ -563,10 +580,17 @@ class VodJobServiceTest {
         VodJob job = buildJob(1L, "https://example.com/video", Instant.parse("2026-04-05T10:00:00Z"));
         job.setStatus(JobStatus.QUEUED_FOR_PROCESSING);
         job.setStorageVideoPath("/var/lib/streamcut/jobs/1/source/video.mp4");
+        WorkerTask queuedTask = buildQueuedTask(job, WorkerTaskType.ANALYZE, null);
         when(clipCandidateRepository.findPendingExportsForUpdate(Mockito.eq(ExportStatus.IN_PROGRESS), any(Pageable.class)))
                 .thenReturn(List.of());
         when(vodJobRepository.findAllByStatusForUpdate(Mockito.eq(JobStatus.QUEUED_FOR_PROCESSING), any(Pageable.class)))
                 .thenReturn(List.of(job));
+        when(workerTaskRepository.findFirstByVodJobIdAndProcessingVersionAndTaskTypeAndStatusOrderByIdAsc(
+                job.getId(),
+                job.getProcessingVersion(),
+                WorkerTaskType.ANALYZE,
+                WorkerTaskStatus.QUEUED
+        )).thenReturn(java.util.Optional.of(queuedTask));
         WorkerDispatchPayload payload = new WorkerDispatchPayload(
                 92L,
                 1L,
@@ -1003,6 +1027,10 @@ class VodJobServiceTest {
         return buildExecution(job, workerId, taskType, executionId, null);
     }
 
+    private static WorkerTask buildQueuedTask(VodJob job, WorkerTaskType taskType, Long candidateId) {
+        return WorkerTask.createQueued(job, job.getProcessingVersion(), taskType, candidateId, Instant.now());
+    }
+
     private static WorkerExecution buildExecution(
             VodJob job,
             String workerId,
@@ -1012,6 +1040,7 @@ class VodJobServiceTest {
     ) {
         WorkerExecution execution = WorkerExecution.create(
                 job,
+                null,
                 job.getProcessingVersion(),
                 workerId,
                 "processing",

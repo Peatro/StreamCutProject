@@ -137,6 +137,7 @@ class VodJobApiIntegrationTest {
         vodJobRepository.save(job);
         WorkerExecution processingExecution = workerExecutionRepository.save(WorkerExecution.create(
                 job,
+                null,
                 job.getProcessingVersion(),
                 "worker-1",
                 "processing",
@@ -179,6 +180,7 @@ class VodJobApiIntegrationTest {
         vodJobRepository.save(exportingJob);
         WorkerExecution exportExecution = workerExecutionRepository.save(WorkerExecution.create(
                 exportingJob,
+                null,
                 exportingJob.getProcessingVersion(),
                 "worker-1",
                 "processing",

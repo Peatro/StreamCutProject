@@ -1,7 +1,7 @@
-package com.peatroxd.streamcutproject.workerexecution;
+package com.peatroxd.streamcutproject.workertask;
 
 import com.peatroxd.streamcutproject.vodjob.VodJob;
-import com.peatroxd.streamcutproject.workertask.WorkerTask;
+import com.peatroxd.streamcutproject.workerexecution.WorkerTaskType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -17,8 +17,8 @@ import jakarta.persistence.Table;
 import java.time.Instant;
 
 @Entity
-@Table(name = "worker_execution")
-public class WorkerExecution {
+@Table(name = "worker_task")
+public class WorkerTask {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -28,18 +28,8 @@ public class WorkerExecution {
     @JoinColumn(name = "job_id", nullable = false)
     private VodJob vodJob;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "task_id")
-    private WorkerTask workerTask;
-
     @Column(name = "processing_version", nullable = false)
     private Long processingVersion;
-
-    @Column(name = "worker_id", nullable = false, length = 128)
-    private String workerId;
-
-    @Column(name = "worker_role", nullable = false, length = 32)
-    private String workerRole;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "task_type", nullable = false, length = 32)
@@ -47,12 +37,18 @@ public class WorkerExecution {
 
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 32)
-    private WorkerExecutionStatus status;
+    private WorkerTaskStatus status;
 
     @Column(name = "candidate_id")
     private Long candidateId;
 
-    @Column(name = "claimed_at", nullable = false)
+    @Column(name = "created_at", nullable = false)
+    private Instant createdAt;
+
+    @Column(name = "updated_at", nullable = false)
+    private Instant updatedAt;
+
+    @Column(name = "claimed_at")
     private Instant claimedAt;
 
     @Column(name = "last_heartbeat_at")
@@ -64,39 +60,76 @@ public class WorkerExecution {
     @Column(name = "failure_message", length = 1000)
     private String failureMessage;
 
-    protected WorkerExecution() {
+    protected WorkerTask() {
     }
 
-    public static WorkerExecution create(
+    public static WorkerTask createQueued(
             VodJob vodJob,
-            WorkerTask workerTask,
             Long processingVersion,
-            String workerId,
-            String workerRole,
             WorkerTaskType taskType,
             Long candidateId,
-            Instant claimedAt
+            Instant now
     ) {
-        WorkerExecution execution = new WorkerExecution();
-        execution.setVodJob(vodJob);
-        execution.setWorkerTask(workerTask);
-        execution.setProcessingVersion(processingVersion);
-        execution.setWorkerId(workerId);
-        execution.setWorkerRole(workerRole);
-        execution.setTaskType(taskType);
-        execution.setCandidateId(candidateId);
-        execution.setStatus(WorkerExecutionStatus.CLAIMED);
-        execution.setClaimedAt(claimedAt);
-        execution.setLastHeartbeatAt(claimedAt);
-        return execution;
+        WorkerTask task = new WorkerTask();
+        task.setVodJob(vodJob);
+        task.setProcessingVersion(processingVersion);
+        task.setTaskType(taskType);
+        task.setCandidateId(candidateId);
+        task.setStatus(WorkerTaskStatus.QUEUED);
+        task.setCreatedAt(now);
+        task.setUpdatedAt(now);
+        return task;
+    }
+
+    public void markClaimed(Instant now) {
+        this.status = WorkerTaskStatus.CLAIMED;
+        this.claimedAt = now;
+        this.lastHeartbeatAt = now;
+        this.updatedAt = now;
+        this.finishedAt = null;
+        this.failureMessage = null;
+    }
+
+    public void markRunning(Instant now) {
+        this.status = WorkerTaskStatus.RUNNING;
+        this.lastHeartbeatAt = now;
+        this.updatedAt = now;
+    }
+
+    public void markQueued(Instant now) {
+        this.status = WorkerTaskStatus.QUEUED;
+        this.updatedAt = now;
+        this.claimedAt = null;
+        this.lastHeartbeatAt = null;
+        this.finishedAt = null;
+    }
+
+    public void markSucceeded(Instant now) {
+        this.status = WorkerTaskStatus.SUCCEEDED;
+        this.updatedAt = now;
+        this.lastHeartbeatAt = now;
+        this.finishedAt = now;
+        this.failureMessage = null;
+    }
+
+    public void markFailed(Instant now, String failureMessage) {
+        this.status = WorkerTaskStatus.FAILED;
+        this.updatedAt = now;
+        this.lastHeartbeatAt = now;
+        this.finishedAt = now;
+        this.failureMessage = failureMessage;
+    }
+
+    public void markCanceled(Instant now, String failureMessage) {
+        this.status = WorkerTaskStatus.CANCELED;
+        this.updatedAt = now;
+        this.lastHeartbeatAt = now;
+        this.finishedAt = now;
+        this.failureMessage = failureMessage;
     }
 
     public Long getId() {
         return id;
-    }
-
-    public void setId(Long id) {
-        this.id = id;
     }
 
     public VodJob getVodJob() {
@@ -107,36 +140,12 @@ public class WorkerExecution {
         this.vodJob = vodJob;
     }
 
-    public WorkerTask getWorkerTask() {
-        return workerTask;
-    }
-
-    public void setWorkerTask(WorkerTask workerTask) {
-        this.workerTask = workerTask;
-    }
-
     public Long getProcessingVersion() {
         return processingVersion;
     }
 
     public void setProcessingVersion(Long processingVersion) {
         this.processingVersion = processingVersion;
-    }
-
-    public String getWorkerId() {
-        return workerId;
-    }
-
-    public void setWorkerId(String workerId) {
-        this.workerId = workerId;
-    }
-
-    public String getWorkerRole() {
-        return workerRole;
-    }
-
-    public void setWorkerRole(String workerRole) {
-        this.workerRole = workerRole;
     }
 
     public WorkerTaskType getTaskType() {
@@ -147,11 +156,11 @@ public class WorkerExecution {
         this.taskType = taskType;
     }
 
-    public WorkerExecutionStatus getStatus() {
+    public WorkerTaskStatus getStatus() {
         return status;
     }
 
-    public void setStatus(WorkerExecutionStatus status) {
+    public void setStatus(WorkerTaskStatus status) {
         this.status = status;
     }
 
@@ -161,6 +170,22 @@ public class WorkerExecution {
 
     public void setCandidateId(Long candidateId) {
         this.candidateId = candidateId;
+    }
+
+    public Instant getCreatedAt() {
+        return createdAt;
+    }
+
+    public void setCreatedAt(Instant createdAt) {
+        this.createdAt = createdAt;
+    }
+
+    public Instant getUpdatedAt() {
+        return updatedAt;
+    }
+
+    public void setUpdatedAt(Instant updatedAt) {
+        this.updatedAt = updatedAt;
     }
 
     public Instant getClaimedAt() {
