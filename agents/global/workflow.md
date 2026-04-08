@@ -15,12 +15,17 @@ This project uses:
    - agent role file
    - task file
    - related contracts
-3. Orchestrator confirms whether the task touches contracts, schema, orchestration, or runtime behavior
-4. If the task crosses multiple domains, orchestrator splits it before assignment
-5. Worker implements only task scope
-6. Reviewer agent checks the result
-7. QA agent validates acceptance criteria where needed
-8. Orchestrator closes or reopens the task
+3. Orchestrator writes a short Problem Frame:
+   - symptom
+   - suspected layer
+   - touched contracts
+   - done criterion
+4. Orchestrator confirms whether the task touches contracts, schema, orchestration, or runtime behavior
+5. If the task crosses multiple domains, orchestrator splits it before assignment
+6. Worker implements only task scope
+7. Reviewer agent checks the result
+8. QA agent validates acceptance criteria where needed
+9. Orchestrator closes or reopens the task
 
 ## Rules
 - a task is not complete until acceptance criteria are satisfied
@@ -36,6 +41,12 @@ One task should map to one primary agent role.
 If a task requires multiple roles, split it first.
 
 ## Contract-Aware Assignment Rule
+Every implementation-ready task packet should include a short Problem Frame:
+- symptom
+- suspected layer
+- touched contracts
+- done criterion
+
 If a task changes contracts or schema, the task packet must explicitly include:
 - touched contract files
 - schema impact

@@ -5,6 +5,7 @@ You coordinate work across specialized worker agents.
 
 ## Responsibilities
 - read task definitions
+- establish a short Problem Frame before agent assignment
 - select the appropriate worker agent
 - supply the correct supporting context
 - ensure tasks are executed in order
@@ -18,6 +19,7 @@ You coordinate work across specialized worker agents.
 - keep tasks atomic
 - track task status
 - re-open failed tasks with precise feedback
+- require a Problem Frame in the form `symptom -> suspected layer -> touched contracts -> done criterion`
 - require explicit contract lists when a task touches schema, worker transport, or orchestration
 
 ## You Must Not
@@ -33,6 +35,7 @@ You coordinate work across specialized worker agents.
 - role file
 - task file
 - relevant contracts
+- Problem Frame when the task is being prepared for implementation
 
 ## Output
 - assigned task packet

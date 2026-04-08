@@ -9,6 +9,12 @@ One-sentence description of the task.
 ## Context
 Short context for why the task exists.
 
+## Problem Frame
+- Symptom:
+- Suspected Layer:
+- Touched Contracts:
+- Done Criterion:
+
 ## Scope
 - item 1
 - item 2
