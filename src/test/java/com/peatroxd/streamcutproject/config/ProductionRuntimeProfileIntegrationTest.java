@@ -50,5 +50,8 @@ class ProductionRuntimeProfileIntegrationTest {
         assertThat(storageProperties.getLocalRoot()).isEqualTo(Path.of("build", "streamcut-prod-profile-storage"));
         assertThat(artifactStorageProperties.getMode()).isEqualTo(ArtifactStorageProperties.Mode.LOCAL);
         assertThat(artifactStorageProperties.getBucket()).isEqualTo("streamcut-artifacts-prod");
+        assertThat(environment.getProperty("management.endpoints.access.default")).isEqualTo("none");
+        assertThat(environment.getProperty("management.endpoint.metrics.access")).isEqualTo("read-only");
+        assertThat(environment.getProperty("management.endpoint.prometheus.access")).isEqualTo("read-only");
     }
 }

@@ -41,6 +41,7 @@ import com.peatroxd.streamcutproject.workerexecution.WorkerTaskType;
 import com.peatroxd.streamcutproject.workertask.WorkerTask;
 import com.peatroxd.streamcutproject.workertask.WorkerTaskRepository;
 import com.peatroxd.streamcutproject.workertask.WorkerTaskStatus;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -76,6 +77,7 @@ class VodJobServiceTest {
 
     private final StorageProperties storageProperties = new StorageProperties();
     private final WorkerExecutionProperties workerExecutionProperties = new WorkerExecutionProperties();
+    private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
 
     @Mock
     private VodJobRepository vodJobRepository;
@@ -133,7 +135,8 @@ class VodJobServiceTest {
                 workerTaskRepository,
                 workerExecutionRepository,
                 workerDispatchPort,
-                workerDispatchPayloadFactory
+                workerDispatchPayloadFactory,
+                meterRegistry
         );
         lenient().when(workerTaskRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
         lenient().when(vodJobRepository.save(any(VodJob.class))).thenAnswer(invocation -> invocation.getArgument(0));
@@ -182,6 +185,10 @@ class VodJobServiceTest {
         assertThat(response.sourceUrl()).isEqualTo("https://example.com/video");
         verify(vodJobRepository, Mockito.times(2)).save(any(VodJob.class));
         verify(jobEventRepository, Mockito.times(2)).save(any(JobEvent.class));
+        assertThat(meterRegistry.get("streamcut.jobs.created")
+                .tag("source_type", "URL")
+                .counter()
+                .count()).isEqualTo(1.0d);
     }
 
     @Test
@@ -227,6 +234,10 @@ class VodJobServiceTest {
         verify(vodJobRepository, Mockito.times(3)).save(any(VodJob.class));
         verify(storageService).storeSourceVideo(Mockito.eq(2L), Mockito.eq("video.mp4"), any());
         verify(jobEventRepository, Mockito.times(2)).save(any(JobEvent.class));
+        assertThat(meterRegistry.get("streamcut.jobs.created")
+                .tag("source_type", "FILE")
+                .counter()
+                .count()).isEqualTo(1.0d);
     }
 
     @Test
@@ -450,6 +461,7 @@ class VodJobServiceTest {
         verify(jobEventRepository).save(eventCaptor.capture());
         assertThat(eventCaptor.getValue().getEventType()).isEqualTo("JOB_RETRIED");
         assertThat(eventCaptor.getValue().getMessage()).contains("requeued it for download");
+        assertThat(meterRegistry.get("streamcut.jobs.retried").counter().count()).isEqualTo(1.0d);
     }
 
     @Test
@@ -491,6 +503,7 @@ class VodJobServiceTest {
         verify(jobEventRepository).save(eventCaptor.capture());
         assertThat(eventCaptor.getValue().getEventType()).isEqualTo("JOB_CANCELED");
         assertThat(eventCaptor.getValue().getMessage()).contains("queued job");
+        assertThat(meterRegistry.get("streamcut.jobs.canceled").counter().count()).isEqualTo(1.0d);
     }
 
     @Test
@@ -545,6 +558,10 @@ class VodJobServiceTest {
         verify(jobEventRepository).save(eventCaptor.capture());
         assertThat(eventCaptor.getValue().getEventType()).isEqualTo("JOB_FORCE_FAILED");
         assertThat(eventCaptor.getValue().getMessage()).contains("EXPORTING_CLIP");
+        assertThat(meterRegistry.get("streamcut.jobs.failed")
+                .tag("reason", "operator_force")
+                .counter()
+                .count()).isEqualTo(1.0d);
     }
 
     @Test
@@ -1091,6 +1108,7 @@ class VodJobServiceTest {
         verify(clipCandidateRepository).saveAll(any());
         verify(workerExecutionRepository, Mockito.atLeastOnce()).save(any(WorkerExecution.class));
         verify(jobEventRepository).save(any(JobEvent.class));
+        assertThat(meterRegistry.get("streamcut.jobs.completed").counter().count()).isEqualTo(1.0d);
     }
 
     @Test
@@ -1222,6 +1240,10 @@ class VodJobServiceTest {
         verify(workerExecutionRepository, Mockito.atLeastOnce()).save(any(WorkerExecution.class));
         verify(vodJobRepository).save(job);
         verify(jobEventRepository).save(any(JobEvent.class));
+        assertThat(meterRegistry.get("streamcut.jobs.failed")
+                .tag("reason", "worker_failure")
+                .counter()
+                .count()).isEqualTo(1.0d);
     }
 
     @Test
@@ -1386,6 +1408,7 @@ class VodJobServiceTest {
         verify(workerExecutionRepository).save(execution);
         verify(vodJobRepository, Mockito.atLeastOnce()).save(job);
         verify(jobEventRepository, Mockito.times(2)).save(any(JobEvent.class));
+        assertThat(meterRegistry.get("streamcut.recovery.stale.actions").counter().count()).isEqualTo(1.0d);
     }
 
     @Test
