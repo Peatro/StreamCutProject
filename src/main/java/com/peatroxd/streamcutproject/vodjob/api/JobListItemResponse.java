@@ -13,6 +13,7 @@ public record JobListItemResponse(
         Long durationSec,
         String language,
         Integer progressPercent,
-        String progressMessage
+        String progressMessage,
+        WorkerExecutionResponse latestExecution
 ) {
 }

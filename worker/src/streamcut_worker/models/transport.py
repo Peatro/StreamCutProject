@@ -7,6 +7,7 @@ from typing import Any
 
 @dataclass(frozen=True, slots=True)
 class ClaimedJob:
+    execution_id: int
     job_id: int
     processing_version: int
     task_type: str
@@ -21,6 +22,7 @@ class ClaimedJob:
 
 @dataclass(frozen=True, slots=True)
 class WorkerDownloadCompletionPayload:
+    execution_id: int
     job_id: int
     worker_id: str
     processing_version: int
@@ -28,6 +30,7 @@ class WorkerDownloadCompletionPayload:
 
     def to_payload(self) -> dict[str, Any]:
         return {
+            "executionId": self.execution_id,
             "jobId": self.job_id,
             "workerId": self.worker_id,
             "processingVersion": self.processing_version,
@@ -37,6 +40,7 @@ class WorkerDownloadCompletionPayload:
 
 @dataclass(frozen=True, slots=True)
 class WorkerProcessingPayload:
+    execution_id: int
     job_id: int
     worker_id: str
     processing_version: int
@@ -51,6 +55,7 @@ class WorkerProcessingPayload:
 
     def to_payload(self) -> dict[str, Any]:
         return {
+            "executionId": self.execution_id,
             "jobId": self.job_id,
             "workerId": self.worker_id,
             "processingVersion": self.processing_version,
@@ -67,6 +72,7 @@ class WorkerProcessingPayload:
 
 @dataclass(frozen=True, slots=True)
 class WorkerExportCompletionPayload:
+    execution_id: int
     job_id: int
     worker_id: str
     processing_version: int
@@ -75,6 +81,7 @@ class WorkerExportCompletionPayload:
 
     def to_payload(self) -> dict[str, Any]:
         return {
+            "executionId": self.execution_id,
             "jobId": self.job_id,
             "workerId": self.worker_id,
             "processingVersion": self.processing_version,
@@ -85,6 +92,7 @@ class WorkerExportCompletionPayload:
 
 @dataclass(frozen=True, slots=True)
 class WorkerFailurePayload:
+    execution_id: int
     job_id: int
     worker_id: str
     processing_version: int
@@ -93,6 +101,7 @@ class WorkerFailurePayload:
 
     def to_payload(self) -> dict[str, Any]:
         return {
+            "executionId": self.execution_id,
             "jobId": self.job_id,
             "workerId": self.worker_id,
             "processingVersion": self.processing_version,
@@ -103,6 +112,7 @@ class WorkerFailurePayload:
 
 @dataclass(frozen=True, slots=True)
 class WorkerProgressPayload:
+    execution_id: int
     job_id: int
     worker_id: str
     processing_version: int
@@ -112,6 +122,7 @@ class WorkerProgressPayload:
 
     def to_payload(self) -> dict[str, Any]:
         return {
+            "executionId": self.execution_id,
             "jobId": self.job_id,
             "workerId": self.worker_id,
             "processingVersion": self.processing_version,

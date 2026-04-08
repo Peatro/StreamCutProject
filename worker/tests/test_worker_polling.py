@@ -70,6 +70,7 @@ class WorkerPollingLoopTests(unittest.TestCase):
     def test_polling_loop_claims_processing_job_and_submits_result(self) -> None:
         backend = FakeBackendClient(
             claimed_job=ClaimedJob(
+                execution_id=101,
                 job_id=7,
                 processing_version=2,
                 task_type="ANALYZE",
@@ -80,6 +81,7 @@ class WorkerPollingLoopTests(unittest.TestCase):
         )
         runner = FakeJobRunner(
             result=WorkerProcessingPayload(
+                execution_id=101,
                 job_id=7,
                 worker_id="processing-worker-1",
                 processing_version=2,
@@ -112,6 +114,7 @@ class WorkerPollingLoopTests(unittest.TestCase):
     def test_polling_loop_submits_download_result(self) -> None:
         backend = FakeBackendClient(
             claimed_job=ClaimedJob(
+                execution_id=102,
                 job_id=8,
                 processing_version=3,
                 task_type="DOWNLOAD",
@@ -122,6 +125,7 @@ class WorkerPollingLoopTests(unittest.TestCase):
         )
         runner = FakeJobRunner(
             result=WorkerDownloadCompletionPayload(
+                execution_id=102,
                 job_id=8,
                 worker_id="download-worker-1",
                 processing_version=3,
@@ -146,6 +150,7 @@ class WorkerPollingLoopTests(unittest.TestCase):
     def test_polling_loop_reports_failures(self) -> None:
         backend = FakeBackendClient(
             claimed_job=ClaimedJob(
+                execution_id=103,
                 job_id=10,
                 processing_version=1,
                 task_type="DOWNLOAD",
@@ -173,6 +178,7 @@ class WorkerPollingLoopTests(unittest.TestCase):
     def test_polling_loop_reports_unexpected_runner_failures(self) -> None:
         backend = FakeBackendClient(
             claimed_job=ClaimedJob(
+                execution_id=104,
                 job_id=11,
                 processing_version=1,
                 task_type="ANALYZE",
@@ -201,6 +207,7 @@ class WorkerPollingLoopTests(unittest.TestCase):
     def test_polling_loop_preserves_backend_transport_errors(self) -> None:
         backend = FakeBackendClient(
             claimed_job=ClaimedJob(
+                execution_id=105,
                 job_id=12,
                 processing_version=2,
                 task_type="ANALYZE",
@@ -212,6 +219,7 @@ class WorkerPollingLoopTests(unittest.TestCase):
         )
         runner = FakeJobRunner(
             result=WorkerProcessingPayload(
+                execution_id=105,
                 job_id=12,
                 worker_id="processing-worker-1",
                 processing_version=2,
@@ -243,6 +251,7 @@ class WorkerPollingLoopTests(unittest.TestCase):
     def test_polling_loop_submits_export_result(self) -> None:
         backend = FakeBackendClient(
             claimed_job=ClaimedJob(
+                execution_id=106,
                 job_id=9,
                 processing_version=5,
                 task_type="EXPORT",
@@ -257,6 +266,7 @@ class WorkerPollingLoopTests(unittest.TestCase):
         )
         runner = FakeJobRunner(
             result=WorkerExportCompletionPayload(
+                execution_id=106,
                 job_id=9,
                 worker_id="processing-worker-1",
                 processing_version=5,

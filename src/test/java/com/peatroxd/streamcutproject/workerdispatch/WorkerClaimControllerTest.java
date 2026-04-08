@@ -35,6 +35,7 @@ class WorkerClaimControllerTest {
     void returnsClaimedJobPayloadWhenQueuedJobExists() throws Exception {
         when(vodJobService.claimNextQueuedJob(anyString(), anyString())).thenReturn(Optional.of(
                 new WorkerDispatchPayload(
+                        11L,
                         7L,
                         3L,
                         "ANALYZE",
@@ -58,6 +59,7 @@ class WorkerClaimControllerTest {
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.executionId").value(11))
                 .andExpect(jsonPath("$.jobId").value(7))
                 .andExpect(jsonPath("$.processingVersion").value(3))
                 .andExpect(jsonPath("$.taskType").value("ANALYZE"))

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
+import threading
 from typing import Callable
 
 from streamcut_worker.analysis import CandidateAnalysisRequest, SlidingWindowCandidateAnalysisService
@@ -30,6 +31,10 @@ class WorkerJobRunnerError(RuntimeError):
 
 @dataclass(slots=True)
 class WorkerJobRunner:
+    TRANSCRIPTION_PROGRESS_START = 48
+    TRANSCRIPTION_PROGRESS_END = 67
+    TRANSCRIPTION_HEARTBEAT_SEC = 30.0
+
     storage_root: Path
     source_materializer: SourceMaterializer
     audio_service: FfmpegAudioExtractionService
@@ -50,6 +55,7 @@ class WorkerJobRunner:
             self._notify_progress(on_progress, "DOWNLOADING", 18, "Download worker is materializing the source video")
             source_video_path = self._materialize_source(job)
             return WorkerDownloadCompletionPayload(
+                execution_id=job.execution_id,
                 job_id=job.job_id,
                 worker_id=worker_id,
                 processing_version=job.processing_version,
@@ -65,7 +71,7 @@ class WorkerJobRunner:
         self._notify_progress(on_progress, "EXTRACTING_AUDIO", 36, "Processing worker is extracting the audio track")
         audio_result = self._extract_audio(source_video_path)
         self._notify_progress(on_progress, "TRANSCRIBING", 48, "Worker is transcribing the audio")
-        transcription_result = self._transcribe(job, audio_result.audio_path)
+        transcription_result = self._transcribe(job, audio_result.audio_path, on_progress)
         self._notify_progress(on_progress, "DETECTING_SILENCE", 68, "Worker is detecting silence spans")
         silence_result = self._detect_silence(source_video_path)
         self._notify_progress(on_progress, "ANALYZING_WINDOWS", 84, "Worker is scoring sliding analysis windows")
@@ -73,6 +79,7 @@ class WorkerJobRunner:
         self._notify_progress(on_progress, "GENERATING_CANDIDATES", 94, "Worker is assembling clip candidates")
 
         return WorkerProcessingPayload(
+            execution_id=job.execution_id,
             job_id=job.job_id,
             worker_id=worker_id,
             processing_version=job.processing_version,
@@ -139,6 +146,7 @@ class WorkerJobRunner:
             raise WorkerJobRunnerError("EXPORTING_CLIP", str(exc)) from exc
 
         return WorkerExportCompletionPayload(
+            execution_id=job.execution_id,
             job_id=job.job_id,
             worker_id=worker_id,
             processing_version=job.processing_version,
@@ -179,18 +187,73 @@ class WorkerJobRunner:
         except Exception as exc:
             raise WorkerJobRunnerError("EXTRACTING_AUDIO", str(exc)) from exc
 
-    def _transcribe(self, job: ClaimedJob, audio_path: Path):
+    def _transcribe(
+        self,
+        job: ClaimedJob,
+        audio_path: Path,
+        on_progress: Callable[[str, int, str], None] | None,
+    ):
         if self.transcription_service is None:
             raise WorkerJobRunnerError("TRANSCRIBING", "No transcription service available for this worker role")
+
+        heartbeat_stop = threading.Event()
+        heartbeat_thread = self._start_transcription_heartbeat(on_progress, heartbeat_stop)
+
         try:
             return self.transcription_service.transcribe(
                 TranscriptionRequest(
                     job_id=str(job.job_id),
                     audio_path=audio_path,
-                )
+                ),
+                on_progress=lambda processed_sec, total_sec: self._notify_progress(
+                    on_progress,
+                    "TRANSCRIBING",
+                    self._transcription_progress_percent(processed_sec, total_sec),
+                    self._transcription_progress_message(processed_sec, total_sec),
+                ),
             )
         except Exception as exc:
             raise WorkerJobRunnerError("TRANSCRIBING", str(exc)) from exc
+        finally:
+            heartbeat_stop.set()
+            if heartbeat_thread is not None:
+                heartbeat_thread.join()
+
+    def _start_transcription_heartbeat(
+        self,
+        on_progress: Callable[[str, int, str], None] | None,
+        stop_event: threading.Event,
+    ) -> threading.Thread | None:
+        if on_progress is None:
+            return None
+
+        def heartbeat() -> None:
+            while not stop_event.wait(self.TRANSCRIPTION_HEARTBEAT_SEC):
+                self._notify_progress(
+                    on_progress,
+                    "TRANSCRIBING",
+                    self.TRANSCRIPTION_PROGRESS_START,
+                    "Worker is still transcribing the audio",
+                )
+
+        thread = threading.Thread(target=heartbeat, name="transcription-heartbeat", daemon=True)
+        thread.start()
+        return thread
+
+    @classmethod
+    def _transcription_progress_percent(cls, processed_sec: float, total_sec: float) -> int:
+        if total_sec <= 0:
+            return cls.TRANSCRIPTION_PROGRESS_START
+
+        bounded_ratio = min(max(processed_sec / total_sec, 0.0), 1.0)
+        span = cls.TRANSCRIPTION_PROGRESS_END - cls.TRANSCRIPTION_PROGRESS_START
+        return cls.TRANSCRIPTION_PROGRESS_START + int(round(bounded_ratio * span))
+
+    @staticmethod
+    def _transcription_progress_message(processed_sec: float, total_sec: float) -> str:
+        if total_sec <= 0:
+            return "Worker is transcribing the audio"
+        return f"Worker is transcribing the audio ({processed_sec:.0f}s / {total_sec:.0f}s)"
 
     def _detect_silence(self, source_video_path: Path):
         try:

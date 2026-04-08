@@ -88,6 +88,10 @@ public class WorkerExecution {
         return id;
     }
 
+    public void setId(Long id) {
+        this.id = id;
+    }
+
     public VodJob getVodJob() {
         return vodJob;
     }

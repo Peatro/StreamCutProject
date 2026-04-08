@@ -7,6 +7,7 @@ import com.peatroxd.streamcutproject.vodjob.api.JobEventResponse;
 import com.peatroxd.streamcutproject.vodjob.api.JobListItemResponse;
 import com.peatroxd.streamcutproject.vodjob.api.JobSummaryResponse;
 import com.peatroxd.streamcutproject.vodjob.api.TranscriptSegmentResponse;
+import com.peatroxd.streamcutproject.vodjob.api.WorkerExecutionResponse;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -83,5 +84,10 @@ public class VodJobController {
     @GetMapping("/{id}/events")
     public List<JobEventResponse> listJobEvents(@PathVariable Long id) {
         return vodJobService.listJobEvents(id);
+    }
+
+    @GetMapping("/{id}/executions")
+    public List<WorkerExecutionResponse> listWorkerExecutions(@PathVariable Long id) {
+        return vodJobService.listWorkerExecutions(id);
     }
 }

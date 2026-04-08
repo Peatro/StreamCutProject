@@ -37,6 +37,7 @@ class WorkerResultControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
+                                  "executionId": 15,
                                   "jobId": 7,
                                   "workerId": "worker-1",
                                   "processingVersion": 2,
@@ -64,6 +65,7 @@ class WorkerResultControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
+                                  "executionId": 15,
                                   "jobId": 7,
                                   "workerId": "worker-1",
                                   "processingVersion": 2,
@@ -86,6 +88,7 @@ class WorkerResultControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
+                                  "executionId": 16,
                                   "jobId": 7,
                                   "workerId": "download-worker-1",
                                   "processingVersion": 2,
@@ -106,6 +109,7 @@ class WorkerResultControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
+                                  "executionId": 17,
                                   "jobId": 7,
                                   "workerId": "worker-1",
                                   "processingVersion": 2,
@@ -127,6 +131,7 @@ class WorkerResultControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
+                                  "executionId": 18,
                                   "jobId": 7,
                                   "workerId": "worker-1",
                                   "processingVersion": 2,
@@ -146,6 +151,7 @@ class WorkerResultControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
+                                  "executionId": 18,
                                   "jobId": 7,
                                   "workerId": " ",
                                   "processingVersion": 2,

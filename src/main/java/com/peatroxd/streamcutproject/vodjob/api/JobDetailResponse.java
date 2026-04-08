@@ -21,6 +21,7 @@ public record JobDetailResponse(
         String currentWorkerId,
         Instant lastWorkerHeartbeatAt,
         Integer progressPercent,
-        String progressMessage
+        String progressMessage,
+        WorkerExecutionResponse latestExecution
 ) {
 }

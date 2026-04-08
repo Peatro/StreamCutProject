@@ -8,6 +8,7 @@ import com.peatroxd.streamcutproject.vodjob.api.JobEventResponse;
 import com.peatroxd.streamcutproject.vodjob.api.JobListItemResponse;
 import com.peatroxd.streamcutproject.vodjob.api.JobSummaryResponse;
 import com.peatroxd.streamcutproject.vodjob.api.TranscriptSegmentResponse;
+import com.peatroxd.streamcutproject.vodjob.api.WorkerExecutionResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -127,7 +128,20 @@ class VodJobControllerTest {
                         null,
                         null,
                         0,
-                        "Pending"
+                        "Pending",
+                        new WorkerExecutionResponse(
+                                21L,
+                                "DOWNLOAD",
+                                "RUNNING",
+                                "download-worker-1",
+                                "download",
+                                1L,
+                                null,
+                                Instant.parse("2026-04-05T10:00:10Z"),
+                                Instant.parse("2026-04-05T10:00:20Z"),
+                                null,
+                                null
+                        )
                 )
         ));
 
@@ -161,7 +175,8 @@ class VodJobControllerTest {
                 null,
                 null,
                 5,
-                "Queued for worker processing"
+                "Queued for worker processing",
+                null
         ));
 
         mockMvc.perform(get("/api/jobs/1"))
@@ -230,6 +245,48 @@ class VodJobControllerTest {
                 .andExpect(jsonPath("$[0].eventType").value("JOB_CREATED"))
                 .andExpect(jsonPath("$[1].id").value(11))
                 .andExpect(jsonPath("$[1].eventType").value("JOB_QUEUED_FOR_DOWNLOAD"));
+    }
+
+    @Test
+    void listsWorkerExecutions() throws Exception {
+        when(vodJobService.listWorkerExecutions(1L)).thenReturn(List.of(
+                new WorkerExecutionResponse(
+                        21L,
+                        "DOWNLOAD",
+                        "SUCCEEDED",
+                        "download-worker-1",
+                        "download",
+                        1L,
+                        null,
+                        Instant.parse("2026-04-05T10:00:10Z"),
+                        Instant.parse("2026-04-05T10:00:20Z"),
+                        Instant.parse("2026-04-05T10:00:25Z"),
+                        null
+                ),
+                new WorkerExecutionResponse(
+                        22L,
+                        "ANALYZE",
+                        "RUNNING",
+                        "processing-worker-1",
+                        "processing",
+                        1L,
+                        null,
+                        Instant.parse("2026-04-05T10:00:30Z"),
+                        Instant.parse("2026-04-05T10:01:00Z"),
+                        null,
+                        null
+                )
+        ));
+
+        mockMvc.perform(get("/api/jobs/1/executions"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$[0].id").value(21))
+                .andExpect(jsonPath("$[0].taskType").value("DOWNLOAD"))
+                .andExpect(jsonPath("$[0].status").value("SUCCEEDED"))
+                .andExpect(jsonPath("$[1].id").value(22))
+                .andExpect(jsonPath("$[1].taskType").value("ANALYZE"))
+                .andExpect(jsonPath("$[1].status").value("RUNNING"));
     }
 
     @Test

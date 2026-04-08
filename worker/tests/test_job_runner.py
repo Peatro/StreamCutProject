@@ -37,8 +37,12 @@ class FakeAudioService:
 class FakeTranscriptionService:
     def __init__(self, result: TranscriptionResult) -> None:
         self.result = result
+        self.progress_updates: list[tuple[float, float]] = []
 
-    def transcribe(self, request):
+    def transcribe(self, request, on_progress=None):
+        if on_progress is not None:
+            on_progress(30.0, 120.0)
+            on_progress(90.0, 120.0)
         return self.result
 
 
@@ -91,6 +95,7 @@ class WorkerJobRunnerTests(unittest.TestCase):
 
             result = runner.run(
                 ClaimedJob(
+                    execution_id=201,
                     job_id=7,
                     processing_version=2,
                     task_type="DOWNLOAD",
@@ -150,15 +155,20 @@ class WorkerJobRunnerTests(unittest.TestCase):
                 ),
                 export_service=FakeExportService(storage_root / "jobs" / "7" / "exports" / "candidate-1.mp4"),
             )
+            progress_updates: list[tuple[str, int, str]] = []
 
             result = runner.run(
                 ClaimedJob(
+                    execution_id=202,
                     job_id=7,
                     processing_version=2,
                     task_type="ANALYZE",
                     source_type="FILE",
                     video_path=source_video_path,
                     source_url=None,
+                ),
+                on_progress=lambda status, progress_percent, message: progress_updates.append(
+                    (status, progress_percent, message)
                 ),
                 worker_id="processing-worker-1",
             )
@@ -174,6 +184,8 @@ class WorkerJobRunnerTests(unittest.TestCase):
         self.assertEqual(result.silence_segments[0]["durationSec"], 1.0)
         self.assertEqual(result.analysis_windows[0]["totalScore"], 0.9)
         self.assertEqual(result.clip_candidates[0]["transcriptExcerpt"], "hello there")
+        self.assertIn(("TRANSCRIBING", 53, "Worker is transcribing the audio (30s / 120s)"), progress_updates)
+        self.assertIn(("TRANSCRIBING", 62, "Worker is transcribing the audio (90s / 120s)"), progress_updates)
 
     def test_runner_wraps_source_failures_with_stage_context(self) -> None:
         with TemporaryDirectory() as temp_dir:
@@ -190,6 +202,7 @@ class WorkerJobRunnerTests(unittest.TestCase):
             with self.assertRaises(WorkerJobRunnerError) as ctx:
                 runner.run(
                     ClaimedJob(
+                        execution_id=203,
                         job_id=8,
                         processing_version=1,
                         task_type="DOWNLOAD",
@@ -218,6 +231,7 @@ class WorkerJobRunnerTests(unittest.TestCase):
             with self.assertRaises(WorkerJobRunnerError) as ctx:
                 runner.run(
                     ClaimedJob(
+                        execution_id=204,
                         job_id=8,
                         processing_version=1,
                         task_type="ANALYZE",
@@ -250,6 +264,7 @@ class WorkerJobRunnerTests(unittest.TestCase):
 
             result = runner.run(
                 ClaimedJob(
+                    execution_id=205,
                     job_id=9,
                     processing_version=5,
                     task_type="EXPORT",

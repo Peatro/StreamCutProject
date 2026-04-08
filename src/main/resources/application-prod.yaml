@@ -22,3 +22,6 @@ app:
     secret-key: ${APP_ARTIFACT_STORAGE_SECRET_KEY}
     bucket: ${APP_ARTIFACT_STORAGE_BUCKET}
     presign-ttl: ${APP_ARTIFACT_STORAGE_PRESIGN_TTL:15m}
+  worker-execution:
+    stale-timeout: ${APP_WORKER_EXECUTION_STALE_TIMEOUT:2m}
+    reconcile-interval: ${APP_WORKER_EXECUTION_RECONCILE_INTERVAL:30s}

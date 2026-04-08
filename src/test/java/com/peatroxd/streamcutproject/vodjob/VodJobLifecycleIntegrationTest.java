@@ -15,6 +15,9 @@ import com.peatroxd.streamcutproject.vodjob.event.JobEventRepository;
 import com.peatroxd.streamcutproject.workerdispatch.WorkerExportResultPayload;
 import com.peatroxd.streamcutproject.workerdispatch.WorkerFailureReportPayload;
 import com.peatroxd.streamcutproject.workerdispatch.WorkerProcessingResultPayload;
+import com.peatroxd.streamcutproject.workerexecution.WorkerExecution;
+import com.peatroxd.streamcutproject.workerexecution.WorkerExecutionRepository;
+import com.peatroxd.streamcutproject.workerexecution.WorkerTaskType;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -79,6 +82,9 @@ class VodJobLifecycleIntegrationTest {
     @Autowired
     private StorageService storageService;
 
+    @Autowired
+    private WorkerExecutionRepository workerExecutionRepository;
+
     @Test
     void createUploadJobQueuesJobPersistsSourceAndWritesEvents() {
         MockMultipartFile file = new MockMultipartFile(
@@ -103,8 +109,22 @@ class VodJobLifecycleIntegrationTest {
     @Test
     void workerSuccessIngestPersistsGeneratedDataAndMarksReadyForReview() {
         VodJob job = vodJobRepository.save(newJob("https://example.com/video"));
+        job.setCurrentWorkerId("worker-1");
+        job.setStatus(JobStatus.TRANSCRIBING);
+        job.setStorageVideoPath(storageService.resolveSourceVideoPath(job.getId(), "video.mp4").toString());
+        vodJobRepository.save(job);
+        WorkerExecution processingExecution = workerExecutionRepository.save(WorkerExecution.create(
+                job,
+                job.getProcessingVersion(),
+                "worker-1",
+                "processing",
+                WorkerTaskType.ANALYZE,
+                null,
+                Instant.parse("2026-04-05T10:00:30Z")
+        ));
 
         WorkerProcessingResultPayload payload = new WorkerProcessingResultPayload(
+                processingExecution.getId(),
                 job.getId(),
                 "worker-1",
                 job.getProcessingVersion(),
@@ -134,10 +154,20 @@ class VodJobLifecycleIntegrationTest {
     void workerFailureIngestMarksJobFailedAndWritesFailureEvent() {
         VodJob job = vodJobRepository.save(newJob("https://example.com/video"));
         job.setStatus(JobStatus.TRANSCRIBING);
+        job.setCurrentWorkerId("worker-1");
         vodJobRepository.save(job);
+        WorkerExecution processingExecution = workerExecutionRepository.save(WorkerExecution.create(
+                job,
+                job.getProcessingVersion(),
+                "worker-1",
+                "processing",
+                WorkerTaskType.ANALYZE,
+                null,
+                Instant.parse("2026-04-05T10:00:30Z")
+        ));
 
         vodJobService.reportWorkerFailure(
-                new WorkerFailureReportPayload(job.getId(), "worker-1", job.getProcessingVersion(), "TRANSCRIBING", "transcription failed")
+                new WorkerFailureReportPayload(processingExecution.getId(), job.getId(), "worker-1", job.getProcessingVersion(), "TRANSCRIBING", "transcription failed")
         );
 
         VodJob failedJob = vodJobRepository.findById(job.getId()).orElseThrow();
@@ -162,9 +192,21 @@ class VodJobLifecycleIntegrationTest {
         vodJobService.startExport(savedCandidate.getId());
         VodJob exportingJob = vodJobRepository.findById(job.getId()).orElseThrow();
         assertThat(exportingJob.getStatus()).isEqualTo(JobStatus.EXPORTING_CLIP);
+        exportingJob.setCurrentWorkerId("worker-1");
+        vodJobRepository.save(exportingJob);
+        WorkerExecution exportExecution = workerExecutionRepository.save(WorkerExecution.create(
+                exportingJob,
+                exportingJob.getProcessingVersion(),
+                "worker-1",
+                "processing",
+                WorkerTaskType.EXPORT,
+                savedCandidate.getId(),
+                Instant.parse("2026-04-05T10:01:00Z")
+        ));
 
         vodJobService.ingestWorkerExportResult(
                 new WorkerExportResultPayload(
+                        exportExecution.getId(),
                         job.getId(),
                         "worker-1",
                         job.getProcessingVersion(),

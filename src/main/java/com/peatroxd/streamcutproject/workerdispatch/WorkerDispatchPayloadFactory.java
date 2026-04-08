@@ -11,8 +11,9 @@ public class WorkerDispatchPayloadFactory {
     private static final String TASK_ANALYZE = "ANALYZE";
     private static final String TASK_EXPORT = "EXPORT";
 
-    public WorkerDispatchPayload fromDownloadJob(VodJob job) {
+    public WorkerDispatchPayload fromDownloadJob(VodJob job, Long executionId) {
         return new WorkerDispatchPayload(
+                executionId,
                 job.getId(),
                 job.getProcessingVersion(),
                 TASK_DOWNLOAD,
@@ -26,13 +27,14 @@ public class WorkerDispatchPayloadFactory {
         );
     }
 
-    public WorkerDispatchPayload fromAnalyzeJob(VodJob job) {
+    public WorkerDispatchPayload fromAnalyzeJob(VodJob job, Long executionId) {
         String videoPath = job.getStorageVideoPath();
         if (videoPath == null || videoPath.isBlank()) {
             throw new IllegalStateException("Job " + job.getId() + " has no storage video path");
         }
 
         return new WorkerDispatchPayload(
+                executionId,
                 job.getId(),
                 job.getProcessingVersion(),
                 TASK_ANALYZE,
@@ -46,7 +48,7 @@ public class WorkerDispatchPayloadFactory {
         );
     }
 
-    public WorkerDispatchPayload fromExportCandidate(ClipCandidate candidate) {
+    public WorkerDispatchPayload fromExportCandidate(ClipCandidate candidate, Long executionId) {
         VodJob job = candidate.getVodJob();
         String videoPath = job.getStorageVideoPath();
         if (videoPath == null || videoPath.isBlank()) {
@@ -57,6 +59,7 @@ public class WorkerDispatchPayloadFactory {
         }
 
         return new WorkerDispatchPayload(
+                executionId,
                 job.getId(),
                 job.getProcessingVersion(),
                 TASK_EXPORT,

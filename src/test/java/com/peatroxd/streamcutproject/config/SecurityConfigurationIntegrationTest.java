@@ -104,7 +104,8 @@ class SecurityConfigurationIntegrationTest {
                         null,
                         null,
                         5,
-                        "Queued for download worker"
+                        "Queued for download worker",
+                        null
                 )
         ));
         when(vodJobService.createUrlJob(anyString())).thenReturn(
@@ -144,6 +145,7 @@ class SecurityConfigurationIntegrationTest {
     void allowsUnauthenticatedWorkerPostWithoutCsrf() throws Exception {
         when(vodJobService.claimNextQueuedJob("worker-1", "processing")).thenReturn(
                 java.util.Optional.of(new WorkerDispatchPayload(
+                        11L,
                         7L,
                         2L,
                         "ANALYZE",

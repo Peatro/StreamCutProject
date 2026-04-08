@@ -49,6 +49,7 @@ class WorkerPollingLoop:
                     claimed_job,
                     lambda status, progress_percent, message: self.backend_client.submit_progress(
                         WorkerProgressPayload(
+                            execution_id=claimed_job.execution_id,
                             job_id=claimed_job.job_id,
                             worker_id=self.worker_id,
                             processing_version=claimed_job.processing_version,
@@ -93,6 +94,7 @@ class WorkerPollingLoop:
                 )
                 self.backend_client.submit_failure(
                     WorkerFailurePayload(
+                        execution_id=claimed_job.execution_id,
                         job_id=claimed_job.job_id,
                         worker_id=self.worker_id,
                         processing_version=claimed_job.processing_version,
@@ -106,6 +108,7 @@ class WorkerPollingLoop:
                 logging.exception("Worker crashed unexpectedly while running job %s", claimed_job.job_id)
                 self.backend_client.submit_failure(
                     WorkerFailurePayload(
+                        execution_id=claimed_job.execution_id,
                         job_id=claimed_job.job_id,
                         worker_id=self.worker_id,
                         processing_version=claimed_job.processing_version,

@@ -34,6 +34,7 @@ class BackendClient:
             return None
 
         return ClaimedJob(
+            execution_id=int(response["executionId"]),
             job_id=int(response["jobId"]),
             processing_version=int(response["processingVersion"]),
             task_type=str(response["taskType"]),
