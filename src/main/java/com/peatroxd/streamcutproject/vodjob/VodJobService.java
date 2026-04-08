@@ -45,6 +45,7 @@ import com.peatroxd.streamcutproject.workerexecution.WorkerTaskType;
 import com.peatroxd.streamcutproject.workertask.WorkerTask;
 import com.peatroxd.streamcutproject.workertask.WorkerTaskRepository;
 import com.peatroxd.streamcutproject.workertask.WorkerTaskStatus;
+import io.micrometer.core.instrument.MeterRegistry;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -52,6 +53,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -93,6 +96,14 @@ public class VodJobService {
     private static final String EVENT_JOB_FAILED = "JOB_FAILED";
     private static final String EVENT_EXPORT_STARTED = "EXPORT_STARTED";
     private static final String EVENT_EXPORT_COMPLETED = "EXPORT_COMPLETED";
+    private static final String METRIC_JOBS_CREATED = "streamcut.jobs.created";
+    private static final String METRIC_JOBS_COMPLETED = "streamcut.jobs.completed";
+    private static final String METRIC_JOBS_FAILED = "streamcut.jobs.failed";
+    private static final String METRIC_JOBS_RETRIED = "streamcut.jobs.retried";
+    private static final String METRIC_JOBS_CANCELED = "streamcut.jobs.canceled";
+    private static final String METRIC_STALE_RECOVERY_ACTIONS = "streamcut.recovery.stale.actions";
+    private static final String FAILED_REASON_WORKER_FAILURE = "worker_failure";
+    private static final String FAILED_REASON_OPERATOR_FORCE = "operator_force";
     private static final Set<JobStatus> RETRYABLE_STATUSES = EnumSet.of(
             JobStatus.FAILED
     );
@@ -124,6 +135,7 @@ public class VodJobService {
     private final WorkerExecutionRepository workerExecutionRepository;
     private final WorkerDispatchPort workerDispatchPort;
     private final WorkerDispatchPayloadFactory workerDispatchPayloadFactory;
+    private final MeterRegistry meterRegistry;
 
     @Transactional
     public JobSummaryResponse createUrlJob(String url) {
@@ -286,6 +298,7 @@ public class VodJobService {
                 "Operator retried the failed job and requeued it for download",
                 now
         ));
+        incrementCounterAfterCommit(METRIC_JOBS_RETRIED);
         log.info("job_retried jobId={} processingVersion={} status={}", job.getId(), job.getProcessingVersion(), job.getStatus());
 
         return toJobDetailResponse(job);
@@ -313,6 +326,7 @@ public class VodJobService {
                 "Operator canceled the queued job",
                 now
         ));
+        incrementCounterAfterCommit(METRIC_JOBS_CANCELED);
         log.warn("job_canceled jobId={} processingVersion={} status={}", job.getId(), job.getProcessingVersion(), job.getStatus());
 
         return toJobDetailResponse(job);
@@ -347,6 +361,7 @@ public class VodJobService {
                 "Operator force-failed the job while it was in status " + forcedFromStatus,
                 now
         ));
+        incrementCounterAfterCommit(METRIC_JOBS_FAILED, "reason", FAILED_REASON_OPERATOR_FORCE);
         log.warn("job_force_failed jobId={} forcedFromStatus={} processingVersion={}", job.getId(), forcedFromStatus, job.getProcessingVersion());
 
         return toJobDetailResponse(job);
@@ -700,6 +715,7 @@ public class VodJobService {
                 "Worker processing completed and job is ready for review",
                 now
         ));
+        incrementCounterAfterCommit(METRIC_JOBS_COMPLETED);
         log.info(
                 "job_result_ingested jobId={} status={} transcriptSegments={} silenceSegments={} analysisWindows={} clipCandidates={}",
                 job.getId(),
@@ -857,6 +873,7 @@ public class VodJobService {
                 "Worker reported failure in state " + payload.failedState() + ": " + payload.message(),
                 now
         ));
+        incrementCounterAfterCommit(METRIC_JOBS_FAILED, "reason", FAILED_REASON_WORKER_FAILURE);
         log.warn(
                 "job_failed jobId={} failedState={} status={} message={}",
                 job.getId(),
@@ -1031,16 +1048,26 @@ public class VodJobService {
     }
 
     @Transactional
-    public void recoverStaleExecutions() {
-        recoverStaleExecutions(Instant.now());
+    public int recoverStaleExecutions() {
+        int recoveredCount = recoverStaleExecutions(Instant.now());
+        if (recoveredCount > 0) {
+            incrementCounterAfterCommit(METRIC_STALE_RECOVERY_ACTIONS, recoveredCount);
+        }
+        return recoveredCount;
     }
 
-    private void recoverStaleExecutions(Instant now) {
-        workerTaskRepository.findAllByStatusInOrderByIdAsc(
+    private int recoverStaleExecutions(Instant now) {
+        int recoveredCount = 0;
+        for (WorkerTask task : workerTaskRepository.findAllByStatusInOrderByIdAsc(
                 List.of(WorkerTaskStatus.CLAIMED, WorkerTaskStatus.RUNNING)
-        ).stream()
-                .filter(task -> isTaskStale(task, now))
-                .forEach(task -> recoverStaleTask(task, now));
+        )) {
+            if (!isTaskStale(task, now)) {
+                continue;
+            }
+            recoverStaleTask(task, now);
+            recoveredCount++;
+        }
+        return recoveredCount;
     }
 
     private void recoverStaleTask(WorkerTask task, Instant now) {
@@ -1212,6 +1239,7 @@ public class VodJobService {
                 "Job queued for download worker",
                 queuedAt
         ));
+        incrementCounterAfterCommit(METRIC_JOBS_CREATED, "source_type", queuedJob.getSourceType());
         return queuedJob;
     }
 
@@ -1394,6 +1422,25 @@ public class VodJobService {
         }
         task.markFailed(now, failureSummary);
         workerTaskRepository.save(task);
+    }
+
+    private void incrementCounterAfterCommit(String metricName, String... tags) {
+        incrementCounterAfterCommit(metricName, 1.0d, tags);
+    }
+
+    private void incrementCounterAfterCommit(String metricName, double amount, String... tags) {
+        Runnable incrementer = () -> meterRegistry.counter(metricName, tags).increment(amount);
+        if (!TransactionSynchronizationManager.isSynchronizationActive()
+                || !TransactionSynchronizationManager.isActualTransactionActive()) {
+            incrementer.run();
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                incrementer.run();
+            }
+        });
     }
 
     private static String normalizeWorkerRole(String workerRole) {

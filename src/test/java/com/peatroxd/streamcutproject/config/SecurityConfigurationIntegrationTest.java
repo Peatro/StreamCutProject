@@ -20,6 +20,8 @@ import org.springframework.web.context.WebApplicationContext;
 import java.time.Instant;
 import java.util.List;
 
+import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.hasItem;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
@@ -83,6 +85,17 @@ class SecurityConfigurationIntegrationTest {
     }
 
     @Test
+    void redirectsUnauthenticatedActuatorAccessToLoginPage() throws Exception {
+        mockMvc.perform(get("/actuator/metrics"))
+                .andExpect(status().isFound())
+                .andExpect(redirectedUrl("/login.html"));
+
+        mockMvc.perform(get("/actuator/prometheus"))
+                .andExpect(status().isFound())
+                .andExpect(redirectedUrl("/login.html"));
+    }
+
+    @Test
     void exposesCsrfBootstrapPublicly() throws Exception {
         mockMvc.perform(get("/csrf"))
                 .andExpect(status().isOk())
@@ -128,15 +141,7 @@ class SecurityConfigurationIntegrationTest {
                 new JobSummaryResponse(2L, "QUEUED_FOR_DOWNLOAD", "URL", "https://example.com/video", null, null, null)
         );
 
-        MockHttpSession session = (MockHttpSession) mockMvc.perform(post("/login")
-                        .with(csrf())
-                        .param("username", "operator")
-                        .param("password", "operator-password"))
-                .andExpect(status().isFound())
-                .andExpect(redirectedUrl("/index.html"))
-                .andReturn()
-                .getRequest()
-                .getSession(false);
+        MockHttpSession session = operatorSession();
 
         assertThat(session).isNotNull();
 
@@ -155,6 +160,22 @@ class SecurityConfigurationIntegrationTest {
                                 }
                                 """))
                 .andExpect(status().isCreated());
+    }
+
+    @Test
+    void authenticatesOperatorAndAllowsProtectedActuatorAccess() throws Exception {
+        MockHttpSession session = operatorSession();
+
+        mockMvc.perform(get("/actuator/metrics").session(session))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.names", hasItem("streamcut.queue.depth")))
+                .andExpect(jsonPath("$.names", hasItem("streamcut.jobs.active")));
+
+        mockMvc.perform(get("/actuator/prometheus").session(session))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.TEXT_PLAIN))
+                .andExpect(content().string(containsString("streamcut_queue_depth")))
+                .andExpect(content().string(containsString("streamcut_jobs_active")));
     }
 
     @Test
@@ -187,5 +208,17 @@ class SecurityConfigurationIntegrationTest {
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
                 .andExpect(jsonPath("$.jobId").value(7))
                 .andExpect(jsonPath("$.taskType").value("ANALYZE"));
+    }
+
+    private MockHttpSession operatorSession() throws Exception {
+        return (MockHttpSession) mockMvc.perform(post("/login")
+                        .with(csrf())
+                        .param("username", "operator")
+                        .param("password", "operator-password"))
+                .andExpect(status().isFound())
+                .andExpect(redirectedUrl("/index.html"))
+                .andReturn()
+                .getRequest()
+                .getSession(false);
     }
 }
