@@ -1,3 +1,5 @@
+import org.gradle.api.tasks.testing.Test
+
 plugins {
     java
     id("org.springframework.boot") version "4.0.5"
@@ -17,6 +19,18 @@ java {
 repositories {
     mavenCentral()
 }
+
+val e2eTest by sourceSets.creating {
+    java.srcDir("src/e2eTest/java")
+    resources.srcDir("src/e2eTest/resources")
+    compileClasspath += sourceSets.main.get().output + configurations.testRuntimeClasspath.get()
+    runtimeClasspath += output + compileClasspath
+}
+
+configurations[e2eTest.implementationConfigurationName].extendsFrom(configurations.testImplementation.get())
+configurations[e2eTest.runtimeOnlyConfigurationName].extendsFrom(configurations.testRuntimeOnly.get())
+configurations[e2eTest.compileOnlyConfigurationName].extendsFrom(configurations.testCompileOnly.get())
+configurations[e2eTest.annotationProcessorConfigurationName].extendsFrom(configurations.testAnnotationProcessor.get())
 
 dependencies {
     implementation("org.springframework.boot:spring-boot-starter")
@@ -42,8 +56,33 @@ dependencies {
     testImplementation("org.springframework.security:spring-security-test")
     testRuntimeOnly("com.h2database:h2")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+    "e2eTestImplementation"("com.codeborne:selenide:7.15.0")
 }
 
-tasks.withType<Test> {
+tasks.withType<Test>().configureEach {
     useJUnitPlatform()
+}
+
+val forwardedE2eProperties = listOf(
+    "selenide.baseUrl",
+    "selenide.browser",
+    "selenide.browserSize",
+    "selenide.headless",
+    "selenide.timeout",
+    "e2e.username",
+    "e2e.password"
+)
+
+tasks.register<Test>("e2eTest") {
+    description = "Runs browser end-to-end tests with Selenide."
+    group = "verification"
+    testClassesDirs = e2eTest.output.classesDirs
+    classpath = e2eTest.runtimeClasspath
+    shouldRunAfter(tasks.named("test"))
+    reports.html.outputLocation.set(layout.buildDirectory.dir("reports/e2eTests"))
+    systemProperties(
+        forwardedE2eProperties.mapNotNull { propertyName ->
+            System.getProperty(propertyName)?.let { propertyName to it }
+        }.toMap()
+    )
 }

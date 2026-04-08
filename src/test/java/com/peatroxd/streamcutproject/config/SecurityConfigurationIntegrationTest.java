@@ -17,7 +17,9 @@ import org.springframework.mock.web.MockHttpSession;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.web.context.WebApplicationContext;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.util.Base64;
 import java.util.List;
 
 import static org.hamcrest.Matchers.containsString;
@@ -163,6 +165,33 @@ class SecurityConfigurationIntegrationTest {
     }
 
     @Test
+    void authenticatesOperatorWithBasicAuthAndAllowsProtectedApiAccess() throws Exception {
+        when(vodJobService.listJobs()).thenReturn(List.of(
+                new JobListItemResponse(
+                        1L,
+                        "URL",
+                        "https://example.com/video",
+                        null,
+                        "QUEUED_FOR_DOWNLOAD",
+                        Instant.parse("2026-04-06T10:00:00Z"),
+                        Instant.parse("2026-04-06T10:00:05Z"),
+                        null,
+                        null,
+                        5,
+                        "Queued for download worker",
+                        null,
+                        null
+                )
+        ));
+
+        mockMvc.perform(get("/api/jobs")
+                        .header("Authorization", basicAuthHeader("operator", "operator-password")))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$[0].id").value(1));
+    }
+
+    @Test
     void authenticatesOperatorAndAllowsProtectedActuatorAccess() throws Exception {
         MockHttpSession session = operatorSession();
 
@@ -220,5 +249,12 @@ class SecurityConfigurationIntegrationTest {
                 .andReturn()
                 .getRequest()
                 .getSession(false);
+    }
+
+    private static String basicAuthHeader(String username, String password) {
+        String credentials = username + ":" + password;
+        String encodedCredentials = Base64.getEncoder()
+                .encodeToString(credentials.getBytes(StandardCharsets.UTF_8));
+        return "Basic " + encodedCredentials;
     }
 }
