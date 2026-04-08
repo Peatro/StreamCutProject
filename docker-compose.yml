@@ -61,16 +61,35 @@ services:
     volumes:
       - streamcut-data:/data
 
-  worker:
+  download-worker:
     build:
       context: ./worker
       dockerfile: Dockerfile
     environment:
+      BACKEND_BASE_URL: http://backend:8080
       APP_STORAGE_LOCAL_ROOT: /data/storage
+      WORKER_ID: download-worker-1
+      WORKER_ROLE: download
       PYTHONUNBUFFERED: "1"
     depends_on:
-      postgres:
-        condition: service_healthy
+      backend:
+        condition: service_started
+    volumes:
+      - streamcut-data:/data
+
+  processing-worker:
+    build:
+      context: ./worker
+      dockerfile: Dockerfile
+    environment:
+      BACKEND_BASE_URL: http://backend:8080
+      APP_STORAGE_LOCAL_ROOT: /data/storage
+      WORKER_ID: processing-worker-1
+      WORKER_ROLE: processing
+      PYTHONUNBUFFERED: "1"
+    depends_on:
+      backend:
+        condition: service_started
     volumes:
       - streamcut-data:/data
 

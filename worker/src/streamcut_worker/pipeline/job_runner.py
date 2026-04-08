@@ -2,11 +2,17 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Callable
 
 from streamcut_worker.analysis import CandidateAnalysisRequest, SlidingWindowCandidateAnalysisService
 from streamcut_worker.audio import AudioExtractionRequest, FfmpegAudioExtractionService
 from streamcut_worker.export import ClipExportRequest, FfmpegClipExportService
-from streamcut_worker.models import ClaimedJob, WorkerExportCompletionPayload, WorkerProcessingPayload
+from streamcut_worker.models import (
+    ClaimedJob,
+    WorkerDownloadCompletionPayload,
+    WorkerExportCompletionPayload,
+    WorkerProcessingPayload,
+)
 from streamcut_worker.services.source_materializer import SourceMaterializationError, SourceMaterializer
 from streamcut_worker.silence import FfmpegSilenceDetectionService, SilenceDetectionRequest
 from streamcut_worker.transcription import (
@@ -33,18 +39,43 @@ class WorkerJobRunner:
     export_service: FfmpegClipExportService
     emotion_keywords: tuple[str, ...] = field(default_factory=tuple)
 
-    def run(self, job: ClaimedJob) -> WorkerProcessingPayload | WorkerExportCompletionPayload:
-        if job.task_type == "EXPORT":
-            return self._export(job)
+    def run(
+        self,
+        job: ClaimedJob,
+        on_progress: Callable[[str, int, str], None] | None = None,
+        *,
+        worker_id: str,
+    ) -> WorkerDownloadCompletionPayload | WorkerProcessingPayload | WorkerExportCompletionPayload:
+        if job.task_type == "DOWNLOAD":
+            self._notify_progress(on_progress, "DOWNLOADING", 18, "Download worker is materializing the source video")
+            source_video_path = self._materialize_source(job)
+            return WorkerDownloadCompletionPayload(
+                job_id=job.job_id,
+                worker_id=worker_id,
+                processing_version=job.processing_version,
+                video_path=str(source_video_path),
+            )
 
-        source_video_path = self._materialize_source(job)
+        if job.task_type == "EXPORT":
+            if on_progress is not None:
+                on_progress("EXPORTING_CLIP", 92, "Worker is exporting the approved clip")
+            return self._export(job, worker_id)
+
+        source_video_path = self._resolve_analysis_source(job)
+        self._notify_progress(on_progress, "EXTRACTING_AUDIO", 36, "Processing worker is extracting the audio track")
         audio_result = self._extract_audio(source_video_path)
+        self._notify_progress(on_progress, "TRANSCRIBING", 48, "Worker is transcribing the audio")
         transcription_result = self._transcribe(job, audio_result.audio_path)
+        self._notify_progress(on_progress, "DETECTING_SILENCE", 68, "Worker is detecting silence spans")
         silence_result = self._detect_silence(source_video_path)
+        self._notify_progress(on_progress, "ANALYZING_WINDOWS", 84, "Worker is scoring sliding analysis windows")
         analysis_result = self._analyze(job, transcription_result, silence_result)
+        self._notify_progress(on_progress, "GENERATING_CANDIDATES", 94, "Worker is assembling clip candidates")
 
         return WorkerProcessingPayload(
             job_id=job.job_id,
+            worker_id=worker_id,
+            processing_version=job.processing_version,
             duration_sec=max(0, int(round(transcription_result.duration_sec))),
             language=transcription_result.language,
             video_path=str(source_video_path),
@@ -89,7 +120,7 @@ class WorkerJobRunner:
             ],
         )
 
-    def _export(self, job: ClaimedJob) -> WorkerExportCompletionPayload:
+    def _export(self, job: ClaimedJob, worker_id: str) -> WorkerExportCompletionPayload:
         source_video_path = self._materialize_source(job)
         if job.candidate_id is None or job.clip_start_sec is None or job.clip_end_sec is None:
             raise WorkerJobRunnerError("EXPORTING_CLIP", f"Export job {job.job_id} is missing clip boundaries")
@@ -109,15 +140,33 @@ class WorkerJobRunner:
 
         return WorkerExportCompletionPayload(
             job_id=job.job_id,
+            worker_id=worker_id,
+            processing_version=job.processing_version,
             candidate_id=job.candidate_id,
             artifact_path=str(export_result.artifact_path),
         )
+
+    @staticmethod
+    def _notify_progress(
+        on_progress: Callable[[str, int, str], None] | None,
+        status: str,
+        progress_percent: int,
+        message: str,
+    ) -> None:
+        if on_progress is None:
+            return
+        on_progress(status, progress_percent, message)
 
     def _materialize_source(self, job: ClaimedJob) -> Path:
         try:
             return self.source_materializer.materialize(job)
         except SourceMaterializationError as exc:
             raise WorkerJobRunnerError(exc.failed_state, str(exc)) from exc
+
+    def _resolve_analysis_source(self, job: ClaimedJob) -> Path:
+        if job.video_path is None:
+            raise WorkerJobRunnerError("EXTRACTING_AUDIO", f"Analyze job {job.job_id} is missing videoPath")
+        return job.video_path
 
     def _extract_audio(self, source_video_path: Path):
         try:

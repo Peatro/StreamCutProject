@@ -14,7 +14,7 @@ class WorkerDispatchPayloadFactoryTest {
     private final WorkerDispatchPayloadFactory factory = new WorkerDispatchPayloadFactory();
 
     @Test
-    void buildsPayloadFromJobContractFields() {
+    void buildsAnalyzePayloadFromJobContractFields() {
         VodJob job = new VodJob();
         job.setId(42L);
         job.setSourceType("URL");
@@ -24,7 +24,7 @@ class WorkerDispatchPayloadFactoryTest {
         job.setCreatedAt(Instant.parse("2026-04-05T10:00:00Z"));
         job.setUpdatedAt(Instant.parse("2026-04-05T10:00:00Z"));
 
-        WorkerDispatchPayload payload = factory.fromJob(job);
+        WorkerDispatchPayload payload = factory.fromAnalyzeJob(job);
 
         assertThat(payload.jobId()).isEqualTo(42L);
         assertThat(payload.taskType()).isEqualTo("ANALYZE");
@@ -39,22 +39,22 @@ class WorkerDispatchPayloadFactoryTest {
         job.setId(42L);
         job.setSourceType("FILE");
 
-        assertThatThrownBy(() -> factory.fromJob(job))
+        assertThatThrownBy(() -> factory.fromAnalyzeJob(job))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("has no storage video path");
     }
 
     @Test
-    void allowsUrlJobsWithoutStorageVideoPath() {
+    void buildsDownloadPayloadWithoutStorageVideoPath() {
         VodJob job = new VodJob();
         job.setId(42L);
         job.setSourceType("URL");
         job.setSourceUrl("https://example.com/video");
 
-        WorkerDispatchPayload payload = factory.fromJob(job);
+        WorkerDispatchPayload payload = factory.fromDownloadJob(job);
 
         assertThat(payload.jobId()).isEqualTo(42L);
-        assertThat(payload.taskType()).isEqualTo("ANALYZE");
+        assertThat(payload.taskType()).isEqualTo("DOWNLOAD");
         assertThat(payload.videoPath()).isNull();
         assertThat(payload.sourceUrl()).isEqualTo("https://example.com/video");
     }

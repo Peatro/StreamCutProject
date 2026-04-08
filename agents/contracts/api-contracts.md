@@ -34,6 +34,21 @@ Returns a list of jobs.
 
 Returns job details.
 
+Current detail responses also expose worker runtime fields such as:
+- `processingVersion`
+- `currentWorkerId`
+- `lastWorkerHeartbeatAt`
+- `progressPercent`
+- `progressMessage`
+
+### POST /api/jobs/{id}/cancel
+
+Cancels the current queued or in-flight worker run.
+
+### POST /api/jobs/{id}/restart
+
+Invalidates the current worker lease and starts a fresh worker attempt.
+
 ## Transcript
 
 ### GET /api/jobs/{id}/transcript
@@ -81,6 +96,7 @@ Response `200`:
 ```json
 {
   "jobId": 0,
+  "processingVersion": 1,
   "taskType": "ANALYZE_OR_EXPORT",
   "videoPath": "string or null",
   "sourceType": "URL_OR_FILE",
@@ -103,6 +119,8 @@ Request:
 ```json
 {
   "jobId": 0,
+  "workerId": "string",
+  "processingVersion": 1,
   "durationSec": 0,
   "language": "string",
   "videoPath": "string or null",
@@ -122,6 +140,30 @@ Response:
 }
 ```
 
+### POST /api/internal/worker/progress
+
+Accepts one worker progress heartbeat and stage update.
+
+Request:
+```json
+{
+  "jobId": 0,
+  "workerId": "string",
+  "processingVersion": 1,
+  "status": "TRANSCRIBING",
+  "progressPercent": 48,
+  "message": "string"
+}
+```
+
+Response:
+```json
+{
+  "jobId": 0,
+  "status": "TRANSCRIBING"
+}
+```
+
 ### POST /api/internal/worker/exports/results
 
 Accepts one successful worker export completion payload.
@@ -130,6 +172,8 @@ Request:
 ```json
 {
   "jobId": 0,
+  "workerId": "string",
+  "processingVersion": 1,
   "candidateId": 0,
   "artifactPath": "string"
 }
@@ -151,6 +195,8 @@ Request:
 ```json
 {
   "jobId": 0,
+  "workerId": "string",
+  "processingVersion": 1,
   "failedState": "DOWNLOADING",
   "message": "string"
 }

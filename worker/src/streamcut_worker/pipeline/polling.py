@@ -5,7 +5,12 @@ import time
 from dataclasses import dataclass
 from typing import Callable
 
-from streamcut_worker.models import WorkerExportCompletionPayload, WorkerFailurePayload
+from streamcut_worker.models import (
+    WorkerDownloadCompletionPayload,
+    WorkerExportCompletionPayload,
+    WorkerFailurePayload,
+    WorkerProgressPayload,
+)
 from streamcut_worker.pipeline.job_runner import WorkerJobRunner, WorkerJobRunnerError
 from streamcut_worker.services.backend_client import BackendClient, BackendTransportError
 
@@ -15,12 +20,13 @@ class WorkerPollingLoop:
     backend_client: BackendClient
     job_runner: WorkerJobRunner
     worker_id: str
+    worker_role: str
     poll_interval_sec: float = 5.0
 
     def run_forever(self, should_continue: Callable[[], bool]) -> None:
         while should_continue():
             try:
-                claimed_job = self.backend_client.claim_next_job(self.worker_id)
+                claimed_job = self.backend_client.claim_next_job(self.worker_id, self.worker_role)
             except BackendTransportError as exc:
                 logging.warning("Worker claim failed: %s", exc)
                 time.sleep(self.poll_interval_sec)
@@ -39,8 +45,28 @@ class WorkerPollingLoop:
             )
 
             try:
-                result = self.job_runner.run(claimed_job)
-                if isinstance(result, WorkerExportCompletionPayload):
+                result = self.job_runner.run(
+                    claimed_job,
+                    lambda status, progress_percent, message: self.backend_client.submit_progress(
+                        WorkerProgressPayload(
+                            job_id=claimed_job.job_id,
+                            worker_id=self.worker_id,
+                            processing_version=claimed_job.processing_version,
+                            status=status,
+                            progress_percent=progress_percent,
+                            message=message,
+                        )
+                    ),
+                    worker_id=self.worker_id,
+                )
+                if isinstance(result, WorkerDownloadCompletionPayload):
+                    logging.info(
+                        "download_result_ready jobId=%s videoPath=%s",
+                        result.job_id,
+                        result.video_path,
+                    )
+                    self.backend_client.submit_download_result(result)
+                elif isinstance(result, WorkerExportCompletionPayload):
                     logging.info(
                         "export_result_ready jobId=%s candidateId=%s artifactPath=%s",
                         result.job_id,
@@ -68,6 +94,8 @@ class WorkerPollingLoop:
                 self.backend_client.submit_failure(
                     WorkerFailurePayload(
                         job_id=claimed_job.job_id,
+                        worker_id=self.worker_id,
+                        processing_version=claimed_job.processing_version,
                         failed_state=exc.failed_state,
                         message=str(exc),
                     )
@@ -79,6 +107,8 @@ class WorkerPollingLoop:
                 self.backend_client.submit_failure(
                     WorkerFailurePayload(
                         job_id=claimed_job.job_id,
+                        worker_id=self.worker_id,
+                        processing_version=claimed_job.processing_version,
                         failed_state="WORKER_INTERNAL",
                         message=f"Unexpected worker failure: {exc}",
                     )

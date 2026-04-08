@@ -61,6 +61,7 @@ class SourceMaterializerTests(unittest.TestCase):
                 result = materializer.materialize(
                     ClaimedJob(
                         job_id=11,
+                        processing_version=1,
                         task_type="ANALYZE",
                         source_type="URL",
                         video_path=None,
@@ -85,6 +86,7 @@ class SourceMaterializerTests(unittest.TestCase):
             result = materializer.materialize(
                 ClaimedJob(
                     job_id=12,
+                    processing_version=1,
                     task_type="ANALYZE",
                     source_type="URL",
                     video_path=None,
@@ -115,6 +117,7 @@ class SourceMaterializerTests(unittest.TestCase):
                 result = materializer.materialize(
                     ClaimedJob(
                         job_id=13,
+                        processing_version=1,
                         task_type="ANALYZE",
                         source_type="URL",
                         video_path=None,
@@ -142,6 +145,7 @@ class SourceMaterializerTests(unittest.TestCase):
                     materializer.materialize(
                         ClaimedJob(
                             job_id=14,
+                            processing_version=1,
                             task_type="ANALYZE",
                             source_type="URL",
                             video_path=None,

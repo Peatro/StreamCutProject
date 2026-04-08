@@ -33,6 +33,7 @@ public interface ClipCandidateRepository extends JpaRepository<ClipCandidate, Lo
             select c
             from ClipCandidate c
             where c.exportStatus = :exportStatus
+              and c.vodJob.currentWorkerId is null
             order by c.vodJob.updatedAt asc, c.id asc
             """)
     List<ClipCandidate> findPendingExportsForUpdate(

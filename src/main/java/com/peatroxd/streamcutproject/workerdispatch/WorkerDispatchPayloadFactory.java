@@ -7,17 +7,34 @@ import org.springframework.stereotype.Component;
 @Component
 public class WorkerDispatchPayloadFactory {
 
+    private static final String TASK_DOWNLOAD = "DOWNLOAD";
     private static final String TASK_ANALYZE = "ANALYZE";
     private static final String TASK_EXPORT = "EXPORT";
 
-    public WorkerDispatchPayload fromJob(VodJob job) {
+    public WorkerDispatchPayload fromDownloadJob(VodJob job) {
+        return new WorkerDispatchPayload(
+                job.getId(),
+                job.getProcessingVersion(),
+                TASK_DOWNLOAD,
+                job.getStorageVideoPath(),
+                job.getSourceType(),
+                job.getSourceUrl(),
+                null,
+                null,
+                null,
+                null
+        );
+    }
+
+    public WorkerDispatchPayload fromAnalyzeJob(VodJob job) {
         String videoPath = job.getStorageVideoPath();
-        if ("FILE".equals(job.getSourceType()) && (videoPath == null || videoPath.isBlank())) {
+        if (videoPath == null || videoPath.isBlank()) {
             throw new IllegalStateException("Job " + job.getId() + " has no storage video path");
         }
 
         return new WorkerDispatchPayload(
                 job.getId(),
+                job.getProcessingVersion(),
                 TASK_ANALYZE,
                 videoPath,
                 job.getSourceType(),
@@ -41,6 +58,7 @@ public class WorkerDispatchPayloadFactory {
 
         return new WorkerDispatchPayload(
                 job.getId(),
+                job.getProcessingVersion(),
                 TASK_EXPORT,
                 videoPath,
                 job.getSourceType(),

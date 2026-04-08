@@ -91,7 +91,7 @@ class VodJobApiIntegrationTest {
                                 {"url":"https://example.com/video"}
                                 """))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.status").value("QUEUED"))
+                .andExpect(jsonPath("$.status").value("QUEUED_FOR_DOWNLOAD"))
                 .andExpect(jsonPath("$.sourceType").value("URL"));
 
         VodJob job = vodJobRepository.findAll().getFirst();
@@ -101,9 +101,16 @@ class VodJobApiIntegrationTest {
                         .content("""
                                 {"workerId":"worker-1"}
                                 """))
+                .andExpect(status().isBadRequest());
+
+        mockMvc.perform(post("/api/internal/worker/claims/next")
+                        .contentType("application/json")
+                        .content("""
+                                {"workerId":"worker-1","workerRole":"download"}
+                                """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.jobId").value(job.getId()))
-                .andExpect(jsonPath("$.taskType").value("ANALYZE"))
+                .andExpect(jsonPath("$.taskType").value("DOWNLOAD"))
                 .andExpect(jsonPath("$.sourceType").value("URL"));
 
         mockMvc.perform(get("/api/jobs/{id}", job.getId()))
@@ -112,7 +119,7 @@ class VodJobApiIntegrationTest {
 
         assertThat(jobEventRepository.findAllByJobIdOrderByCreatedAtAscIdAsc(job.getId()))
                 .extracting(event -> event.getEventType())
-                .contains("JOB_CREATED", "JOB_QUEUED", "JOB_CLAIMED");
+                .contains("JOB_CREATED", "JOB_QUEUED_FOR_DOWNLOAD", "JOB_CLAIMED");
     }
 
     @Test
@@ -121,6 +128,8 @@ class VodJobApiIntegrationTest {
 
         vodJobService.ingestWorkerResult(new WorkerProcessingResultPayload(
                 job.getId(),
+                "worker-1",
+                job.getProcessingVersion(),
                 120L,
                 "en",
                 storageService.resolveSourceVideoPath(job.getId(), "video.mp4").toString(),
@@ -147,7 +156,7 @@ class VodJobApiIntegrationTest {
         Files.writeString(artifactPath, "artifact-bytes");
 
         vodJobService.ingestWorkerExportResult(
-                new WorkerExportResultPayload(job.getId(), candidate.getId(), artifactPath.toString())
+                new WorkerExportResultPayload(job.getId(), "worker-1", job.getProcessingVersion(), candidate.getId(), artifactPath.toString())
         );
 
         mockMvc.perform(get("/api/exports/{id}", candidate.getId()))
@@ -165,9 +174,10 @@ class VodJobApiIntegrationTest {
         VodJob job = new VodJob();
         job.setSourceType("URL");
         job.setSourceUrl(sourceUrl);
-        job.setStatus(JobStatus.QUEUED);
+        job.setStatus(JobStatus.QUEUED_FOR_DOWNLOAD);
         job.setCreatedAt(Instant.parse("2026-04-05T10:00:00Z"));
         job.setUpdatedAt(Instant.parse("2026-04-05T10:00:00Z"));
+        job.setProcessingVersion(1L);
         return job;
     }
 }

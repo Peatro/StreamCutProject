@@ -11,6 +11,8 @@ public record JobListItemResponse(
         Instant createdAt,
         Instant updatedAt,
         Long durationSec,
-        String language
+        String language,
+        Integer progressPercent,
+        String progressMessage
 ) {
 }

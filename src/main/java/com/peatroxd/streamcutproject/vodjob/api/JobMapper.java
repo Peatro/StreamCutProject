@@ -29,7 +29,9 @@ public final class JobMapper {
                 job.getCreatedAt(),
                 job.getUpdatedAt(),
                 job.getDurationSec(),
-                job.getLanguage()
+                job.getLanguage(),
+                job.getProgressPercent(),
+                job.getProgressMessage()
         );
     }
 
@@ -48,7 +50,12 @@ public final class JobMapper {
                 job.getDurationSec(),
                 job.getLanguage(),
                 job.getStorageVideoPath(),
-                job.getStorageAudioPath()
+                job.getStorageAudioPath(),
+                job.getProcessingVersion(),
+                job.getCurrentWorkerId(),
+                job.getLastWorkerHeartbeatAt(),
+                job.getProgressPercent(),
+                job.getProgressMessage()
         );
     }
 }

@@ -52,7 +52,7 @@ class VodJobControllerTest {
     void createsUrlJobWithNewStatus() throws Exception {
         when(vodJobService.createUrlJob(anyString())).thenReturn(new JobSummaryResponse(
                 1L,
-                "QUEUED",
+                "QUEUED_FOR_DOWNLOAD",
                 "URL",
                 "https://example.com/video",
                 null,
@@ -70,7 +70,7 @@ class VodJobControllerTest {
                 .andExpect(status().isCreated())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
                 .andExpect(jsonPath("$.id").value(1))
-                .andExpect(jsonPath("$.status").value("QUEUED"))
+                .andExpect(jsonPath("$.status").value("QUEUED_FOR_DOWNLOAD"))
                 .andExpect(jsonPath("$.sourceType").value("URL"))
                 .andExpect(jsonPath("$.sourceUrl").value("https://example.com/video"));
 
@@ -83,7 +83,7 @@ class VodJobControllerTest {
     void createsUploadJobWithFileSourceType() throws Exception {
         when(vodJobService.createFileJob(any(MultipartFile.class))).thenReturn(new JobSummaryResponse(
                 2L,
-                "QUEUED",
+                "QUEUED_FOR_DOWNLOAD",
                 "FILE",
                 null,
                 "video.mp4",
@@ -103,7 +103,7 @@ class VodJobControllerTest {
                 .andExpect(status().isCreated())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
                 .andExpect(jsonPath("$.id").value(2))
-                .andExpect(jsonPath("$.status").value("QUEUED"))
+                .andExpect(jsonPath("$.status").value("QUEUED_FOR_DOWNLOAD"))
                 .andExpect(jsonPath("$.sourceType").value("FILE"))
                 .andExpect(jsonPath("$.sourceUrl").isEmpty())
                 .andExpect(jsonPath("$.originalFilename").value("video.mp4"));
@@ -125,7 +125,9 @@ class VodJobControllerTest {
                         null,
                         null,
                         null,
-                        null
+                        null,
+                        0,
+                        "Pending"
                 )
         ));
 
@@ -154,7 +156,12 @@ class VodJobControllerTest {
                 null,
                 null,
                 null,
-                null
+                null,
+                1L,
+                null,
+                null,
+                5,
+                "Queued for worker processing"
         ));
 
         mockMvc.perform(get("/api/jobs/1"))
@@ -213,7 +220,7 @@ class VodJobControllerTest {
     void listsJobEvents() throws Exception {
         when(vodJobService.listJobEvents(1L)).thenReturn(List.of(
                 new JobEventResponse(10L, "JOB_CREATED", "Job created", Instant.parse("2026-04-05T10:00:01Z")),
-                new JobEventResponse(11L, "JOB_QUEUED", "Job queued", Instant.parse("2026-04-05T10:00:02Z"))
+                new JobEventResponse(11L, "JOB_QUEUED_FOR_DOWNLOAD", "Job queued for download worker", Instant.parse("2026-04-05T10:00:02Z"))
         ));
 
         mockMvc.perform(get("/api/jobs/1/events"))
@@ -222,7 +229,7 @@ class VodJobControllerTest {
                 .andExpect(jsonPath("$[0].id").value(10))
                 .andExpect(jsonPath("$[0].eventType").value("JOB_CREATED"))
                 .andExpect(jsonPath("$[1].id").value(11))
-                .andExpect(jsonPath("$[1].eventType").value("JOB_QUEUED"));
+                .andExpect(jsonPath("$[1].eventType").value("JOB_QUEUED_FOR_DOWNLOAD"));
     }
 
     @Test

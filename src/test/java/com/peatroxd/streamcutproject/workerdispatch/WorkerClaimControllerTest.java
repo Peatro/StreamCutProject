@@ -33,9 +33,10 @@ class WorkerClaimControllerTest {
 
     @Test
     void returnsClaimedJobPayloadWhenQueuedJobExists() throws Exception {
-        when(vodJobService.claimNextQueuedJob(anyString())).thenReturn(Optional.of(
+        when(vodJobService.claimNextQueuedJob(anyString(), anyString())).thenReturn(Optional.of(
                 new WorkerDispatchPayload(
                         7L,
+                        3L,
                         "ANALYZE",
                         "/data/storage/jobs/7/source/video.mp4",
                         "FILE",
@@ -51,12 +52,14 @@ class WorkerClaimControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
-                                  "workerId": "worker-1"
+                                  "workerId": "worker-1",
+                                  "workerRole": "processing"
                                 }
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
                 .andExpect(jsonPath("$.jobId").value(7))
+                .andExpect(jsonPath("$.processingVersion").value(3))
                 .andExpect(jsonPath("$.taskType").value("ANALYZE"))
                 .andExpect(jsonPath("$.videoPath").value("/data/storage/jobs/7/source/video.mp4"))
                 .andExpect(jsonPath("$.sourceType").value("FILE"));
@@ -64,13 +67,14 @@ class WorkerClaimControllerTest {
 
     @Test
     void returnsNoContentWhenNoQueuedJobExists() throws Exception {
-        when(vodJobService.claimNextQueuedJob(anyString())).thenReturn(Optional.empty());
+        when(vodJobService.claimNextQueuedJob(anyString(), anyString())).thenReturn(Optional.empty());
 
         mockMvc.perform(post("/api/internal/worker/claims/next")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
-                                  "workerId": "worker-1"
+                                  "workerId": "worker-1",
+                                  "workerRole": "download"
                                 }
                                 """))
                 .andExpect(status().isNoContent());
@@ -82,7 +86,21 @@ class WorkerClaimControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
-                                  "workerId": " "
+                                  "workerId": " ",
+                                  "workerRole": "download"
+                                }
+                                """))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void rejectsBlankWorkerRole() throws Exception {
+        mockMvc.perform(post("/api/internal/worker/claims/next")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "workerId": "worker-1",
+                                  "workerRole": " "
                                 }
                                 """))
                 .andExpect(status().isBadRequest());

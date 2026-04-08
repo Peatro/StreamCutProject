@@ -31,6 +31,7 @@ Defines the backend <-> worker transport and payload contract for the MVP.
 ```json
 {
   "jobId": 0,
+  "processingVersion": 1,
   "taskType": "ANALYZE_OR_EXPORT",
   "videoPath": "string or null",
   "sourceType": "URL_OR_FILE",
@@ -49,6 +50,8 @@ If no queued job is available, the backend returns `204 No Content`.
 ```json
 {
   "jobId": 0,
+  "workerId": "string",
+  "processingVersion": 1,
   "durationSec": 0,
   "language": "string",
   "videoPath": "string or null",
@@ -90,12 +93,28 @@ If no queued job is available, the backend returns `204 No Content`.
 }
 ```
 
+## Progress Update Payload
+`POST /api/internal/worker/progress`
+
+```json
+{
+  "jobId": 0,
+  "workerId": "string",
+  "processingVersion": 1,
+  "status": "TRANSCRIBING",
+  "progressPercent": 48,
+  "message": "string"
+}
+```
+
 ## Export Result Payload
 `POST /api/internal/worker/exports/results`
 
 ```json
 {
   "jobId": 0,
+  "workerId": "string",
+  "processingVersion": 1,
   "candidateId": 0,
   "artifactPath": "string"
 }
@@ -107,6 +126,8 @@ If no queued job is available, the backend returns `204 No Content`.
 ```json
 {
   "jobId": 0,
+  "workerId": "string",
+  "processingVersion": 1,
   "failedState": "DOWNLOADING",
   "message": "string"
 }
@@ -131,6 +152,7 @@ Returned by both success and failure callbacks.
 - `jobId` is a numeric identifier in JSON.
 - Empty collections must be returned as empty arrays, not `null`.
 - Paths must reference artifacts visible to both backend and worker through the shared storage root.
+- `processingVersion` must be echoed back unchanged from the claim payload so stale callbacks can be rejected safely.
 - `taskType` must be `ANALYZE` or `EXPORT`.
 - `videoPath` is required for `FILE` jobs and may be `null` for `URL` jobs before worker-side download.
 - `candidateId`, `clipStartSec`, `clipEndSec`, and `artifactPath` are required for `EXPORT` jobs and must be `null` for normal analysis jobs.

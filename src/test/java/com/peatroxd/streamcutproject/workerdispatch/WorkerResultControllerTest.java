@@ -38,6 +38,8 @@ class WorkerResultControllerTest {
                         .content("""
                                 {
                                   "jobId": 7,
+                                  "workerId": "worker-1",
+                                  "processingVersion": 2,
                                   "durationSec": 120,
                                   "language": "en",
                                   "videoPath": "/data/storage/jobs/7/source/video.mp4",
@@ -55,6 +57,48 @@ class WorkerResultControllerTest {
     }
 
     @Test
+    void acceptsWorkerProgressPayload() throws Exception {
+        when(vodJobService.updateWorkerProgress(any())).thenReturn(new WorkerTransportAck(7L, "TRANSCRIBING"));
+
+        mockMvc.perform(post("/api/internal/worker/progress")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "jobId": 7,
+                                  "workerId": "worker-1",
+                                  "processingVersion": 2,
+                                  "status": "TRANSCRIBING",
+                                  "progressPercent": 48,
+                                  "message": "Worker is transcribing the audio"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.jobId").value(7))
+                .andExpect(jsonPath("$.status").value("TRANSCRIBING"));
+    }
+
+    @Test
+    void acceptsWorkerDownloadSuccessPayload() throws Exception {
+        when(vodJobService.ingestWorkerDownloadResult(any())).thenReturn(new WorkerTransportAck(7L, "QUEUED_FOR_PROCESSING"));
+
+        mockMvc.perform(post("/api/internal/worker/downloads/results")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "jobId": 7,
+                                  "workerId": "download-worker-1",
+                                  "processingVersion": 2,
+                                  "videoPath": "/data/storage/jobs/7/source/video.mp4"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.jobId").value(7))
+                .andExpect(jsonPath("$.status").value("QUEUED_FOR_PROCESSING"));
+    }
+
+    @Test
     void acceptsWorkerExportSuccessPayload() throws Exception {
         when(vodJobService.ingestWorkerExportResult(any())).thenReturn(new WorkerTransportAck(7L, "COMPLETED"));
 
@@ -63,6 +107,8 @@ class WorkerResultControllerTest {
                         .content("""
                                 {
                                   "jobId": 7,
+                                  "workerId": "worker-1",
+                                  "processingVersion": 2,
                                   "candidateId": 11,
                                   "artifactPath": "/data/storage/jobs/7/exports/candidate-11.mp4"
                                 }
@@ -82,6 +128,8 @@ class WorkerResultControllerTest {
                         .content("""
                                 {
                                   "jobId": 7,
+                                  "workerId": "worker-1",
+                                  "processingVersion": 2,
                                   "failedState": "TRANSCRIBING",
                                   "message": "transcription failed"
                                 }
@@ -99,6 +147,8 @@ class WorkerResultControllerTest {
                         .content("""
                                 {
                                   "jobId": 7,
+                                  "workerId": " ",
+                                  "processingVersion": 2,
                                   "failedState": " ",
                                   "message": " "
                                 }

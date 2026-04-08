@@ -91,13 +91,13 @@ class VodJobLifecycleIntegrationTest {
         JobSummaryResponse response = vodJobService.createFileJob(file);
         VodJob job = vodJobRepository.findById(response.id()).orElseThrow();
 
-        assertThat(response.status()).isEqualTo("QUEUED");
-        assertThat(job.getStatus()).isEqualTo(JobStatus.QUEUED);
+        assertThat(response.status()).isEqualTo("QUEUED_FOR_DOWNLOAD");
+        assertThat(job.getStatus()).isEqualTo(JobStatus.QUEUED_FOR_DOWNLOAD);
         assertThat(job.getStorageVideoPath()).isNotBlank();
         assertThat(Path.of(job.getStorageVideoPath())).exists();
         assertThat(jobEventRepository.findAllByJobIdOrderByCreatedAtAscIdAsc(job.getId()))
                 .extracting(event -> event.getEventType())
-                .containsExactly("JOB_CREATED", "JOB_QUEUED");
+                .containsExactly("JOB_CREATED", "JOB_QUEUED_FOR_DOWNLOAD");
     }
 
     @Test
@@ -106,6 +106,8 @@ class VodJobLifecycleIntegrationTest {
 
         WorkerProcessingResultPayload payload = new WorkerProcessingResultPayload(
                 job.getId(),
+                "worker-1",
+                job.getProcessingVersion(),
                 120L,
                 "en",
                 storageService.resolveSourceVideoPath(job.getId(), "video.mp4").toString(),
@@ -135,7 +137,7 @@ class VodJobLifecycleIntegrationTest {
         vodJobRepository.save(job);
 
         vodJobService.reportWorkerFailure(
-                new WorkerFailureReportPayload(job.getId(), "TRANSCRIBING", "transcription failed")
+                new WorkerFailureReportPayload(job.getId(), "worker-1", job.getProcessingVersion(), "TRANSCRIBING", "transcription failed")
         );
 
         VodJob failedJob = vodJobRepository.findById(job.getId()).orElseThrow();
@@ -164,6 +166,8 @@ class VodJobLifecycleIntegrationTest {
         vodJobService.ingestWorkerExportResult(
                 new WorkerExportResultPayload(
                         job.getId(),
+                        "worker-1",
+                        job.getProcessingVersion(),
                         savedCandidate.getId(),
                         storageService.resolveExportedClipPath(job.getId(), savedCandidate.getId(), ".mp4").toString()
                 )
@@ -179,9 +183,10 @@ class VodJobLifecycleIntegrationTest {
         VodJob job = newVodJob();
         job.setSourceType("URL");
         job.setSourceUrl(sourceUrl);
-        job.setStatus(JobStatus.QUEUED);
+        job.setStatus(JobStatus.QUEUED_FOR_DOWNLOAD);
         job.setCreatedAt(Instant.parse("2026-04-05T10:00:00Z"));
         job.setUpdatedAt(Instant.parse("2026-04-05T10:00:00Z"));
+        job.setProcessingVersion(1L);
         return job;
     }
 

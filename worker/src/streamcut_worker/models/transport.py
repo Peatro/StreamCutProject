@@ -8,6 +8,7 @@ from typing import Any
 @dataclass(frozen=True, slots=True)
 class ClaimedJob:
     job_id: int
+    processing_version: int
     task_type: str
     source_type: str
     video_path: Path | None
@@ -19,8 +20,26 @@ class ClaimedJob:
 
 
 @dataclass(frozen=True, slots=True)
+class WorkerDownloadCompletionPayload:
+    job_id: int
+    worker_id: str
+    processing_version: int
+    video_path: str
+
+    def to_payload(self) -> dict[str, Any]:
+        return {
+            "jobId": self.job_id,
+            "workerId": self.worker_id,
+            "processingVersion": self.processing_version,
+            "videoPath": self.video_path,
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class WorkerProcessingPayload:
     job_id: int
+    worker_id: str
+    processing_version: int
     duration_sec: int
     language: str | None
     video_path: str | None
@@ -33,6 +52,8 @@ class WorkerProcessingPayload:
     def to_payload(self) -> dict[str, Any]:
         return {
             "jobId": self.job_id,
+            "workerId": self.worker_id,
+            "processingVersion": self.processing_version,
             "durationSec": self.duration_sec,
             "language": self.language,
             "videoPath": self.video_path,
@@ -47,12 +68,16 @@ class WorkerProcessingPayload:
 @dataclass(frozen=True, slots=True)
 class WorkerExportCompletionPayload:
     job_id: int
+    worker_id: str
+    processing_version: int
     candidate_id: int
     artifact_path: str
 
     def to_payload(self) -> dict[str, Any]:
         return {
             "jobId": self.job_id,
+            "workerId": self.worker_id,
+            "processingVersion": self.processing_version,
             "candidateId": self.candidate_id,
             "artifactPath": self.artifact_path,
         }
@@ -61,12 +86,36 @@ class WorkerExportCompletionPayload:
 @dataclass(frozen=True, slots=True)
 class WorkerFailurePayload:
     job_id: int
+    worker_id: str
+    processing_version: int
     failed_state: str
     message: str
 
     def to_payload(self) -> dict[str, Any]:
         return {
             "jobId": self.job_id,
+            "workerId": self.worker_id,
+            "processingVersion": self.processing_version,
             "failedState": self.failed_state,
+            "message": self.message,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class WorkerProgressPayload:
+    job_id: int
+    worker_id: str
+    processing_version: int
+    status: str
+    progress_percent: int
+    message: str
+
+    def to_payload(self) -> dict[str, Any]:
+        return {
+            "jobId": self.job_id,
+            "workerId": self.worker_id,
+            "processingVersion": self.processing_version,
+            "status": self.status,
+            "progressPercent": self.progress_percent,
             "message": self.message,
         }

@@ -5,7 +5,14 @@ from dataclasses import dataclass
 from typing import Any
 from urllib import error, request
 
-from streamcut_worker.models import ClaimedJob, WorkerExportCompletionPayload, WorkerFailurePayload, WorkerProcessingPayload
+from streamcut_worker.models import (
+    ClaimedJob,
+    WorkerDownloadCompletionPayload,
+    WorkerExportCompletionPayload,
+    WorkerFailurePayload,
+    WorkerProcessingPayload,
+    WorkerProgressPayload,
+)
 
 
 class BackendTransportError(RuntimeError):
@@ -17,10 +24,10 @@ class BackendClient:
     base_url: str
     timeout_sec: float = 30.0
 
-    def claim_next_job(self, worker_id: str) -> ClaimedJob | None:
+    def claim_next_job(self, worker_id: str, worker_role: str) -> ClaimedJob | None:
         response = self._post_json(
             "/api/internal/worker/claims/next",
-            {"workerId": worker_id},
+            {"workerId": worker_id, "workerRole": worker_role},
             allow_no_content=True,
         )
         if response is None:
@@ -28,6 +35,7 @@ class BackendClient:
 
         return ClaimedJob(
             job_id=int(response["jobId"]),
+            processing_version=int(response["processingVersion"]),
             task_type=str(response["taskType"]),
             source_type=str(response["sourceType"]),
             video_path=None if response.get("videoPath") in (None, "") else _path(response["videoPath"]),
@@ -40,6 +48,12 @@ class BackendClient:
 
     def submit_result(self, payload: WorkerProcessingPayload) -> dict[str, Any]:
         return self._post_json("/api/internal/worker/results", payload.to_payload())
+
+    def submit_download_result(self, payload: WorkerDownloadCompletionPayload) -> dict[str, Any]:
+        return self._post_json("/api/internal/worker/downloads/results", payload.to_payload())
+
+    def submit_progress(self, payload: WorkerProgressPayload) -> dict[str, Any]:
+        return self._post_json("/api/internal/worker/progress", payload.to_payload())
 
     def submit_export_result(self, payload: WorkerExportCompletionPayload) -> dict[str, Any]:
         return self._post_json("/api/internal/worker/exports/results", payload.to_payload())

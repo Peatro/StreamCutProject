@@ -60,6 +60,16 @@ public class VodJobController {
         return vodJobService.getJob(id);
     }
 
+    @PostMapping("/{id}/cancel")
+    public JobDetailResponse cancelJob(@PathVariable Long id) {
+        return vodJobService.cancelJob(id);
+    }
+
+    @PostMapping("/{id}/restart")
+    public JobDetailResponse restartJob(@PathVariable Long id) {
+        return vodJobService.restartJob(id);
+    }
+
     @GetMapping("/{id}/candidates")
     public List<ClipCandidateResponse> listCandidates(@PathVariable Long id) {
         return vodJobService.listCandidates(id);

@@ -260,6 +260,10 @@ textarea {
   padding: 22px;
 }
 
+.worker-runtime-panel {
+  overflow: hidden;
+}
+
 .panel-header {
   display: flex;
   align-items: flex-start;
@@ -515,6 +519,99 @@ th,
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
   margin-bottom: 14px;
+}
+
+.worker-runtime-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.worker-progress-shell {
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+  border: 1px solid var(--line-subtle);
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at top left, rgba(113, 112, 255, 0.12), transparent 36%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.015));
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.02);
+}
+
+.worker-progress-shell.is-active {
+  border-color: rgba(113, 112, 255, 0.18);
+}
+
+.worker-progress-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.worker-progress-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 12px;
+  border: 1px solid rgba(113, 112, 255, 0.24);
+  border-radius: var(--radius-pill);
+  background: rgba(113, 112, 255, 0.12);
+  color: var(--accent-hover);
+  font-size: 12px;
+  font-weight: 590;
+  line-height: 1.4;
+}
+
+.worker-progress-copy {
+  color: var(--text-secondary);
+  font-size: 15px;
+  line-height: 1.6;
+  letter-spacing: -0.165px;
+}
+
+.worker-progress-track {
+  position: relative;
+  overflow: hidden;
+  height: 18px;
+  border-radius: var(--radius-pill);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.02)),
+    rgba(255, 255, 255, 0.03);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+}
+
+.worker-progress-fill,
+.worker-progress-sheen,
+.worker-progress-grid {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: inherit;
+}
+
+.worker-progress-fill {
+  width: 0;
+  background:
+    linear-gradient(90deg, rgba(94, 106, 210, 0.42), rgba(113, 112, 255, 0.96), rgba(130, 143, 255, 0.7));
+  box-shadow: 0 0 22px rgba(113, 112, 255, 0.34);
+}
+
+.worker-progress-sheen {
+  inset: 0 auto 0 -18%;
+  width: 18%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.5), transparent);
+  mix-blend-mode: screen;
+  animation: worker-progress-sheen 2.2s linear infinite;
+}
+
+.worker-progress-grid {
+  inset: 2px;
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.08) 1px, transparent 1px);
+  background-size: 14px 100%;
+  opacity: 0.34;
+  pointer-events: none;
 }
 
 .micro-card {
@@ -867,6 +964,10 @@ th,
   color: var(--danger);
 }
 
+.pill.status-canceled {
+  color: var(--warning);
+}
+
 .pill.status-pending,
 .pill.status-exporting_clip,
 .pill.status-downloading,
@@ -887,6 +988,36 @@ th,
   overflow-x: auto;
   border: 1px solid var(--line-subtle);
   border-radius: var(--radius-lg);
+}
+
+.table-progress {
+  display: grid;
+  gap: 6px;
+  min-width: 180px;
+}
+
+.table-progress-copy,
+.table-progress-meta {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+  letter-spacing: -0.13px;
+}
+
+.table-progress-track {
+  position: relative;
+  overflow: hidden;
+  height: 8px;
+  border-radius: var(--radius-pill);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.table-progress-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: inherit;
+  background: linear-gradient(90deg, rgba(94, 106, 210, 0.28), var(--accent-bright), rgba(130, 143, 255, 0.44));
+  box-shadow: 0 0 14px rgba(113, 112, 255, 0.24);
 }
 
 table {
@@ -1137,13 +1268,23 @@ tbody tr:hover {
   }
 }
 
+@keyframes worker-progress-sheen {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(680%);
+  }
+}
+
 @media (max-width: 1100px) {
   .hero,
   .details-grid,
   .stat-grid,
   .summary-grid,
   .control-grid,
-  .panel-micro-grid {
+  .panel-micro-grid,
+  .worker-runtime-grid {
     grid-template-columns: 1fr;
   }
 }

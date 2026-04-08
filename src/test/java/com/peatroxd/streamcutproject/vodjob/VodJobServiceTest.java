@@ -26,6 +26,7 @@ import com.peatroxd.streamcutproject.transcript.TranscriptSegmentWorkerPayload;
 import com.peatroxd.streamcutproject.workerdispatch.WorkerDispatchPayload;
 import com.peatroxd.streamcutproject.workerdispatch.WorkerDispatchPayloadFactory;
 import com.peatroxd.streamcutproject.workerdispatch.WorkerDispatchPort;
+import com.peatroxd.streamcutproject.workerdispatch.WorkerDownloadResultPayload;
 import com.peatroxd.streamcutproject.workerdispatch.WorkerExportResultPayload;
 import com.peatroxd.streamcutproject.workerdispatch.WorkerFailureReportPayload;
 import com.peatroxd.streamcutproject.workerdispatch.WorkerProcessingResultPayload;
@@ -125,7 +126,7 @@ class VodJobServiceTest {
         var response = vodJobService.createUrlJob("https://example.com/video");
 
         assertThat(response.id()).isEqualTo(1L);
-        assertThat(response.status()).isEqualTo("QUEUED");
+        assertThat(response.status()).isEqualTo("QUEUED_FOR_DOWNLOAD");
         assertThat(response.sourceType()).isEqualTo("URL");
         assertThat(response.sourceUrl()).isEqualTo("https://example.com/video");
         verify(vodJobRepository, Mockito.times(2)).save(any(VodJob.class));
@@ -168,7 +169,7 @@ class VodJobServiceTest {
         var response = vodJobService.createFileJob(file);
 
         assertThat(response.id()).isEqualTo(2L);
-        assertThat(response.status()).isEqualTo("QUEUED");
+        assertThat(response.status()).isEqualTo("QUEUED_FOR_DOWNLOAD");
         assertThat(response.sourceType()).isEqualTo("FILE");
         assertThat(response.sourceUrl()).isNull();
         assertThat(response.originalFilename()).isEqualTo("video.mp4");
@@ -226,6 +227,8 @@ class VodJobServiceTest {
         job.setLanguage("en");
         job.setStorageVideoPath("/data/video.mp4");
         job.setStorageAudioPath("/data/audio.wav");
+        job.setProgressPercent(48);
+        job.setProgressMessage("Worker is transcribing the audio");
         when(vodJobRepository.findById(1L)).thenReturn(java.util.Optional.of(job));
 
         JobDetailResponse response = vodJobService.getJob(1L);
@@ -438,57 +441,6 @@ class VodJobServiceTest {
 
         WorkerDispatchPayload payload = new WorkerDispatchPayload(
                 1L,
-                "ANALYZE",
-                "/var/lib/streamcut/jobs/1/source/video.mp4",
-                "URL",
-                "https://example.com/video",
-                null,
-                null,
-                null,
-                null
-        );
-        when(workerDispatchPayloadFactory.fromJob(job)).thenReturn(payload);
-
-        WorkerDispatchPayload result = vodJobService.dispatchJob(1L);
-
-        assertThat(result).isEqualTo(payload);
-        assertThat(job.getStatus()).isEqualTo(JobStatus.QUEUED);
-        assertThat(job.getUpdatedAt()).isNotNull();
-        verify(workerDispatchPort).dispatch(payload);
-        verify(jobEventRepository).save(any(JobEvent.class));
-    }
-
-    @Test
-    void dispatchJobThrowsWhenStorageVideoPathIsMissing() {
-        VodJob job = buildJob(1L, "https://example.com/video", Instant.parse("2026-04-05T10:00:00Z"));
-        when(vodJobRepository.findById(1L)).thenReturn(java.util.Optional.of(job));
-
-        when(workerDispatchPayloadFactory.fromJob(job))
-                .thenThrow(new IllegalStateException("Job 1 has no storage video path"));
-
-        assertThatThrownBy(() -> vodJobService.dispatchJob(1L))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("has no storage video path");
-    }
-
-    @Test
-    void claimNextQueuedJobReturnsEmptyWhenQueueIsEmpty() {
-        when(vodJobRepository.findAllByStatusForUpdate(Mockito.eq(JobStatus.QUEUED), any(Pageable.class)))
-                .thenReturn(List.of());
-
-        var result = vodJobService.claimNextQueuedJob("worker-1");
-
-        assertThat(result).isEmpty();
-    }
-
-    @Test
-    void claimNextQueuedJobMarksJobDownloadingAndWritesClaimEvent() {
-        VodJob job = buildJob(1L, "https://example.com/video", Instant.parse("2026-04-05T10:00:00Z"));
-        job.setStatus(JobStatus.QUEUED);
-        job.setStorageVideoPath("/var/lib/streamcut/jobs/1/source/video.mp4");
-        when(vodJobRepository.findAllByStatusForUpdate(Mockito.eq(JobStatus.QUEUED), any(Pageable.class)))
-                .thenReturn(List.of(job));
-        WorkerDispatchPayload payload = new WorkerDispatchPayload(
                 1L,
                 "ANALYZE",
                 "/var/lib/streamcut/jobs/1/source/video.mp4",
@@ -499,13 +451,98 @@ class VodJobServiceTest {
                 null,
                 null
         );
-        when(workerDispatchPayloadFactory.fromJob(job)).thenReturn(payload);
+        when(workerDispatchPayloadFactory.fromDownloadJob(job)).thenReturn(payload);
 
-        var result = vodJobService.claimNextQueuedJob("worker-1");
+        WorkerDispatchPayload result = vodJobService.dispatchJob(1L);
+
+        assertThat(result).isEqualTo(payload);
+        assertThat(job.getStatus()).isEqualTo(JobStatus.QUEUED_FOR_DOWNLOAD);
+        assertThat(job.getUpdatedAt()).isNotNull();
+        verify(workerDispatchPort).dispatch(payload);
+        verify(jobEventRepository).save(any(JobEvent.class));
+    }
+
+    @Test
+    void dispatchJobThrowsWhenStorageVideoPathIsMissing() {
+        VodJob job = buildJob(1L, "https://example.com/video", Instant.parse("2026-04-05T10:00:00Z"));
+        when(vodJobRepository.findById(1L)).thenReturn(java.util.Optional.of(job));
+
+        when(workerDispatchPayloadFactory.fromDownloadJob(job))
+                .thenThrow(new IllegalStateException("Job 1 has no storage video path"));
+
+        assertThatThrownBy(() -> vodJobService.dispatchJob(1L))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("has no storage video path");
+    }
+
+    @Test
+    void claimNextQueuedJobReturnsEmptyWhenQueueIsEmpty() {
+        when(vodJobRepository.findAllByStatusForUpdate(Mockito.eq(JobStatus.QUEUED_FOR_DOWNLOAD), any(Pageable.class)))
+                .thenReturn(List.of());
+
+        var result = vodJobService.claimNextQueuedJob("worker-1", "download");
+
+        assertThat(result).isEmpty();
+    }
+
+    @Test
+    void claimNextQueuedJobMarksJobDownloadingAndWritesClaimEvent() {
+        VodJob job = buildJob(1L, "https://example.com/video", Instant.parse("2026-04-05T10:00:00Z"));
+        job.setStatus(JobStatus.QUEUED_FOR_DOWNLOAD);
+        job.setStorageVideoPath("/var/lib/streamcut/jobs/1/source/video.mp4");
+        when(vodJobRepository.findAllByStatusForUpdate(Mockito.eq(JobStatus.QUEUED_FOR_DOWNLOAD), any(Pageable.class)))
+                .thenReturn(List.of(job));
+        WorkerDispatchPayload payload = new WorkerDispatchPayload(
+                1L,
+                1L,
+                "ANALYZE",
+                "/var/lib/streamcut/jobs/1/source/video.mp4",
+                "URL",
+                "https://example.com/video",
+                null,
+                null,
+                null,
+                null
+        );
+        when(workerDispatchPayloadFactory.fromDownloadJob(job)).thenReturn(payload);
+
+        var result = vodJobService.claimNextQueuedJob("worker-1", "download");
 
         assertThat(result).contains(payload);
         assertThat(job.getStatus()).isEqualTo(JobStatus.DOWNLOADING);
         assertThat(job.getStartedAt()).isNotNull();
+        assertThat(job.getUpdatedAt()).isNotNull();
+        verify(vodJobRepository).save(job);
+        verify(jobEventRepository).save(any(JobEvent.class));
+    }
+
+    @Test
+    void claimNextProcessingJobMarksJobExtractingAudioAndWritesClaimEvent() {
+        VodJob job = buildJob(1L, "https://example.com/video", Instant.parse("2026-04-05T10:00:00Z"));
+        job.setStatus(JobStatus.QUEUED_FOR_PROCESSING);
+        job.setStorageVideoPath("/var/lib/streamcut/jobs/1/source/video.mp4");
+        when(clipCandidateRepository.findPendingExportsForUpdate(Mockito.eq(ExportStatus.IN_PROGRESS), any(Pageable.class)))
+                .thenReturn(List.of());
+        when(vodJobRepository.findAllByStatusForUpdate(Mockito.eq(JobStatus.QUEUED_FOR_PROCESSING), any(Pageable.class)))
+                .thenReturn(List.of(job));
+        WorkerDispatchPayload payload = new WorkerDispatchPayload(
+                1L,
+                1L,
+                "ANALYZE",
+                "/var/lib/streamcut/jobs/1/source/video.mp4",
+                "URL",
+                "https://example.com/video",
+                null,
+                null,
+                null,
+                null
+        );
+        when(workerDispatchPayloadFactory.fromAnalyzeJob(job)).thenReturn(payload);
+
+        var result = vodJobService.claimNextQueuedJob("processing-worker-1", "processing");
+
+        assertThat(result).contains(payload);
+        assertThat(job.getStatus()).isEqualTo(JobStatus.EXTRACTING_AUDIO);
         assertThat(job.getUpdatedAt()).isNotNull();
         verify(vodJobRepository).save(job);
         verify(jobEventRepository).save(any(JobEvent.class));
@@ -518,6 +555,8 @@ class VodJobServiceTest {
         when(vodJobRepository.findById(1L)).thenReturn(java.util.Optional.of(job));
 
         WorkerProcessingResultPayload payload = new WorkerProcessingResultPayload(
+                1L,
+                "worker-1",
                 1L,
                 120L,
                 "en",
@@ -550,11 +589,57 @@ class VodJobServiceTest {
     }
 
     @Test
+    void ingestWorkerDownloadResultQueuesJobForProcessing() {
+        VodJob job = buildJob(1L, "https://example.com/video", Instant.parse("2026-04-05T10:00:00Z"));
+        job.setStatus(JobStatus.DOWNLOADING);
+        job.setCurrentWorkerId("download-worker-1");
+        when(vodJobRepository.findById(1L)).thenReturn(java.util.Optional.of(job));
+
+        WorkerTransportAck ack = vodJobService.ingestWorkerDownloadResult(
+                new WorkerDownloadResultPayload(
+                        1L,
+                        "download-worker-1",
+                        1L,
+                        "/var/lib/streamcut/jobs/1/source/video.mp4"
+                )
+        );
+
+        assertThat(ack.jobId()).isEqualTo(1L);
+        assertThat(ack.status()).isEqualTo("QUEUED_FOR_PROCESSING");
+        assertThat(job.getStatus()).isEqualTo(JobStatus.QUEUED_FOR_PROCESSING);
+        assertThat(job.getStorageVideoPath()).isEqualTo("/var/lib/streamcut/jobs/1/source/video.mp4");
+        assertThat(job.getCurrentWorkerId()).isNull();
+        verify(vodJobRepository).save(job);
+        verify(jobEventRepository, Mockito.times(2)).save(any(JobEvent.class));
+    }
+
+    @Test
+    void ingestWorkerDownloadResultRejectsVideoPathOutsideStorageRoot() {
+        VodJob job = buildJob(1L, "https://example.com/video", Instant.parse("2026-04-05T10:00:00Z"));
+        job.setStatus(JobStatus.DOWNLOADING);
+        job.setCurrentWorkerId("download-worker-1");
+        when(vodJobRepository.findById(1L)).thenReturn(java.util.Optional.of(job));
+
+        assertThatThrownBy(() -> vodJobService.ingestWorkerDownloadResult(
+                new WorkerDownloadResultPayload(
+                        1L,
+                        "download-worker-1",
+                        1L,
+                        "/tmp/outside/video.mp4"
+                )
+        ))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("worker download video path must stay within the configured storage root");
+    }
+
+    @Test
     void ingestWorkerResultRejectsVideoPathOutsideStorageRoot() {
         VodJob job = buildJob(1L, "https://example.com/video", Instant.parse("2026-04-05T10:00:00Z"));
         when(vodJobRepository.findById(1L)).thenReturn(java.util.Optional.of(job));
 
         WorkerProcessingResultPayload payload = new WorkerProcessingResultPayload(
+                1L,
+                "worker-1",
                 1L,
                 120L,
                 "en",
@@ -578,7 +663,7 @@ class VodJobServiceTest {
         when(vodJobRepository.findById(1L)).thenReturn(java.util.Optional.of(job));
 
         WorkerTransportAck ack = vodJobService.reportWorkerFailure(
-                new WorkerFailureReportPayload(1L, "TRANSCRIBING", "transcription failed")
+                new WorkerFailureReportPayload(1L, "worker-1", 1L, "TRANSCRIBING", "transcription failed")
         );
 
         assertThat(ack.jobId()).isEqualTo(1L);
@@ -619,7 +704,7 @@ class VodJobServiceTest {
         )).thenReturn("s3://streamcut-artifacts/exports/jobs/1/candidate-7.mp4");
 
         WorkerTransportAck ack = vodJobService.ingestWorkerExportResult(
-                new WorkerExportResultPayload(1L, 7L, "/var/lib/streamcut/jobs/1/exports/candidate-7.mp4")
+                new WorkerExportResultPayload(1L, "worker-1", 1L, 7L, "/var/lib/streamcut/jobs/1/exports/candidate-7.mp4")
         );
 
         assertThat(ack.jobId()).isEqualTo(1L);
@@ -642,7 +727,7 @@ class VodJobServiceTest {
         when(clipCandidateRepository.findById(7L)).thenReturn(java.util.Optional.of(candidate));
 
         assertThatThrownBy(() -> vodJobService.ingestWorkerExportResult(
-                new WorkerExportResultPayload(1L, 7L, "/tmp/outside/candidate-7.mp4")
+                new WorkerExportResultPayload(1L, "worker-1", 1L, 7L, "/tmp/outside/candidate-7.mp4")
         ))
                 .isInstanceOf(ResponseStatusException.class)
                 .hasMessageContaining("worker export artifact path must stay within the configured storage root");
@@ -659,8 +744,8 @@ class VodJobServiceTest {
 
         JobEvent later = Mockito.mock(JobEvent.class);
         when(later.getId()).thenReturn(11L);
-        when(later.getEventType()).thenReturn("JOB_QUEUED");
-        when(later.getMessage()).thenReturn("Job queued");
+        when(later.getEventType()).thenReturn("JOB_QUEUED_FOR_DOWNLOAD");
+        when(later.getMessage()).thenReturn("Job queued for download worker");
         when(later.getCreatedAt()).thenReturn(Instant.parse("2026-04-05T10:00:02Z"));
 
         when(vodJobRepository.findById(1L)).thenReturn(java.util.Optional.of(job));
@@ -672,7 +757,7 @@ class VodJobServiceTest {
         assertThat(events.get(0).id()).isEqualTo(10L);
         assertThat(events.get(0).eventType()).isEqualTo("JOB_CREATED");
         assertThat(events.get(1).id()).isEqualTo(11L);
-        assertThat(events.get(1).eventType()).isEqualTo("JOB_QUEUED");
+        assertThat(events.get(1).eventType()).isEqualTo("JOB_QUEUED_FOR_DOWNLOAD");
     }
 
     @Test
@@ -692,6 +777,8 @@ class VodJobServiceTest {
         job.setStatus(JobStatus.NEW);
         job.setCreatedAt(createdAt);
         job.setUpdatedAt(createdAt);
+        job.setProcessingVersion(1L);
+        job.setCurrentWorkerId("worker-1");
         return job;
     }
 }

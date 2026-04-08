@@ -7,7 +7,7 @@ It tracks:
 - work currently in progress
 - remaining work required to stabilize the MVP and finish the service through `v1.0.0`
 
-Last updated: 2026-04-06
+Last updated: 2026-04-08
 Branch snapshot: `develop`
 
 ## Current Status
@@ -52,6 +52,12 @@ Branch snapshot: `develop`
 - Release hardening wave 1 is now complete in source control: upload policy, multipart handling, UI upload guidance, URL/export/restart QA notes, structured runtime logging, integration coverage, Docker runtime notes, release checklist, and status docs have all been updated.
 - `TASK-044` was revalidated on the live Docker stack: malformed URL and `404` cases now transition `QUEUED -> FAILED`, persist `JOB_FAILED`, and store readable failure messages instead of leaving jobs stuck in `DOWNLOADING`.
 - No task branch is currently ahead of `develop` in this backlog snapshot.
+- Worker runtime controls and progress reporting are now implemented in source.
+- The worker queue is now split in source into `download-worker` and `processing-worker` roles:
+  - jobs enter `QUEUED_FOR_DOWNLOAD`
+  - download completion moves them to `QUEUED_FOR_PROCESSING`
+  - export remains on the `processing-worker`
+- Local and production compose now run one `download-worker` and one `processing-worker` on the same worker image, with future scale expected first on the download side.
 
 ## DONE
 
@@ -175,13 +181,18 @@ Branch snapshot: `develop`
   - `/api/exports/{id}/file` and `/api/exports/{id}/stream` served artifacts correctly
 
 ## IN_PROGRESS
-- No active implementation task is currently open in this backlog snapshot.
-- The next bounded runtime slice should branch from `develop` and start at `TASK-059`.
+- `TASK-060` is now the active bounded runtime slice.
+- Current staged execution:
+  - Phase 1: completed, role-aware worker claims and explicit `DOWNLOAD -> QUEUED_FOR_PROCESSING -> ANALYZE` flow are now implemented and validated in tests
+  - Phase 2: completed, local and production runtime wiring for one `download-worker` and one `processing-worker` is now implemented in compose and worker runtime
+  - Phase 3: active, follow-up diagnostics, lease recovery, and operator controls on top of the split worker model
+- Export remains on the `processing-worker` for now.
 
 ## NEXT
 
 ### Immediate
 - `TASK-059` Add Health, Readiness, And Worker Diagnostics
+- validate the split worker flow on the live Docker stack and surface role-specific diagnostics in the UI and health endpoints
 
 ### Validation
 - The MVP release baseline has been promoted to `main`.
@@ -190,6 +201,8 @@ Branch snapshot: `develop`
 - `TASK-058` Replace MVP Container Strategy And Add Production Edge Runtime
 - `TASK-059` Add Health, Readiness, And Worker Diagnostics
 - `TASK-060` Harden Queue Reliability And Stuck-Job Recovery
+- validate the split worker flow against large URL ingest so download time no longer blocks processing capacity
+- add stuck-download and stuck-processing lease recovery on top of the new role split
 
 ### Release Checklist
 - `release-checklist.md` is the current gate document for moving `develop` to `main`.
@@ -245,6 +258,7 @@ Status: completed locally on 2026-04-06
 - `TASK-055` should complete before `TASK-056`, because the security baseline depends on the chosen auth model.
 - `TASK-057` and `TASK-058` can run in parallel once runtime secrets and deployment assumptions are clear.
 - `TASK-059` through `TASK-063` can overlap, but `TASK-060` owns recovery semantics and should define the contract for `TASK-061` and parts of `TASK-062`.
+- The worker-role split is being executed as the first implementation slice under `TASK-060`, because recovery and diagnostics depend on clear ownership of download versus processing work.
 - `TASK-064` should start after the main browser flows and negative paths are already stable enough to avoid flaky E2E coverage.
 - `TASK-067` should consume the concrete procedures written in `TASK-065`, not invent them during the drill.
 - `TASK-066` must not start until every preceding phase has documented evidence.
@@ -265,13 +279,16 @@ Status: completed locally on 2026-04-06
 - Restart resilience on export looks acceptable from `TASK-046`: a worker bounce mid-export recovered and completed instead of ghosting the job.
 - `TASK-046` also showed that restart recovery is not very observable: file-backed work and exports can continue, but the API may sit on `DOWNLOADING` or `IN_PROGRESS` without an explicit progress signal.
 - Worker cold start depends on external model download and is slower without a configured `HF_TOKEN`.
+- Very large URL ingests still create long-running `DOWNLOADING` occupancy; this is the direct reason for moving toward a dedicated `download-worker`.
+- The dedicated `download-worker` / `processing-worker` split is now implemented in source, but it still needs live-stack validation and role-specific diagnostics before it can be treated as an operationally closed recovery story.
 - Negative-path recovery behavior is partially known from smoke tests, but not yet documented as release-safe behavior.
 - `TASK-045` QA found that export retries are allowed, export failure correctly marks the job `FAILED`, and the stale-artifact behavior was addressed in `TASK-054`.
 
 ## Recommended Next Sequence
 1. `TASK-059` Add Health, Readiness, And Worker Diagnostics.
-2. `TASK-060` Harden Queue Reliability And Stuck-Job Recovery.
-3. `TASK-061` Add Operator Recovery Controls.
+2. validate the staged split into `download-worker` and `processing-worker` on the live stack.
+3. `TASK-060` Harden Queue Reliability And Stuck-Job Recovery.
+4. `TASK-061` Add Operator Recovery Controls.
 
 ## Path To Service v1.0.0
 

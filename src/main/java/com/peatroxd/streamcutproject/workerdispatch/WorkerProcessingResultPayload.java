@@ -9,6 +9,8 @@ import java.util.List;
 
 public record WorkerProcessingResultPayload(
         Long jobId,
+        String workerId,
+        Long processingVersion,
         Long durationSec,
         String language,
         String videoPath,

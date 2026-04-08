@@ -22,6 +22,16 @@ public class WorkerResultController {
         return vodJobService.ingestWorkerResult(payload);
     }
 
+    @PostMapping("/downloads/results")
+    public WorkerTransportAck submitDownloadResult(@Valid @RequestBody WorkerDownloadResultPayload payload) {
+        return vodJobService.ingestWorkerDownloadResult(payload);
+    }
+
+    @PostMapping("/progress")
+    public WorkerTransportAck submitProgress(@Valid @RequestBody WorkerProgressUpdatePayload payload) {
+        return vodJobService.updateWorkerProgress(payload);
+    }
+
     @PostMapping("/exports/results")
     public WorkerTransportAck submitExportResult(@Valid @RequestBody WorkerExportResultPayload payload) {
         return vodJobService.ingestWorkerExportResult(payload);

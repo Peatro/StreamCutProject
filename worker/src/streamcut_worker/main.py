@@ -24,12 +24,16 @@ def main() -> None:
     backend_base_url = os.getenv("BACKEND_BASE_URL", "http://backend:8080")
     storage_root = Path(os.getenv("APP_STORAGE_LOCAL_ROOT", "/data/storage"))
     worker_id = os.getenv("WORKER_ID", "worker-1")
+    worker_role = os.getenv("WORKER_ROLE", "processing").strip().lower()
     poll_interval_sec = float(os.getenv("WORKER_POLL_INTERVAL_SEC", "5"))
     emotion_keywords = tuple(
         keyword.strip()
         for keyword in os.getenv("WORKER_EMOTION_KEYWORDS", "").split(",")
         if keyword.strip()
     )
+
+    if worker_role not in {"download", "processing"}:
+        raise ValueError("WORKER_ROLE must be 'download' or 'processing'")
 
     polling_loop = WorkerPollingLoop(
         backend_client=BackendClient(base_url=backend_base_url),
@@ -38,6 +42,7 @@ def main() -> None:
             emotion_keywords=emotion_keywords,
         ),
         worker_id=worker_id,
+        worker_role=worker_role,
         poll_interval_sec=poll_interval_sec,
     )
 

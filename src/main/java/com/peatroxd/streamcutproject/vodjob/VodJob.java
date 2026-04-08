@@ -59,6 +59,21 @@ public class VodJob {
     @Column(name = "storage_audio_path", length = 512)
     private String storageAudioPath;
 
+    @Column(name = "processing_version", nullable = false)
+    private Long processingVersion = 1L;
+
+    @Column(name = "current_worker_id", length = 128)
+    private String currentWorkerId;
+
+    @Column(name = "last_worker_heartbeat_at")
+    private Instant lastWorkerHeartbeatAt;
+
+    @Column(name = "progress_percent")
+    private Integer progressPercent;
+
+    @Column(name = "progress_message", length = 255)
+    private String progressMessage;
+
     protected VodJob() {
     }
 
@@ -172,5 +187,45 @@ public class VodJob {
 
     public void setStorageAudioPath(String storageAudioPath) {
         this.storageAudioPath = storageAudioPath;
+    }
+
+    public Long getProcessingVersion() {
+        return processingVersion;
+    }
+
+    public void setProcessingVersion(Long processingVersion) {
+        this.processingVersion = processingVersion;
+    }
+
+    public String getCurrentWorkerId() {
+        return currentWorkerId;
+    }
+
+    public void setCurrentWorkerId(String currentWorkerId) {
+        this.currentWorkerId = currentWorkerId;
+    }
+
+    public Instant getLastWorkerHeartbeatAt() {
+        return lastWorkerHeartbeatAt;
+    }
+
+    public void setLastWorkerHeartbeatAt(Instant lastWorkerHeartbeatAt) {
+        this.lastWorkerHeartbeatAt = lastWorkerHeartbeatAt;
+    }
+
+    public Integer getProgressPercent() {
+        return progressPercent;
+    }
+
+    public void setProgressPercent(Integer progressPercent) {
+        this.progressPercent = progressPercent;
+    }
+
+    public String getProgressMessage() {
+        return progressMessage;
+    }
+
+    public void setProgressMessage(String progressMessage) {
+        this.progressMessage = progressMessage;
     }
 }

@@ -98,15 +98,17 @@ class SecurityConfigurationIntegrationTest {
                         "URL",
                         "https://example.com/video",
                         null,
-                        "QUEUED",
+                        "QUEUED_FOR_DOWNLOAD",
                         Instant.parse("2026-04-06T10:00:00Z"),
                         Instant.parse("2026-04-06T10:00:05Z"),
                         null,
-                        null
+                        null,
+                        5,
+                        "Queued for download worker"
                 )
         ));
         when(vodJobService.createUrlJob(anyString())).thenReturn(
-                new JobSummaryResponse(2L, "QUEUED", "URL", "https://example.com/video", null, null, null)
+                new JobSummaryResponse(2L, "QUEUED_FOR_DOWNLOAD", "URL", "https://example.com/video", null, null, null)
         );
 
         MockHttpSession session = (MockHttpSession) mockMvc.perform(post("/login")
@@ -140,9 +142,10 @@ class SecurityConfigurationIntegrationTest {
 
     @Test
     void allowsUnauthenticatedWorkerPostWithoutCsrf() throws Exception {
-        when(vodJobService.claimNextQueuedJob("worker-1")).thenReturn(
+        when(vodJobService.claimNextQueuedJob("worker-1", "processing")).thenReturn(
                 java.util.Optional.of(new WorkerDispatchPayload(
                         7L,
+                        2L,
                         "ANALYZE",
                         "/data/storage/jobs/7/source/video.mp4",
                         "FILE",
@@ -158,7 +161,8 @@ class SecurityConfigurationIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
-                                  "workerId": "worker-1"
+                                  "workerId": "worker-1",
+                                  "workerRole": "processing"
                                 }
                                 """))
                 .andExpect(status().isOk())

@@ -5,6 +5,8 @@
     getTranscript: (id) => fetchJson(`/api/jobs/${id}/transcript`),
     getEvents: (id) => fetchJson(`/api/jobs/${id}/events`),
     getCandidates: (id) => fetchJson(`/api/jobs/${id}/candidates`),
+    cancelJob: (id) => postJson(`/api/jobs/${id}/cancel`),
+    restartJob: (id) => postJson(`/api/jobs/${id}/restart`),
     createUrlJob: (url) => postJson("/api/jobs/url", {
       headers: {
         "Content-Type": "application/json"
@@ -33,8 +35,9 @@
 
   const activeWorkerStatuses = new Set([
     "NEW",
-    "QUEUED",
+    "QUEUED_FOR_DOWNLOAD",
     "DOWNLOADING",
+    "QUEUED_FOR_PROCESSING",
     "EXTRACTING_AUDIO",
     "TRANSCRIBING",
     "DETECTING_SILENCE",
@@ -43,7 +46,7 @@
     "EXPORTING_CLIP"
   ]);
 
-  const terminalJobStatuses = new Set(["COMPLETED", "FAILED"]);
+  const terminalJobStatuses = new Set(["COMPLETED", "FAILED", "CANCELED"]);
 
   const liveUpdates = {
     mode: null,
@@ -148,6 +151,8 @@
           </div>
         </div>
       </section>
+
+      ${renderWorkerRuntimePanel(job)}
 
       <section class="summary-grid">
         <article class="summary-card">
@@ -372,6 +377,37 @@
         setLiveInteractionLock(false);
       }
     });
+
+    root.querySelectorAll("[data-job-control]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        const action = button.dataset.jobControl;
+        const actionLabel = action === "cancel" ? "Canceling..." : "Restarting...";
+        const previousLabel = button.textContent;
+        setLiveInteractionLock(true, `${previousLabel} in progress.`);
+        button.disabled = true;
+        button.textContent = actionLabel;
+
+        try {
+          if (action === "cancel") {
+            await api.cancelJob(jobId);
+            await renderJobPage(root, jobId, `Worker run for job #${jobId} canceled.`, "warning");
+            return;
+          }
+          if (action === "restart") {
+            await api.restartJob(jobId);
+            await renderJobPage(root, jobId, `Worker run for job #${jobId} restarted.`, "success");
+            return;
+          }
+          throw new Error("Unknown job control action.");
+        } catch (error) {
+          showInlineBanner(root, error.message || "Unable to update worker run.", "error");
+          button.disabled = false;
+          button.textContent = previousLabel;
+        } finally {
+          setLiveInteractionLock(false);
+        }
+      });
+    });
   }
 
   function bindCandidateActions(root, jobId) {
@@ -575,10 +611,10 @@
     return JSON.stringify((jobs || []).map((job) => [
       job.id,
       job.status,
+      job.progressPercent,
+      job.progressMessage,
       job.updatedAt,
-      job.finishedAt,
-      job.errorMessage,
-      job.storageVideoPath
+      job.currentWorkerId
     ]));
   }
 
@@ -587,6 +623,10 @@
       job: {
         id: job?.id,
         status: job?.status,
+        progressPercent: job?.progressPercent,
+        progressMessage: job?.progressMessage,
+        currentWorkerId: job?.currentWorkerId,
+        lastWorkerHeartbeatAt: job?.lastWorkerHeartbeatAt,
         updatedAt: job?.updatedAt,
         finishedAt: job?.finishedAt,
         errorMessage: job?.errorMessage
@@ -727,6 +767,135 @@
     }).format(new Date());
   }
 
+  function renderWorkerRuntimePanel(job) {
+    const progressPercent = normalizedProgressPercent(job);
+    const currentStatus = String(job?.status || "").toUpperCase();
+    const canCancel = isJobCancelable(job);
+    const canRestart = isJobRestartable(job);
+    const progressLabel = job?.progressMessage || defaultProgressMessage(job);
+    const phaseLabel = formatEventType(currentStatus);
+    const heartbeatLabel = formatWorkerHeartbeat(job?.lastWorkerHeartbeatAt);
+    const workerLabel = job?.currentWorkerId || "Awaiting worker claim";
+
+    return `
+      <section class="panel worker-runtime-panel">
+        <div class="panel-header">
+          <div>
+            <span class="eyebrow">Worker Runtime</span>
+            <h2 style="margin-top: 12px; font-size: 1.45rem;">${escapeHtml(phaseLabel)}</h2>
+            <p>${escapeHtml(progressLabel)}</p>
+          </div>
+          <div class="header-actions">
+            ${canRestart ? '<button class="action-button action-button-primary" type="button" data-job-control="restart">Restart Worker Run</button>' : ""}
+            ${canCancel ? '<button class="action-button action-button-reject" type="button" data-job-control="cancel">Cancel Worker Run</button>' : ""}
+          </div>
+        </div>
+        <div class="worker-progress-shell ${activeWorkerStatuses.has(currentStatus) ? "is-active" : ""}">
+          <div class="worker-progress-meta">
+            <span class="worker-progress-pill">${escapeHtml(`${progressPercent}%`)}</span>
+            <span class="worker-progress-copy">${escapeHtml(progressLabel)}</span>
+          </div>
+          <div class="worker-progress-track" aria-hidden="true">
+            <div class="worker-progress-fill" style="width: ${escapeHtml(progressPercent)}%;"></div>
+            <div class="worker-progress-sheen"></div>
+            <div class="worker-progress-grid"></div>
+          </div>
+          <div class="worker-runtime-grid">
+            <article class="micro-card">
+              <span class="micro-card-label">Worker</span>
+              <strong class="micro-card-value micro-card-value-compact">${escapeHtml(workerLabel)}</strong>
+            </article>
+            <article class="micro-card">
+              <span class="micro-card-label">Last Heartbeat</span>
+              <strong class="micro-card-value micro-card-value-compact">${escapeHtml(heartbeatLabel)}</strong>
+            </article>
+            <article class="micro-card">
+              <span class="micro-card-label">Execution</span>
+              <strong class="micro-card-value micro-card-value-compact">v${escapeHtml(job?.processingVersion ?? "n/a")}</strong>
+            </article>
+          </div>
+          <div class="footer-note">${escapeHtml(workerActionHint(job))}</div>
+        </div>
+      </section>
+    `;
+  }
+
+  function normalizedProgressPercent(job) {
+    const rawValue = Number(job?.progressPercent);
+    if (!Number.isNaN(rawValue) && rawValue >= 0) {
+      return Math.max(0, Math.min(Math.round(rawValue), 100));
+    }
+
+    const fallbackByStatus = {
+      NEW: 0,
+      QUEUED_FOR_DOWNLOAD: 5,
+      DOWNLOADING: 18,
+      QUEUED_FOR_PROCESSING: 28,
+      EXTRACTING_AUDIO: 36,
+      TRANSCRIBING: 48,
+      DETECTING_SILENCE: 68,
+      ANALYZING_WINDOWS: 84,
+      GENERATING_CANDIDATES: 94,
+      EXPORTING_CLIP: 92,
+      READY_FOR_REVIEW: 100,
+      COMPLETED: 100,
+      FAILED: 0,
+      CANCELED: 0
+    };
+    return fallbackByStatus[String(job?.status || "").toUpperCase()] ?? 0;
+  }
+
+  function defaultProgressMessage(job) {
+    const byStatus = {
+      NEW: "Job has been created but not queued yet.",
+      QUEUED_FOR_DOWNLOAD: "Job is queued for the download worker.",
+      DOWNLOADING: "Download worker is materializing the source video.",
+      QUEUED_FOR_PROCESSING: "Source video is ready and queued for the processing worker.",
+      EXTRACTING_AUDIO: "Processing worker is extracting the audio track.",
+      TRANSCRIBING: "Worker is transcribing the audio.",
+      DETECTING_SILENCE: "Worker is detecting silence spans.",
+      ANALYZING_WINDOWS: "Worker is scoring sliding windows.",
+      GENERATING_CANDIDATES: "Worker is assembling clip candidates.",
+      READY_FOR_REVIEW: "Analysis finished. Candidates are ready for review.",
+      EXPORTING_CLIP: "Worker is exporting the approved clip.",
+      COMPLETED: "Worker run finished successfully.",
+      FAILED: job?.errorMessage || "Worker run failed.",
+      CANCELED: "Worker run was canceled by an operator."
+    };
+    return byStatus[String(job?.status || "").toUpperCase()] || "Worker state is unavailable.";
+  }
+
+  function formatWorkerHeartbeat(value) {
+    if (!value) {
+      return "No heartbeat recorded";
+    }
+    return formatDate(value);
+  }
+
+  function isJobCancelable(job) {
+    const status = String(job?.status || "").toUpperCase();
+    return ["QUEUED_FOR_DOWNLOAD", "DOWNLOADING", "QUEUED_FOR_PROCESSING", "EXTRACTING_AUDIO", "TRANSCRIBING", "DETECTING_SILENCE", "ANALYZING_WINDOWS", "GENERATING_CANDIDATES", "EXPORTING_CLIP"].includes(status);
+  }
+
+  function isJobRestartable(job) {
+    const status = String(job?.status || "").toUpperCase();
+    return ["QUEUED_FOR_DOWNLOAD", "DOWNLOADING", "QUEUED_FOR_PROCESSING", "EXTRACTING_AUDIO", "TRANSCRIBING", "DETECTING_SILENCE", "ANALYZING_WINDOWS", "GENERATING_CANDIDATES", "EXPORTING_CLIP", "FAILED", "CANCELED"].includes(status);
+  }
+
+  function workerActionHint(job) {
+    const status = String(job?.status || "").toUpperCase();
+    if (status === "FAILED") {
+      return "Restart the worker run after checking the failure reason in the event feed.";
+    }
+    if (status === "CANCELED") {
+      return "This run was canceled manually. Restart to requeue it through the download stage.";
+    }
+    if (isJobCancelable(job)) {
+      return "Cancel stops the current run immediately. Restart invalidates the current worker lease and queues a fresh attempt.";
+    }
+    return "No operator recovery action is available for the current state.";
+  }
+
   function renderCandidates(job, candidates) {
     if (!candidates.length) {
       return `<div class="empty-state">No candidates available yet.</div>`;
@@ -824,6 +993,16 @@
   }
 
   function renderJobFailureSummary(job, candidates) {
+    if (job.status === "CANCELED") {
+      return `
+        <section class="failure-summary">
+          <div class="failure-summary-kicker">Worker canceled</div>
+          <h2>Job run was stopped manually</h2>
+          <p>${escapeHtml(job.errorMessage || "The current worker run was canceled by an operator.")}</p>
+        </section>
+      `;
+    }
+
     if (job.status !== "FAILED" || !job.errorMessage) {
       return "";
     }
@@ -1031,6 +1210,7 @@
       <tr>
         <td><a href="/job.html?id=${encodeURIComponent(job.id)}">Job #${escapeHtml(job.id)}</a></td>
         <td><span class="pill ${statusClass(job.status)}">${escapeHtml(job.status)}</span></td>
+        <td>${renderCompactProgress(job)}</td>
         <td>${escapeHtml(sourceLabel(job))}</td>
         <td>${escapeHtml(formatDate(job.createdAt))}</td>
         <td>${escapeHtml(formatDuration(job.durationSec))}</td>
@@ -1044,6 +1224,7 @@
             <tr>
               <th>Job</th>
               <th>Status</th>
+              <th>Worker</th>
               <th>Source</th>
               <th>Created</th>
               <th>Duration</th>
@@ -1051,6 +1232,20 @@
           </thead>
           <tbody>${rows}</tbody>
         </table>
+      </div>
+    `;
+  }
+
+  function renderCompactProgress(job) {
+    const progressPercent = normalizedProgressPercent(job);
+    const progressLabel = job?.progressMessage || defaultProgressMessage(job);
+    return `
+      <div class="table-progress">
+        <div class="table-progress-copy">${escapeHtml(progressLabel)}</div>
+        <div class="table-progress-track" aria-hidden="true">
+          <span class="table-progress-fill" style="width: ${escapeHtml(progressPercent)}%;"></span>
+        </div>
+        <div class="table-progress-meta">${escapeHtml(`${progressPercent}%`)}${job?.currentWorkerId ? ` · ${escapeHtml(job.currentWorkerId)}` : ""}</div>
       </div>
     `;
   }
@@ -1129,9 +1324,9 @@
   }
 
   function summarizeJobs(jobs) {
-    const activeStatuses = new Set(["NEW", "QUEUED", "DOWNLOADING", "EXTRACTING_AUDIO", "TRANSCRIBING", "DETECTING_SILENCE", "ANALYZING_WINDOWS", "GENERATING_CANDIDATES", "READY_FOR_REVIEW", "EXPORTING_CLIP"]);
+    const activeStatuses = new Set(["NEW", "QUEUED_FOR_DOWNLOAD", "DOWNLOADING", "QUEUED_FOR_PROCESSING", "EXTRACTING_AUDIO", "TRANSCRIBING", "DETECTING_SILENCE", "ANALYZING_WINDOWS", "GENERATING_CANDIDATES", "READY_FOR_REVIEW", "EXPORTING_CLIP"]);
     const readyStatuses = new Set(["READY_FOR_REVIEW"]);
-    const finishedStatuses = new Set(["COMPLETED", "FAILED"]);
+    const finishedStatuses = new Set(["COMPLETED", "FAILED", "CANCELED"]);
     return jobs.reduce((acc, job) => {
       acc.total += 1;
       if (activeStatuses.has(job.status)) {
