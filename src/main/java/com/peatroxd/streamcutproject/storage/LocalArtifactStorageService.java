@@ -29,6 +29,13 @@ public class LocalArtifactStorageService implements ArtifactStorageService {
     }
 
     @Override
+    public void delete(String reference) throws IOException {
+        Path path = resolveLocalPath(reference)
+                .orElseThrow(() -> new IOException("Artifact reference is not available as a local path: " + reference));
+        Files.deleteIfExists(path);
+    }
+
+    @Override
     public Optional<Path> resolveLocalPath(String reference) {
         if (reference == null || reference.isBlank()) {
             return Optional.empty();

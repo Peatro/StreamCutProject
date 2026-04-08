@@ -11,6 +11,8 @@ public interface ArtifactStorageService {
 
     boolean exists(String reference);
 
+    void delete(String reference) throws IOException;
+
     Optional<Path> resolveLocalPath(String reference);
 
     Optional<URI> createSignedGetUri(String reference);
