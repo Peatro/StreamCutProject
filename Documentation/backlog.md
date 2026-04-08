@@ -8,8 +8,8 @@ It tracks:
 - remaining work required to stabilize the MVP and finish the service through `v1.0.0`
 - the next architecture track after `v1.0.0`
 
-Last updated: 2026-04-08
-Branch snapshot: `feature/whisper-large-v3-turbo`
+Last updated: 2026-04-09
+Branch snapshot: `develop`
 Synced note: Obsidian backlog mirror in `StreamCutProject`
 
 ## Sync Policy
@@ -80,28 +80,52 @@ Synced note: Obsidian backlog mirror in `StreamCutProject`
   - stale recovery is driven by task heartbeat ownership
   - `VodJob` is increasingly treated as a projection over task state instead of the primary orchestration source
   - task and execution history are exposed in the API, and latest task/execution summaries are visible in the UI
-- The current codebase is best described as being at the end of `TASK-060` and already partway into the post-`v1.0.0` task-model track:
+- `TASK-059`, `TASK-060`, `TASK-061`, `TASK-062`, and `TASK-063` are now merged into `develop`.
+- `TASK-064` is already on `develop` and currently sits in reviewer/QA validation rather than in the earlier implementation phase:
   - retries, backoff, and dead-letter semantics are still missing
   - a dedicated `TaskTransitionService` does not exist yet
   - export still runs on the `processing-worker`
   - durable-storage-first execution and broker-backed queue semantics are still future work
+- `TASK-059` health, readiness, and worker diagnostics are now present in source.
+- `TASK-061` operator recovery controls are now present in source.
+- `TASK-062` metrics and alertable observability are now present in source.
+- `TASK-063` source and artifact retention cleanup is now present in source with follow-up safety fixes merged.
+- The repository agent operating system was updated on 2026-04-08 to match the current task-centric model:
+  - agent contracts, roles, workflow, and templates now describe `worker_task` and `worker_execution`
+  - `Problem Frame` is now a required pre-assignment input for orchestrated agent work
+  - legacy task wording was normalized where it was still teaching the old queued-job model
 
 ## Task Status Index
 
 ### Completed
+- `TASK-059` Add Health, Readiness, And Worker Diagnostics
 - `TASK-055` Add Authentication And Protected Operator Access
 - `TASK-056` Add Security Baseline And Input Hardening
 - `TASK-057` Introduce Production Runtime Profiles And Secret Handling
 - `TASK-058` Replace MVP Container Strategy And Add Production Edge Runtime
-
-### In Progress
 - `TASK-060` Harden Queue Reliability And Stuck-Job Recovery
-
-### Planned For `v1.0.0`
-- `TASK-059` Add Health, Readiness, And Worker Diagnostics
 - `TASK-061` Add Operator Recovery Controls
 - `TASK-062` Add Metrics And Alertable Observability
 - `TASK-063` Add Source And Artifact Retention Cleanup
+
+### In Progress
+- `TASK-064` Add Browser E2E Regression And CI Gate
+
+Status note:
+- this backlog pass records a real status transition:
+  - `TASK-059` -> completed / merged
+  - `TASK-061` -> completed / merged
+  - `TASK-062` -> completed / merged
+  - `TASK-063` -> completed / merged
+  - `TASK-064` -> on `develop`, under reviewer/QA pass
+  - `TASK-065` -> next planned task
+
+Current release-track snapshot:
+- `TASK-059` through `TASK-063`: merged into `develop`
+- `TASK-064`: on `develop`, reviewer/QA in progress
+- `TASK-065`: next planned task, operator runbook and recovery documentation
+
+### Planned For `v1.0.0`
 - `TASK-064` Add Browser E2E Regression And CI Gate
 - `TASK-065` Write Operator Runbook, Backup Restore, And Upgrade Notes
 - `TASK-067` Run Backup Restore And Rollback Drill
@@ -238,12 +262,13 @@ Synced note: Obsidian backlog mirror in `StreamCutProject`
   - `/api/exports/{id}/file` and `/api/exports/{id}/stream` served artifacts correctly
 
 ## IN_PROGRESS
-- `TASK-060` is now the active bounded runtime slice.
+- `TASK-064` is now the active bounded runtime slice.
 - Current staged execution:
-  - Phase 1: completed, role-aware worker claims and explicit `DOWNLOAD -> QUEUED_FOR_PROCESSING -> ANALYZE` flow are now implemented and validated in tests
-  - Phase 2: completed, local and production runtime wiring for one `download-worker` and one `processing-worker` is implemented and locally validated on Docker against a live upload job
-  - Phase 3: completed in source beyond the original target, with `worker_task`, `worker_execution`, stale recovery scheduling, task-centric claim flow, task/execution history APIs, and `VodJob` projection/recompute groundwork in place
-  - Phase 4: active, closing the remaining `v1.0.0` diagnostics and operator-control gaps while preparing the retry/backoff/dead-letter expansion that the current task model now enables
+  - Recovery semantics from `TASK-060` are merged and form the base contract for operator actions
+  - Operator recovery controls from `TASK-061` are merged
+  - Metrics and alertable observability from `TASK-062` are merged
+  - Retention cleanup from `TASK-063` is merged with safety fixes
+  - `TASK-064` browser E2E and CI gating is now on `develop` and awaiting final reviewer/QA closure
 - Export remains on the `processing-worker` for now.
 
 ## NEXT
@@ -257,13 +282,10 @@ Synced note: Obsidian backlog mirror in `StreamCutProject`
 - The MVP release baseline has been promoted to `main`.
 
 ### Stabilization
-- `TASK-059` Add Health, Readiness, And Worker Diagnostics
-- `TASK-060` Harden Queue Reliability And Stuck-Job Recovery
-- `TASK-061` Add Operator Recovery Controls
-- `TASK-062` Add Metrics And Alertable Observability
+- `TASK-064` Add Browser E2E Regression And CI Gate
 - validate the split worker flow against large URL ingest so download time no longer blocks processing capacity
-- harden long-running stage heartbeat behavior so stale recovery does not preempt a still-live processing lease
-- finish task-aware diagnostics and recovery controls on top of the now-persisted `worker_task` / `worker_execution` model
+- close the remaining CI and browser regression gate for release-critical flows
+- keep building on the now-merged recovery, observability, and retention slices
 
 ### Architectural Follow-Up After `v1.0.0`
 - the current `v1.0.0` track hardens the service for a small authenticated operator team
@@ -333,8 +355,8 @@ Status: completed locally on 2026-04-06
 - `TASK-054` has been merged into `develop` and no longer gates the current release baseline.
 - `TASK-055` should complete before `TASK-056`, because the security baseline depends on the chosen auth model.
 - `TASK-057` and `TASK-058` can run in parallel once runtime secrets and deployment assumptions are clear.
-- `TASK-059` through `TASK-063` can overlap, but `TASK-060` owns recovery semantics and should define the contract for `TASK-061` and parts of `TASK-062`.
-- The worker-role split and the first task-centric execution slice are already in source under `TASK-060`; remaining work is now diagnostics, operator controls, and retry-policy hardening on top of that base.
+- `TASK-059` through `TASK-063` are now part of the current `develop` baseline.
+- `TASK-059`, `TASK-060`, `TASK-061`, `TASK-062`, and `TASK-063` are now merged, so `TASK-064` and later tasks should treat diagnostics, recovery, observability, and retention behavior as the current baseline rather than as future design work.
 - `TASK-064` should start after the main browser flows and negative paths are already stable enough to avoid flaky E2E coverage.
 - `TASK-067` should consume the concrete procedures written in `TASK-065`, not invent them during the drill.
 - `TASK-066` must not start until every preceding phase has documented evidence.
@@ -379,11 +401,11 @@ Status: completed locally on 2026-04-06
 - Backend media streaming endpoints still exist for source and export delivery, which is acceptable for the MVP but not the desired long-term contract.
 
 ## Recommended Next Sequence
-1. `TASK-059` Add Health, Readiness, And Worker Diagnostics.
-2. add role-specific worker diagnostics and stuck-run visibility on top of the validated split worker flow and new task model.
-3. finish the remaining `TASK-060` operator-facing recovery gaps, especially long-running-stage heartbeat behavior.
-4. `TASK-061` Add Operator Recovery Controls.
-5. `TASK-062` Add Metrics And Alertable Observability.
+1. `TASK-064` Add Browser E2E Regression And CI Gate.
+2. close reviewer and QA pass for `TASK-064`.
+3. `TASK-065` Write Operator Runbook, Backup Restore, And Upgrade Notes.
+4. `TASK-067` Run Backup Restore And Rollback Drill.
+5. `TASK-066` Prepare And Execute `v1.0.0` Release.
 6. after `v1.0.0`, continue with `TASK-068` and `TASK-069` on top of the already-implemented `worker_task` / `worker_execution` base before any broker or cluster work.
 
 ## Path To Service v1.0.0
@@ -421,14 +443,14 @@ Status: completed locally on 2026-04-06
 - completed: `TASK-058` Replace MVP Container Strategy And Add Production Edge Runtime
 
 #### Phase 2. Reliability And Operator Controls
-- `TASK-059` Add Health, Readiness, And Worker Diagnostics
-- `TASK-060` Harden Queue Reliability And Stuck-Job Recovery
-- `TASK-061` Add Operator Recovery Controls
-- `TASK-062` Add Metrics And Alertable Observability
-- `TASK-063` Add Source And Artifact Retention Cleanup
+- completed: `TASK-059` Add Health, Readiness, And Worker Diagnostics
+- completed: `TASK-060` Harden Queue Reliability And Stuck-Job Recovery
+- completed: `TASK-061` Add Operator Recovery Controls
+- completed: `TASK-062` Add Metrics And Alertable Observability
+- completed: `TASK-063` Add Source And Artifact Retention Cleanup
 
 #### Phase 3. Quality And Launch
-- `TASK-064` Add Browser E2E Regression And CI Gate
+- in progress: `TASK-064` Add Browser E2E Regression And CI Gate
 - `TASK-065` Write Operator Runbook, Backup Restore, And Upgrade Notes
 - `TASK-067` Run Backup Restore And Rollback Drill
 - `TASK-066` Prepare And Execute `v1.0.0` Release
