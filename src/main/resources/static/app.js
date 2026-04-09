@@ -1132,7 +1132,7 @@ ${renderJobFailureSummary(job, candidates)}
     const overallPercent = normalizedProgressPercent(job);
     const stages = {
       QUEUED_FOR_DOWNLOAD: { label: "Queued for download", range: [0, 5] },
-      DOWNLOADING: { label: "Download", range: [5, 18] },
+      DOWNLOADING: { label: "Download", range: [18, 35] },
       QUEUED_FOR_PROCESSING: { label: "Queued for processing", range: [18, 28] },
       EXTRACTING_AUDIO: { label: "Audio extraction", range: [28, 36] },
       TRANSCRIBING: { label: "Transcription", range: [48, 67] },
