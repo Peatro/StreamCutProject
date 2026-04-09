@@ -14,6 +14,7 @@ import java.util.Map;
 public class WorkerExecutionProperties {
 
     private static final Duration DEFAULT_STALE_TIMEOUT = Duration.ofMinutes(2);
+    private static final Duration DEFAULT_DOWNLOAD_STALE_TIMEOUT = Duration.ofMinutes(15);
     private static final Duration DEFAULT_ANALYZE_STALE_TIMEOUT = Duration.ofMinutes(20);
     private static final Duration DEFAULT_RECONCILE_INTERVAL = Duration.ofSeconds(30);
 
@@ -51,6 +52,7 @@ public class WorkerExecutionProperties {
 
     private static Map<WorkerTaskType, Duration> defaultStaleTimeoutOverrides() {
         Map<WorkerTaskType, Duration> defaults = new EnumMap<>(WorkerTaskType.class);
+        defaults.put(WorkerTaskType.DOWNLOAD, DEFAULT_DOWNLOAD_STALE_TIMEOUT);
         defaults.put(WorkerTaskType.ANALYZE, DEFAULT_ANALYZE_STALE_TIMEOUT);
         return defaults;
     }

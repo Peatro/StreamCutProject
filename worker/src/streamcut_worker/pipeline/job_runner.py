@@ -61,7 +61,17 @@ class WorkerJobRunner:
     ) -> WorkerDownloadCompletionPayload | WorkerProcessingPayload | WorkerExportCompletionPayload:
         if job.task_type == "DOWNLOAD":
             self._notify_progress(on_progress, "DOWNLOADING", 18, "Download worker is materializing the source video")
-            source_video_path = self._materialize_source(job)
+
+            def _on_yt_dlp_progress(download_percent: float) -> None:
+                mapped = 18 + int(download_percent * (35 - 18) / 100)
+                self._notify_progress(
+                    on_progress,
+                    "DOWNLOADING",
+                    mapped,
+                    f"Downloading source video ({download_percent:.0f}%)",
+                )
+
+            source_video_path = self._materialize_source(job, on_yt_dlp_progress=_on_yt_dlp_progress)
             return WorkerDownloadCompletionPayload(
                 execution_id=job.execution_id,
                 job_id=job.job_id,
@@ -187,9 +197,13 @@ class WorkerJobRunner:
             return
         on_progress(status, progress_percent, message)
 
-    def _materialize_source(self, job: ClaimedJob) -> Path:
+    def _materialize_source(
+        self,
+        job: ClaimedJob,
+        on_yt_dlp_progress: Callable[[float], None] | None = None,
+    ) -> Path:
         try:
-            return self.source_materializer.materialize(job)
+            return self.source_materializer.materialize(job, on_progress=on_yt_dlp_progress)
         except SourceMaterializationError as exc:
             raise WorkerJobRunnerError(exc.failed_state, str(exc)) from exc
 
