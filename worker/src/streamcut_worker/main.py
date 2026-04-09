@@ -24,6 +24,7 @@ def main() -> None:
     backend_base_url = os.getenv("BACKEND_BASE_URL", "http://backend:8080")
     storage_root = Path(os.getenv("APP_STORAGE_LOCAL_ROOT", "/data/storage"))
     worker_id = os.getenv("WORKER_ID", "worker-1")
+    worker_role = os.getenv("WORKER_ROLE", "processing").strip().lower()
     poll_interval_sec = float(os.getenv("WORKER_POLL_INTERVAL_SEC", "5"))
     emotion_keywords = tuple(
         keyword.strip()
@@ -31,13 +32,29 @@ def main() -> None:
         if keyword.strip()
     )
 
+    if worker_role not in {"download", "processing"}:
+        raise ValueError("WORKER_ROLE must be 'download' or 'processing'")
+
+    if worker_role == "processing":
+        logging.info(
+            "Processing worker is preparing the transcription model cache at %s",
+            os.getenv("HF_HOME", "/app/model-cache"),
+        )
+
+    job_runner = create_default_job_runner(
+        storage_root=storage_root,
+        emotion_keywords=emotion_keywords,
+        load_transcription_model=(worker_role == "processing"),
+    )
+
+    if worker_role == "processing":
+        logging.info("Processing worker transcription model is ready")
+
     polling_loop = WorkerPollingLoop(
         backend_client=BackendClient(base_url=backend_base_url),
-        job_runner=create_default_job_runner(
-            storage_root=storage_root,
-            emotion_keywords=emotion_keywords,
-        ),
+        job_runner=job_runner,
         worker_id=worker_id,
+        worker_role=worker_role,
         poll_interval_sec=poll_interval_sec,
     )
 

@@ -1,3 +1,8 @@
+> Status: reference / historical
+>
+> This file is preserved for earlier product framing and concept exploration.
+> It is not the active source of truth for current backlog, architecture, runtime, or release state.
+
 Отлично. Значит не распыляемся.
 
 ## Выбор зафиксирован

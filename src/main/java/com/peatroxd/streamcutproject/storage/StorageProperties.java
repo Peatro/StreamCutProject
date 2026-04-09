@@ -1,19 +1,20 @@
 package com.peatroxd.streamcutproject.storage;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.validation.annotation.Validated;
 
+import jakarta.validation.constraints.NotNull;
+import lombok.Getter;
+import lombok.Setter;
 import java.nio.file.Path;
 
+@Validated
 @ConfigurationProperties(prefix = "app.storage")
+@Getter
+@Setter
 public class StorageProperties {
 
-    private Path localRoot = Path.of("data", "storage");
+    @NotNull
+    private Path localRoot;
 
-    public Path getLocalRoot() {
-        return localRoot;
-    }
-
-    public void setLocalRoot(Path localRoot) {
-        this.localRoot = localRoot;
-    }
 }

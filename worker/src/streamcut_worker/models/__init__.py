@@ -1,3 +1,10 @@
 """Worker models."""
 
-from .transport import ClaimedJob, WorkerExportCompletionPayload, WorkerFailurePayload, WorkerProcessingPayload
+from .transport import (
+    ClaimedJob,
+    WorkerDownloadCompletionPayload,
+    WorkerExportCompletionPayload,
+    WorkerFailurePayload,
+    WorkerProcessingPayload,
+    WorkerProgressPayload,
+)

@@ -46,3 +46,9 @@ Separate local-development runtime assumptions from a deployable production prof
 
 ## Notes
 This task defines runtime contract clarity, not full deployment packaging.
+
+## Implementation Notes
+- Local-only defaults should live in the `local` runtime profile rather than the base application config.
+- The `prod` runtime profile should require explicit operator credentials, storage root, datasource settings, and artifact storage inputs.
+- `docker-compose.yml` should remain the local path and make its profile choice explicit.
+- A production example env file is acceptable if it documents placeholders only and does not smuggle secrets into the repo.

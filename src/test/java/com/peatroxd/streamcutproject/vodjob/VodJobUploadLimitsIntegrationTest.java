@@ -82,14 +82,14 @@ class VodJobUploadLimitsIntegrationTest {
                 .andExpect(content().contentTypeCompatibleWith("application/json"))
                 .andExpect(jsonPath("$.sourceType").value("FILE"))
                 .andExpect(jsonPath("$.originalFilename").value("clip.mp4"))
-                .andExpect(jsonPath("$.status").value("QUEUED"));
+                .andExpect(jsonPath("$.status").value("QUEUED_FOR_DOWNLOAD"));
 
         VodJob savedJob = vodJobRepository.findAll().stream().findFirst().orElseThrow();
         assertThat(savedJob.getStorageVideoPath()).isNotBlank();
         assertThat(Path.of(savedJob.getStorageVideoPath())).exists();
         assertThat(jobEventRepository.findAllByJobIdOrderByCreatedAtAscIdAsc(savedJob.getId()))
                 .extracting(event -> event.getEventType())
-                .containsExactly("JOB_CREATED", "JOB_QUEUED");
+                .containsExactly("JOB_CREATED", "JOB_QUEUED_FOR_DOWNLOAD");
     }
 
     @Test

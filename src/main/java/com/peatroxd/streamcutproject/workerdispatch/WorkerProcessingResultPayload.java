@@ -8,7 +8,10 @@ import com.peatroxd.streamcutproject.transcript.TranscriptSegmentWorkerPayload;
 import java.util.List;
 
 public record WorkerProcessingResultPayload(
+        Long executionId,
         Long jobId,
+        String workerId,
+        Long processingVersion,
         Long durationSec,
         String language,
         String videoPath,

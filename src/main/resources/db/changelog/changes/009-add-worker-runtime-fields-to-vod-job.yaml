@@ -1,0 +1,27 @@
+databaseChangeLog:
+  - changeSet:
+      id: 009-add-worker-runtime-fields-to-vod-job
+      author: codex
+      comment: Persist worker progress, ownership, heartbeat, and execution version on vod_job.
+      changes:
+        - addColumn:
+            tableName: vod_job
+            columns:
+              - column:
+                  name: processing_version
+                  type: BIGINT
+                  defaultValueNumeric: 1
+                  constraints:
+                    nullable: false
+              - column:
+                  name: current_worker_id
+                  type: VARCHAR(128)
+              - column:
+                  name: last_worker_heartbeat_at
+                  type: TIMESTAMP
+              - column:
+                  name: progress_percent
+                  type: INT
+              - column:
+                  name: progress_message
+                  type: VARCHAR(255)

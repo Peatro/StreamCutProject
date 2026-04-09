@@ -1,6 +1,7 @@
 package com.peatroxd.streamcutproject.vodjob.event;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -15,4 +16,12 @@ public interface JobEventRepository extends JpaRepository<JobEvent, Long> {
             order by e.createdAt asc, e.id asc
             """)
     List<JobEvent> findAllByJobIdOrderByCreatedAtAscIdAsc(@Param("jobId") Long jobId);
+
+    @Modifying
+    @Query("""
+            delete
+            from JobEvent e
+            where e.vodJob.id = :jobId
+            """)
+    void deleteAllByVodJobId(@Param("jobId") Long jobId);
 }

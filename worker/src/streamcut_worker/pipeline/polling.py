@@ -5,7 +5,12 @@ import time
 from dataclasses import dataclass
 from typing import Callable
 
-from streamcut_worker.models import WorkerExportCompletionPayload, WorkerFailurePayload
+from streamcut_worker.models import (
+    WorkerDownloadCompletionPayload,
+    WorkerExportCompletionPayload,
+    WorkerFailurePayload,
+    WorkerProgressPayload,
+)
 from streamcut_worker.pipeline.job_runner import WorkerJobRunner, WorkerJobRunnerError
 from streamcut_worker.services.backend_client import BackendClient, BackendTransportError
 
@@ -15,12 +20,26 @@ class WorkerPollingLoop:
     backend_client: BackendClient
     job_runner: WorkerJobRunner
     worker_id: str
+    worker_role: str
     poll_interval_sec: float = 5.0
+
+    @staticmethod
+    def _is_lost_lease(exc: BackendTransportError) -> bool:
+        return exc.is_conflict
+
+    def _log_lost_lease(self, job_id: int, exc: BackendTransportError) -> None:
+        logging.warning(
+            "job_lease_lost jobId=%s workerId=%s workerRole=%s message=%s",
+            job_id,
+            self.worker_id,
+            self.worker_role,
+            exc,
+        )
 
     def run_forever(self, should_continue: Callable[[], bool]) -> None:
         while should_continue():
             try:
-                claimed_job = self.backend_client.claim_next_job(self.worker_id)
+                claimed_job = self.backend_client.claim_next_job(self.worker_id, self.worker_role)
             except BackendTransportError as exc:
                 logging.warning("Worker claim failed: %s", exc)
                 time.sleep(self.poll_interval_sec)
@@ -39,8 +58,29 @@ class WorkerPollingLoop:
             )
 
             try:
-                result = self.job_runner.run(claimed_job)
-                if isinstance(result, WorkerExportCompletionPayload):
+                result = self.job_runner.run(
+                    claimed_job,
+                    lambda status, progress_percent, message: self.backend_client.submit_progress(
+                        WorkerProgressPayload(
+                            execution_id=claimed_job.execution_id,
+                            job_id=claimed_job.job_id,
+                            worker_id=self.worker_id,
+                            processing_version=claimed_job.processing_version,
+                            status=status,
+                            progress_percent=progress_percent,
+                            message=message,
+                        )
+                    ),
+                    worker_id=self.worker_id,
+                )
+                if isinstance(result, WorkerDownloadCompletionPayload):
+                    logging.info(
+                        "download_result_ready jobId=%s videoPath=%s",
+                        result.job_id,
+                        result.video_path,
+                    )
+                    self.backend_client.submit_download_result(result)
+                elif isinstance(result, WorkerExportCompletionPayload):
                     logging.info(
                         "export_result_ready jobId=%s candidateId=%s artifactPath=%s",
                         result.job_id,
@@ -65,21 +105,50 @@ class WorkerPollingLoop:
                     exc.failed_state,
                     exc,
                 )
-                self.backend_client.submit_failure(
-                    WorkerFailurePayload(
-                        job_id=claimed_job.job_id,
-                        failed_state=exc.failed_state,
-                        message=str(exc),
+                try:
+                    self.backend_client.submit_failure(
+                        WorkerFailurePayload(
+                            execution_id=claimed_job.execution_id,
+                            job_id=claimed_job.job_id,
+                            worker_id=self.worker_id,
+                            processing_version=claimed_job.processing_version,
+                            failed_state=exc.failed_state,
+                            message=str(exc),
+                        )
                     )
-                )
+                except BackendTransportError as callback_exc:
+                    if self._is_lost_lease(callback_exc):
+                        self._log_lost_lease(claimed_job.job_id, callback_exc)
+                    else:
+                        logging.warning(
+                            "Worker failure callback failed for job %s: %s",
+                            claimed_job.job_id,
+                            callback_exc,
+                        )
             except BackendTransportError as exc:
-                logging.warning("Worker callback failed for job %s: %s", claimed_job.job_id, exc)
+                if self._is_lost_lease(exc):
+                    self._log_lost_lease(claimed_job.job_id, exc)
+                else:
+                    logging.warning("Worker callback failed for job %s: %s", claimed_job.job_id, exc)
             except Exception as exc:
                 logging.exception("Worker crashed unexpectedly while running job %s", claimed_job.job_id)
-                self.backend_client.submit_failure(
-                    WorkerFailurePayload(
-                        job_id=claimed_job.job_id,
-                        failed_state="WORKER_INTERNAL",
-                        message=f"Unexpected worker failure: {exc}",
+                try:
+                    self.backend_client.submit_failure(
+                        WorkerFailurePayload(
+                            execution_id=claimed_job.execution_id,
+                            job_id=claimed_job.job_id,
+                            worker_id=self.worker_id,
+                            processing_version=claimed_job.processing_version,
+                            failed_state="WORKER_INTERNAL",
+                            message=f"Unexpected worker failure: {exc}",
+                        )
                     )
-                )
+                except BackendTransportError as callback_exc:
+                    if self._is_lost_lease(callback_exc):
+                        self._log_lost_lease(claimed_job.job_id, callback_exc)
+                    else:
+                        logging.warning(
+                            "Worker internal failure callback failed for job %s: %s",
+                            claimed_job.job_id,
+                            callback_exc,
+                        )

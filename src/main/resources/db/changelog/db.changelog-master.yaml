@@ -23,3 +23,12 @@ databaseChangeLog:
   - include:
       file: changes/008-add-export-status-to-clip-candidate.yaml
       relativeToChangelogFile: true
+  - include:
+      file: changes/009-add-worker-runtime-fields-to-vod-job.yaml
+      relativeToChangelogFile: true
+  - include:
+      file: changes/010-create-worker-execution.yaml
+      relativeToChangelogFile: true
+  - include:
+      file: changes/011-create-worker-task.yaml
+      relativeToChangelogFile: true

@@ -5,6 +5,7 @@ import com.peatroxd.streamcutproject.clipcandidate.api.ExportStatusResponse;
 import com.peatroxd.streamcutproject.storage.ArtifactResource;
 import com.peatroxd.streamcutproject.storage.ArtifactStorageService;
 import com.peatroxd.streamcutproject.vodjob.VodJobService;
+import lombok.RequiredArgsConstructor;
 import org.springframework.core.io.InputStreamResource;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
@@ -26,14 +27,10 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 
 @RestController
+@RequiredArgsConstructor
 public class ClipCandidateController {
     private final VodJobService vodJobService;
     private final ArtifactStorageService artifactStorageService;
-
-    public ClipCandidateController(VodJobService vodJobService, ArtifactStorageService artifactStorageService) {
-        this.vodJobService = vodJobService;
-        this.artifactStorageService = artifactStorageService;
-    }
 
     @PostMapping("/api/candidates/{id}/approve")
     public ClipCandidateResponse approveCandidate(@PathVariable Long id) {

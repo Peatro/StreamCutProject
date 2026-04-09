@@ -8,6 +8,7 @@ Review a completed task against the task definition and project rules.
 - find bugs or contract violations
 - detect architecture drift
 - detect task overreach
+- verify contract and schema compatibility when relevant
 - provide concise actionable review comments
 
 ## You Must
@@ -15,6 +16,7 @@ Review a completed task against the task definition and project rules.
 - flag unrelated changes
 - reject scope creep
 - request explicit fixes
+- call out worker/backend contract drift separately from normal implementation defects
 
 ## You Must Not
 - silently expand task scope

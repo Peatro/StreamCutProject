@@ -17,7 +17,7 @@ class TranscriptSegment:
 class TranscriptionRequest:
     job_id: str
     audio_path: Path
-    model_size: str = "small"
+    model_size: str = "large-v3-turbo"
     language: str | None = None
     beam_size: int = 5
     vad_filter: bool = True

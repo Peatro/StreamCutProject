@@ -37,10 +37,13 @@ services:
       context: .
       dockerfile: Dockerfile.backend
     environment:
+      SPRING_PROFILES_ACTIVE: local
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/streamcut
       SPRING_DATASOURCE_USERNAME: streamcut
       SPRING_DATASOURCE_PASSWORD: streamcut
       APP_STORAGE_LOCAL_ROOT: /data/storage
+      APP_OPERATOR_USERNAME: operator
+      APP_OPERATOR_PASSWORD: operator-password
       APP_ARTIFACT_STORAGE_MODE: S3
       APP_ARTIFACT_STORAGE_ENDPOINT: http://minio:9000
       APP_ARTIFACT_STORAGE_PUBLIC_ENDPOINT: http://localhost:9000
@@ -55,23 +58,50 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
     volumes:
       - streamcut-data:/data
 
-  worker:
+  download-worker:
     build:
       context: ./worker
       dockerfile: Dockerfile
     environment:
+      BACKEND_BASE_URL: http://backend:8080
       APP_STORAGE_LOCAL_ROOT: /data/storage
+      WORKER_ID: download-worker-1
+      WORKER_ROLE: download
       PYTHONUNBUFFERED: "1"
     depends_on:
-      postgres:
+      backend:
         condition: service_healthy
     volumes:
       - streamcut-data:/data
+
+  processing-worker:
+    build:
+      context: ./worker
+      dockerfile: Dockerfile
+    environment:
+      BACKEND_BASE_URL: http://backend:8080
+      APP_STORAGE_LOCAL_ROOT: /data/storage
+      HF_HOME: /model-cache
+      WORKER_ID: processing-worker-1
+      WORKER_ROLE: processing
+      PYTHONUNBUFFERED: "1"
+    depends_on:
+      backend:
+        condition: service_healthy
+    volumes:
+      - streamcut-data:/data
+      - streamcut-hf-cache:/model-cache
 
 volumes:
   streamcut-postgres:
   streamcut-data:
   streamcut-minio:
+  streamcut-hf-cache:

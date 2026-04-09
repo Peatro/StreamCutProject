@@ -12,9 +12,15 @@ import com.peatroxd.streamcutproject.transcript.TranscriptSegmentRepository;
 import com.peatroxd.streamcutproject.transcript.TranscriptSegmentWorkerPayload;
 import com.peatroxd.streamcutproject.vodjob.api.JobSummaryResponse;
 import com.peatroxd.streamcutproject.vodjob.event.JobEventRepository;
+import com.peatroxd.streamcutproject.workertask.WorkerTask;
+import com.peatroxd.streamcutproject.workertask.WorkerTaskRepository;
+import com.peatroxd.streamcutproject.workertask.WorkerTaskStatus;
 import com.peatroxd.streamcutproject.workerdispatch.WorkerExportResultPayload;
 import com.peatroxd.streamcutproject.workerdispatch.WorkerFailureReportPayload;
 import com.peatroxd.streamcutproject.workerdispatch.WorkerProcessingResultPayload;
+import com.peatroxd.streamcutproject.workerexecution.WorkerExecution;
+import com.peatroxd.streamcutproject.workerexecution.WorkerExecutionRepository;
+import com.peatroxd.streamcutproject.workerexecution.WorkerTaskType;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -79,6 +85,12 @@ class VodJobLifecycleIntegrationTest {
     @Autowired
     private StorageService storageService;
 
+    @Autowired
+    private WorkerExecutionRepository workerExecutionRepository;
+
+    @Autowired
+    private WorkerTaskRepository workerTaskRepository;
+
     @Test
     void createUploadJobQueuesJobPersistsSourceAndWritesEvents() {
         MockMultipartFile file = new MockMultipartFile(
@@ -91,21 +103,45 @@ class VodJobLifecycleIntegrationTest {
         JobSummaryResponse response = vodJobService.createFileJob(file);
         VodJob job = vodJobRepository.findById(response.id()).orElseThrow();
 
-        assertThat(response.status()).isEqualTo("QUEUED");
-        assertThat(job.getStatus()).isEqualTo(JobStatus.QUEUED);
+        assertThat(response.status()).isEqualTo("QUEUED_FOR_DOWNLOAD");
+        assertThat(job.getStatus()).isEqualTo(JobStatus.QUEUED_FOR_DOWNLOAD);
         assertThat(job.getStorageVideoPath()).isNotBlank();
         assertThat(Path.of(job.getStorageVideoPath())).exists();
         assertThat(jobEventRepository.findAllByJobIdOrderByCreatedAtAscIdAsc(job.getId()))
                 .extracting(event -> event.getEventType())
-                .containsExactly("JOB_CREATED", "JOB_QUEUED");
+                .containsExactly("JOB_CREATED", "JOB_QUEUED_FOR_DOWNLOAD");
     }
 
     @Test
     void workerSuccessIngestPersistsGeneratedDataAndMarksReadyForReview() {
         VodJob job = vodJobRepository.save(newJob("https://example.com/video"));
+        job.setCurrentWorkerId("worker-1");
+        job.setStatus(JobStatus.TRANSCRIBING);
+        job.setStorageVideoPath(storageService.resolveSourceVideoPath(job.getId(), "video.mp4").toString());
+        vodJobRepository.save(job);
+        WorkerTask processingTask = createRunningTask(
+                job,
+                WorkerTaskType.ANALYZE,
+                null,
+                Instant.parse("2026-04-05T10:00:00Z"),
+                Instant.parse("2026-04-05T10:00:30Z")
+        );
+        WorkerExecution processingExecution = workerExecutionRepository.save(WorkerExecution.create(
+                job,
+                processingTask,
+                job.getProcessingVersion(),
+                "worker-1",
+                "processing",
+                WorkerTaskType.ANALYZE,
+                null,
+                Instant.parse("2026-04-05T10:00:30Z")
+        ));
 
         WorkerProcessingResultPayload payload = new WorkerProcessingResultPayload(
+                processingExecution.getId(),
                 job.getId(),
+                "worker-1",
+                job.getProcessingVersion(),
                 120L,
                 "en",
                 storageService.resolveSourceVideoPath(job.getId(), "video.mp4").toString(),
@@ -132,10 +168,21 @@ class VodJobLifecycleIntegrationTest {
     void workerFailureIngestMarksJobFailedAndWritesFailureEvent() {
         VodJob job = vodJobRepository.save(newJob("https://example.com/video"));
         job.setStatus(JobStatus.TRANSCRIBING);
+        job.setCurrentWorkerId("worker-1");
         vodJobRepository.save(job);
+        WorkerExecution processingExecution = workerExecutionRepository.save(WorkerExecution.create(
+                job,
+                null,
+                job.getProcessingVersion(),
+                "worker-1",
+                "processing",
+                WorkerTaskType.ANALYZE,
+                null,
+                Instant.parse("2026-04-05T10:00:30Z")
+        ));
 
         vodJobService.reportWorkerFailure(
-                new WorkerFailureReportPayload(job.getId(), "TRANSCRIBING", "transcription failed")
+                new WorkerFailureReportPayload(processingExecution.getId(), job.getId(), "worker-1", job.getProcessingVersion(), "TRANSCRIBING", "transcription failed")
         );
 
         VodJob failedJob = vodJobRepository.findById(job.getId()).orElseThrow();
@@ -160,10 +207,32 @@ class VodJobLifecycleIntegrationTest {
         vodJobService.startExport(savedCandidate.getId());
         VodJob exportingJob = vodJobRepository.findById(job.getId()).orElseThrow();
         assertThat(exportingJob.getStatus()).isEqualTo(JobStatus.EXPORTING_CLIP);
+        exportingJob.setCurrentWorkerId("worker-1");
+        vodJobRepository.save(exportingJob);
+        WorkerTask exportTask = createRunningTask(
+                exportingJob,
+                WorkerTaskType.EXPORT,
+                savedCandidate.getId(),
+                Instant.parse("2026-04-05T10:00:30Z"),
+                Instant.parse("2026-04-05T10:01:00Z")
+        );
+        WorkerExecution exportExecution = workerExecutionRepository.save(WorkerExecution.create(
+                exportingJob,
+                exportTask,
+                exportingJob.getProcessingVersion(),
+                "worker-1",
+                "processing",
+                WorkerTaskType.EXPORT,
+                savedCandidate.getId(),
+                Instant.parse("2026-04-05T10:01:00Z")
+        ));
 
         vodJobService.ingestWorkerExportResult(
                 new WorkerExportResultPayload(
+                        exportExecution.getId(),
                         job.getId(),
+                        "worker-1",
+                        job.getProcessingVersion(),
                         savedCandidate.getId(),
                         storageService.resolveExportedClipPath(job.getId(), savedCandidate.getId(), ".mp4").toString()
                 )
@@ -179,9 +248,10 @@ class VodJobLifecycleIntegrationTest {
         VodJob job = newVodJob();
         job.setSourceType("URL");
         job.setSourceUrl(sourceUrl);
-        job.setStatus(JobStatus.QUEUED);
+        job.setStatus(JobStatus.QUEUED_FOR_DOWNLOAD);
         job.setCreatedAt(Instant.parse("2026-04-05T10:00:00Z"));
         job.setUpdatedAt(Instant.parse("2026-04-05T10:00:00Z"));
+        job.setProcessingVersion(1L);
         return job;
     }
 
@@ -193,5 +263,37 @@ class VodJobLifecycleIntegrationTest {
         } catch (ReflectiveOperationException ex) {
             throw new IllegalStateException("Failed to create VodJob test fixture", ex);
         }
+    }
+
+    private WorkerTask createRunningTask(
+            VodJob job,
+            WorkerTaskType taskType,
+            Long candidateId,
+            Instant createdAt,
+            Instant runningAt
+    ) {
+        WorkerTask task = (candidateId == null
+                ? workerTaskRepository.findFirstByVodJobIdAndProcessingVersionAndTaskTypeAndStatusOrderByIdAsc(
+                        job.getId(),
+                        job.getProcessingVersion(),
+                        taskType,
+                        WorkerTaskStatus.QUEUED
+                )
+                : workerTaskRepository.findFirstByVodJobIdAndProcessingVersionAndTaskTypeAndCandidateIdAndStatusOrderByIdAsc(
+                        job.getId(),
+                        job.getProcessingVersion(),
+                        taskType,
+                        candidateId,
+                        WorkerTaskStatus.QUEUED
+                ))
+                .orElseGet(() -> workerTaskRepository.save(WorkerTask.createQueued(
+                        job,
+                        job.getProcessingVersion(),
+                        taskType,
+                        candidateId,
+                        createdAt
+                )));
+        task.markRunning(runningAt);
+        return workerTaskRepository.save(task);
     }
 }

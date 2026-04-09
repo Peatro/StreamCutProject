@@ -46,3 +46,9 @@ The current stack works, but backend and worker images inherit from `postgres:15
 
 ## Notes
 An edge runtime can stay minimal. The goal is operational clarity and cleaner packaging, not infrastructure theater.
+
+## Implementation Notes
+- Replace `postgres:15` inheritance with purpose-fit backend and worker images.
+- Keep `docker-compose.yml` as the local path; use a separate production compose package rather than overloading the local stack.
+- A minimal reverse proxy is enough for the production edge runtime if it gives one clear public entrypoint for UI and API traffic.
+- It is acceptable for the production package to keep PostgreSQL and S3-compatible object storage as external dependencies as long as that contract is documented explicitly.

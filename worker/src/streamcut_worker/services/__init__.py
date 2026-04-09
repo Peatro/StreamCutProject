@@ -1,5 +1,11 @@
 """Worker services."""
-from streamcut_worker.models import ClaimedJob, WorkerExportCompletionPayload, WorkerFailurePayload, WorkerProcessingPayload
+from streamcut_worker.models import (
+    ClaimedJob,
+    WorkerExportCompletionPayload,
+    WorkerFailurePayload,
+    WorkerProcessingPayload,
+    WorkerProgressPayload,
+)
 from streamcut_worker.audio import (
     AudioExtractionException,
     AudioExtractionRequest,

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable, Protocol, Sequence
+from typing import Callable, Iterable, Protocol, Sequence
 
 from .exceptions import TranscriptionException
 from .models import TranscriptSegment, TranscriptionRequest, TranscriptionResult
@@ -45,7 +45,11 @@ class FasterWhisperTranscriptionService:
     model: WhisperModelLike
     model_name: str = "unknown"
 
-    def transcribe(self, request: TranscriptionRequest) -> TranscriptionResult:
+    def transcribe(
+        self,
+        request: TranscriptionRequest,
+        on_progress: Callable[[float, float], None] | None = None,
+    ) -> TranscriptionResult:
         if not request.audio_path.exists():
             raise TranscriptionException(
                 f"Input audio does not exist: {request.audio_path}",
@@ -70,17 +74,22 @@ class FasterWhisperTranscriptionService:
                 stderr=str(exc),
             ) from exc
 
-        transcript_segments = [
-            TranscriptSegment(
+        total_duration = float(info.duration) if info.duration is not None else None
+        transcript_segments: list[TranscriptSegment] = []
+
+        for segment in segments:
+            transcript_segments.append(TranscriptSegment(
                 start_sec=float(segment.start),
                 end_sec=float(segment.end),
                 text=segment.text.strip(),
                 word_count=_count_words(segment),
-            )
-            for segment in segments
-        ]
+            ))
+            if on_progress is not None and total_duration is not None and total_duration > 0:
+                on_progress(min(float(segment.end), total_duration), total_duration)
 
         duration_sec = _resolve_duration(info.duration, transcript_segments)
+        if on_progress is not None and duration_sec > 0:
+            on_progress(duration_sec, duration_sec)
 
         return TranscriptionResult(
             job_id=request.job_id,
@@ -94,7 +103,7 @@ class FasterWhisperTranscriptionService:
 
 def create_default_transcription_service(
     *,
-    model_size: str = "small",
+    model_size: str = "large-v3-turbo",
     device: str = "cpu",
     compute_type: str = "int8",
 ) -> FasterWhisperTranscriptionService:

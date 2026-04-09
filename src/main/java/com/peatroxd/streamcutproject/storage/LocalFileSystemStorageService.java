@@ -1,5 +1,6 @@
 package com.peatroxd.streamcutproject.storage;
 
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
@@ -11,24 +12,23 @@ import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 
 @Service
+@RequiredArgsConstructor
 public class LocalFileSystemStorageService implements StorageService {
 
     private final StorageProperties storageProperties;
 
-    public LocalFileSystemStorageService(StorageProperties storageProperties) {
-        this.storageProperties = storageProperties;
-    }
-
     @Override
     public Path resolveJobRoot(long jobId) {
-        return storageProperties.getLocalRoot().resolve("jobs").resolve(Long.toString(jobId));
+        Path resolved = storageProperties.getLocalRoot().resolve("jobs").resolve(Long.toString(jobId));
+        return PathSafety.requireWithinRoot(storageProperties.getLocalRoot(), resolved, "job root");
     }
 
     @Override
     public Path resolveSourceVideoPath(long jobId, String originalFilename) {
-        return resolveJobRoot(jobId)
+        Path resolved = resolveJobRoot(jobId)
                 .resolve("source")
                 .resolve(sanitizeFilename(originalFilename, "source-video"));
+        return PathSafety.requireWithinRoot(storageProperties.getLocalRoot(), resolved, "source video path");
     }
 
     @Override
@@ -41,16 +41,18 @@ public class LocalFileSystemStorageService implements StorageService {
 
     @Override
     public Path resolveAudioPath(long jobId) {
-        return resolveJobRoot(jobId)
+        Path resolved = resolveJobRoot(jobId)
                 .resolve("audio")
                 .resolve("audio.wav");
+        return PathSafety.requireWithinRoot(storageProperties.getLocalRoot(), resolved, "audio path");
     }
 
     @Override
     public Path resolveExportedClipPath(long jobId, long candidateId, String extension) {
-        return resolveJobRoot(jobId)
+        Path resolved = resolveJobRoot(jobId)
                 .resolve("exports")
                 .resolve("candidate-" + candidateId + normalizeExtension(extension));
+        return PathSafety.requireWithinRoot(storageProperties.getLocalRoot(), resolved, "export artifact path");
     }
 
     private static String sanitizeFilename(String filename, String fallbackBaseName) {

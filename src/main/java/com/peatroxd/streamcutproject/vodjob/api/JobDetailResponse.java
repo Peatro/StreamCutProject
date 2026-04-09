@@ -16,6 +16,13 @@ public record JobDetailResponse(
         Long durationSec,
         String language,
         String storageVideoPath,
-        String storageAudioPath
+        String storageAudioPath,
+        Long processingVersion,
+        String currentWorkerId,
+        Instant lastWorkerHeartbeatAt,
+        Integer progressPercent,
+        String progressMessage,
+        WorkerExecutionResponse latestExecution,
+        WorkerTaskResponse latestTask
 ) {
 }

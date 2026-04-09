@@ -7,14 +7,14 @@ qa-agent
 Validate recovery behavior when the worker stops or restarts during queue processing.
 
 ## Context
-The Docker MVP works locally, but release hardening still requires observed behavior for worker interruption during queueing, analysis, and export.
+The Docker MVP works locally, but release hardening still requires observed behavior for worker interruption during queued work, analysis, and export.
 
 ## Scope
-- worker restart during queued job
+- worker restart during queued task claim or dispatch
 - worker restart during analysis
 - worker restart during export
 - verify claim, retry, and recovery semantics
-- verify whether ghosted or permanently stuck jobs appear
+- verify whether ghosted or permanently stuck aggregate states appear
 
 ## Out of Scope
 - implementing recovery improvements
@@ -47,7 +47,7 @@ The Docker MVP works locally, but release hardening still requires observed beha
 This task is about resilience clarity, not about reaching perfect recovery semantics in one pass.
 
 ## Observed On 2026-04-06
-- Restarting the worker while a queued job was being claimed did not lose the job; the worker came back and resumed processing the claimed work.
-- A file-backed job restarted during `DOWNLOADING` continued after the worker bounce, but the backend job record stayed visually stuck in `DOWNLOADING` for the whole observation window.
+- Restarting the worker while a queued task was being claimed did not lose the work; the worker came back and resumed processing the claimed payload.
+- A file-backed aggregate restarted during `DOWNLOADING` continued after the worker bounce, but the backend job record stayed visually stuck in `DOWNLOADING` for the whole observation window.
 - A candidate export restarted while `IN_PROGRESS` remained in progress after the worker bounce. No immediate failure or ghosting was observed, but the API did not surface any explicit recovery signal either.
 - The main risk is silent progress: the system keeps working after restart, but operator-visible state does not clearly show whether recovery is underway or stalled.

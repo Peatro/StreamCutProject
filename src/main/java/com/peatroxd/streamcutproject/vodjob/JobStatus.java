@@ -2,8 +2,9 @@ package com.peatroxd.streamcutproject.vodjob;
 
 public enum JobStatus {
     NEW,
-    QUEUED,
+    QUEUED_FOR_DOWNLOAD,
     DOWNLOADING,
+    QUEUED_FOR_PROCESSING,
     EXTRACTING_AUDIO,
     TRANSCRIBING,
     DETECTING_SILENCE,
@@ -12,5 +13,6 @@ public enum JobStatus {
     READY_FOR_REVIEW,
     EXPORTING_CLIP,
     COMPLETED,
+    CANCELED,
     FAILED
 }

@@ -7,9 +7,13 @@ import com.peatroxd.streamcutproject.vodjob.api.JobEventResponse;
 import com.peatroxd.streamcutproject.vodjob.api.JobListItemResponse;
 import com.peatroxd.streamcutproject.vodjob.api.JobSummaryResponse;
 import com.peatroxd.streamcutproject.vodjob.api.TranscriptSegmentResponse;
+import com.peatroxd.streamcutproject.vodjob.api.WorkerExecutionResponse;
+import com.peatroxd.streamcutproject.vodjob.api.WorkerTaskResponse;
 import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -24,13 +28,10 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/api/jobs")
+@RequiredArgsConstructor
 public class VodJobController {
 
     private final VodJobService vodJobService;
-
-    public VodJobController(VodJobService vodJobService) {
-        this.vodJobService = vodJobService;
-    }
 
     @PostMapping("/url")
     @ResponseStatus(HttpStatus.CREATED)
@@ -60,6 +61,27 @@ public class VodJobController {
         return vodJobService.getJob(id);
     }
 
+    @PostMapping("/{id}/retry")
+    public JobDetailResponse retryJob(@PathVariable Long id) {
+        return vodJobService.retryJob(id);
+    }
+
+    @PostMapping("/{id}/cancel")
+    public JobDetailResponse cancelJob(@PathVariable Long id) {
+        return vodJobService.cancelJob(id);
+    }
+
+    @PostMapping("/{id}/force-fail")
+    public JobDetailResponse forceFailJob(@PathVariable Long id) {
+        return vodJobService.forceFailJob(id);
+    }
+
+    @DeleteMapping("/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void deleteJob(@PathVariable Long id) {
+        vodJobService.deleteJob(id);
+    }
+
     @GetMapping("/{id}/candidates")
     public List<ClipCandidateResponse> listCandidates(@PathVariable Long id) {
         return vodJobService.listCandidates(id);
@@ -73,5 +95,15 @@ public class VodJobController {
     @GetMapping("/{id}/events")
     public List<JobEventResponse> listJobEvents(@PathVariable Long id) {
         return vodJobService.listJobEvents(id);
+    }
+
+    @GetMapping("/{id}/executions")
+    public List<WorkerExecutionResponse> listWorkerExecutions(@PathVariable Long id) {
+        return vodJobService.listWorkerExecutions(id);
+    }
+
+    @GetMapping("/{id}/tasks")
+    public List<WorkerTaskResponse> listWorkerTasks(@PathVariable Long id) {
+        return vodJobService.listWorkerTasks(id);
     }
 }

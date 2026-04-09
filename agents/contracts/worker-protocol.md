@@ -1,37 +1,48 @@
 # Worker Protocol
 
 ## Purpose
-Defines the backend <-> worker transport and payload contract for the MVP.
+Defines the backend <-> worker transport and payload contract for the current task-centric MVP.
 
 ## Transport Model
-- MVP transport is HTTP polling plus HTTP callback.
-- The worker polls the backend for one queued job at a time.
-- The backend returns one claim payload or `204 No Content` when no job is available.
-- The worker reports either a success payload or a failure payload back to the backend after processing.
-- Worker-facing endpoints are internal transport endpoints and must stay separate from UI-facing APIs.
+- transport is HTTP polling plus HTTP callback
+- the worker polls the backend for one task at a time
+- the current endpoint name `claims/next` is legacy naming; the operational contract is task-centric
+- the backend returns one claimed task payload or `204 No Content` when no task is available
+- the worker reports progress, success, or failure against the active execution
+- worker-facing endpoints are internal transport endpoints and must stay separate from UI-facing APIs
+
+## Core Identity Rules
+- `jobId` identifies the user-facing aggregate context
+- `executionId` identifies the active worker execution and is required for every callback
+- `processingVersion` is the lease/version guard and must be echoed back unchanged
+- `taskType` identifies the concrete work unit: `DOWNLOAD`, `ANALYZE`, or `EXPORT`
+- backend remains the source of truth for orchestration, ownership, and acceptance of callbacks
 
 ## Flow
-1. Worker sends a claim request.
-2. Backend atomically claims the next queued job if one exists.
-3. Backend returns the worker input payload for that job.
-4. Worker processes the job against the shared storage volume.
-5. Worker submits either a success result payload or a failure payload.
-6. Backend persists results or failure state and returns an acknowledgement payload.
+1. Worker sends a claim request with `workerId` and `workerRole`.
+2. Backend atomically claims the next compatible task if one exists.
+3. Backend returns one dispatch payload tied to the new `executionId`.
+4. Worker executes exactly that task.
+5. Worker sends progress, success, or failure callbacks for the same `executionId`.
+6. Backend accepts or rejects callbacks based on execution ownership and `processingVersion`.
 
 ## Claim Request
 `POST /api/internal/worker/claims/next`
 
 ```json
 {
-  "workerId": "string"
+  "workerId": "string",
+  "workerRole": "DOWNLOAD_OR_PROCESSING"
 }
 ```
 
 ## Claim Response Payload
 ```json
 {
+  "executionId": 0,
   "jobId": 0,
-  "taskType": "ANALYZE_OR_EXPORT",
+  "processingVersion": 1,
+  "taskType": "DOWNLOAD_OR_ANALYZE_OR_EXPORT",
   "videoPath": "string or null",
   "sourceType": "URL_OR_FILE",
   "sourceUrl": "string or null",
@@ -42,13 +53,30 @@ Defines the backend <-> worker transport and payload contract for the MVP.
 }
 ```
 
-If no queued job is available, the backend returns `204 No Content`.
+If no compatible queued task is available, the backend returns `204 No Content`.
 
-## Success Result Payload
+## Download Result Payload
+`POST /api/internal/worker/downloads/results`
 
 ```json
 {
+  "executionId": 0,
   "jobId": 0,
+  "workerId": "string",
+  "processingVersion": 1,
+  "videoPath": "string"
+}
+```
+
+## Analysis Result Payload
+`POST /api/internal/worker/results`
+
+```json
+{
+  "executionId": 0,
+  "jobId": 0,
+  "workerId": "string",
+  "processingVersion": 1,
   "durationSec": 0,
   "language": "string",
   "videoPath": "string or null",
@@ -90,12 +118,30 @@ If no queued job is available, the backend returns `204 No Content`.
 }
 ```
 
+## Progress Update Payload
+`POST /api/internal/worker/progress`
+
+```json
+{
+  "executionId": 0,
+  "jobId": 0,
+  "workerId": "string",
+  "processingVersion": 1,
+  "status": "TASK_OR_JOB_STAGE",
+  "progressPercent": 48,
+  "message": "string"
+}
+```
+
 ## Export Result Payload
 `POST /api/internal/worker/exports/results`
 
 ```json
 {
+  "executionId": 0,
   "jobId": 0,
+  "workerId": "string",
+  "processingVersion": 1,
   "candidateId": 0,
   "artifactPath": "string"
 }
@@ -106,33 +152,38 @@ If no queued job is available, the backend returns `204 No Content`.
 
 ```json
 {
+  "executionId": 0,
   "jobId": 0,
-  "failedState": "DOWNLOADING",
+  "workerId": "string",
+  "processingVersion": 1,
+  "failedState": "TASK_OR_JOB_STAGE",
   "message": "string"
 }
 ```
 
 ## Acknowledgement Payload
-Returned by both success and failure callbacks.
+Returned by worker callback endpoints.
 
 ```json
 {
   "jobId": 0,
-  "status": "READY_FOR_REVIEW_OR_FAILED"
+  "status": "READY_FOR_REVIEW_OR_FAILED_OR_COMPLETED"
 }
 ```
 
 ## Contract Rules
-
-- Field names must remain stable.
-- Output must be valid JSON-compatible data.
-- Missing optional values must be explicit.
-- Schema changes require explicit task approval.
-- `jobId` is a numeric identifier in JSON.
-- Empty collections must be returned as empty arrays, not `null`.
-- Paths must reference artifacts visible to both backend and worker through the shared storage root.
-- `taskType` must be `ANALYZE` or `EXPORT`.
-- `videoPath` is required for `FILE` jobs and may be `null` for `URL` jobs before worker-side download.
-- `candidateId`, `clipStartSec`, `clipEndSec`, and `artifactPath` are required for `EXPORT` jobs and must be `null` for normal analysis jobs.
-- Analysis success payloads should return resolved `videoPath` and `audioPath` when those artifacts are known, so backend export flow can reuse them later.
-- `failedState` must reference the explicit processing state where the job failed.
+- field names must remain stable
+- output must be valid JSON-compatible data
+- missing optional values must be explicit
+- schema changes require explicit task approval
+- `jobId` remains the aggregate identifier in worker payloads
+- `executionId` must be echoed back unchanged from the claim payload
+- `processingVersion` must be echoed back unchanged from the claim payload so stale callbacks can be rejected safely
+- empty collections must be returned as empty arrays, not `null`
+- paths must reference artifacts visible to both backend and worker through the shared storage or object-storage contract
+- `taskType` must be `DOWNLOAD`, `ANALYZE`, or `EXPORT`
+- `videoPath` may be `null` before source materialization is complete
+- `candidateId`, `clipStartSec`, `clipEndSec`, and `artifactPath` are export-specific fields
+- worker must execute exactly one claimed task payload at a time
+- worker must not invent follow-up tasks; backend owns orchestration and queue transitions
+- worker should remain idempotent across retries whenever practical

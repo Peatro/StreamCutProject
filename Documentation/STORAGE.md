@@ -1,5 +1,19 @@
 # Storage Configuration
 
+## Status
+
+- Lifecycle: active
+- Source of truth: repository
+- Mirror: none required yet
+- Maturity: active but expected to evolve with `TASK-071` and `TASK-072`
+
+## Related Documents
+
+- `Documentation/runtime.md`
+- `Documentation/operations.md`
+- `Documentation/architecture-roadmap.md`
+- `Documentation/backlog.md`
+
 ## Purpose
 Local-first filesystem storage for media assets and exported clips.
 

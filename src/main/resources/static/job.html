@@ -6,25 +6,21 @@
   <title>Job Details - StreamCut Project</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/styles.css">
   <script defer src="/app.js"></script>
 </head>
 <body data-page="job">
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="brandmark" href="/index.html">StreamCut</a>
+      <nav class="topbar-nav" aria-label="Primary">
+        <a class="topbar-link" href="/index.html">Jobs</a>
+        <span class="topbar-link is-current" aria-current="page">Job</span>
+      </nav>
+    </div>
+  </header>
   <main class="app-shell">
-    <section class="hero">
-      <div>
-        <span class="eyebrow">Job Console</span>
-        <h1>Inspect every stage. Pull clips instantly.</h1>
-        <p>Transcript, candidate windows, storage paths, and lifecycle events stay aligned in one review surface built for operational flow.</p>
-      </div>
-      <div class="hero-meta">
-        <div class="kicker">Navigation</div>
-        <strong><a href="/index.html">Back to queue overview</a></strong>
-        <span class="muted">Use this page to inspect the pipeline, moderate candidates when needed, and download clips without leaving the job surface.</span>
-      </div>
-    </section>
-
     <div data-page-root></div>
   </main>
 </body>
