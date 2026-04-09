@@ -1,5 +1,6 @@
 package com.peatroxd.streamcutproject.e2e;
 
+import com.peatroxd.streamcutproject.clipcandidate.ClipCandidateWorkerPayload;
 import com.peatroxd.streamcutproject.storage.StorageProperties;
 import com.peatroxd.streamcutproject.storage.StorageService;
 import com.peatroxd.streamcutproject.vodjob.JobStatus;
@@ -9,6 +10,7 @@ import com.peatroxd.streamcutproject.vodjob.api.JobSummaryResponse;
 import com.peatroxd.streamcutproject.workerdispatch.WorkerDispatchPayload;
 import com.peatroxd.streamcutproject.workerdispatch.WorkerDownloadResultPayload;
 import com.peatroxd.streamcutproject.workerdispatch.WorkerFailureReportPayload;
+import com.peatroxd.streamcutproject.workerdispatch.WorkerProcessingResultPayload;
 import com.peatroxd.streamcutproject.workerdispatch.WorkerProgressUpdatePayload;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Profile;
@@ -23,6 +25,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.Comparator;
+import java.util.List;
 
 @Service
 @Profile("local")
@@ -68,6 +71,7 @@ public class LocalE2eSupportService {
             case QUEUED_FOR_DOWNLOAD -> vodJobService.getJob(createdJob.id());
             case TRANSCRIBING -> transitionToTranscribing(createdJob.id());
             case FAILED -> transitionToFailed(createdJob.id());
+            case READY_FOR_REVIEW -> transitionToReadyForReview(createdJob.id());
         };
     }
 
@@ -89,6 +93,39 @@ public class LocalE2eSupportService {
                 transcribingJob.processingVersion(),
                 JobStatus.TRANSCRIBING.name(),
                 FAILED_MESSAGE
+        ));
+        return vodJobService.getJob(jobId);
+    }
+
+    private JobDetailResponse transitionToReadyForReview(Long jobId) {
+        JobDetailResponse transcribingJob = transitionToTranscribing(jobId);
+        Long executionId = transcribingJob.latestExecution() != null
+                ? transcribingJob.latestExecution().id()
+                : null;
+        if (executionId == null) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "Synthetic READY_FOR_REVIEW fixture is missing an active execution for job: " + jobId
+            );
+        }
+        String videoPath = storageService.resolveSourceVideoPath(jobId, "fixture.mp4").toString();
+        List<ClipCandidateWorkerPayload> candidates = List.of(
+                new ClipCandidateWorkerPayload(10.0, 40.0, 0.85, "First clip excerpt"),
+                new ClipCandidateWorkerPayload(60.0, 90.0, 0.72, "Second clip excerpt")
+        );
+        vodJobService.ingestWorkerResult(new WorkerProcessingResultPayload(
+                executionId,
+                jobId,
+                PROCESSING_WORKER_ID,
+                transcribingJob.processingVersion(),
+                120L,
+                "en",
+                videoPath,
+                null,
+                List.of(),
+                List.of(),
+                List.of(),
+                candidates
         ));
         return vodJobService.getJob(jobId);
     }
@@ -190,7 +227,8 @@ public class LocalE2eSupportService {
     private enum SeedJobStatus {
         QUEUED_FOR_DOWNLOAD,
         TRANSCRIBING,
-        FAILED;
+        FAILED,
+        READY_FOR_REVIEW;
 
         private static SeedJobStatus parse(String rawValue) {
             try {
