@@ -120,6 +120,11 @@ public class VodJobService {
             JobStatus.GENERATING_CANDIDATES,
             JobStatus.EXPORTING_CLIP
     );
+    private static final Set<JobStatus> DELETABLE_STATUSES = EnumSet.of(
+            JobStatus.COMPLETED,
+            JobStatus.FAILED,
+            JobStatus.CANCELED
+    );
 
     private final VodJobRepository vodJobRepository;
     private final JobEventRepository jobEventRepository;
@@ -365,6 +370,44 @@ public class VodJobService {
         log.warn("job_force_failed jobId={} forcedFromStatus={} processingVersion={}", job.getId(), forcedFromStatus, job.getProcessingVersion());
 
         return toJobDetailResponse(job);
+    }
+
+    @Transactional
+    public void deleteJob(Long jobId) {
+        VodJob job = requireJob(jobId);
+        if (!DELETABLE_STATUSES.contains(job.getStatus())) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "Job cannot be deleted from status: " + job.getStatus()
+            );
+        }
+
+        List<ClipCandidate> exportedCandidates = clipCandidateRepository.findAllByVodJobIdAndExportStatus(
+                jobId, ExportStatus.COMPLETED
+        );
+        for (ClipCandidate candidate : exportedCandidates) {
+            String reference = candidate.getExportedClipPath();
+            if (reference != null && !reference.isBlank()) {
+                try {
+                    artifactStorageService.delete(reference);
+                } catch (IOException ex) {
+                    log.warn("job_delete_artifact_failed jobId={} candidateId={} message={}", jobId, candidate.getId(), ex.getMessage());
+                }
+            }
+        }
+
+        deleteLocalFileIfPresent(jobId, job.getStorageVideoPath(), "source video");
+        deleteLocalFileIfPresent(jobId, job.getStorageAudioPath(), "audio");
+
+        workerExecutionRepository.deleteAllByVodJobId(jobId);
+        workerTaskRepository.deleteAllByVodJobId(jobId);
+        analysisWindowRepository.deleteAllByJobId(jobId);
+        silenceSegmentRepository.deleteAllByJobId(jobId);
+        transcriptSegmentRepository.deleteAllByJobId(jobId);
+        clipCandidateRepository.deleteAllByJobId(jobId);
+        jobEventRepository.deleteAllByVodJobId(jobId);
+        vodJobRepository.delete(job);
+        log.info("job_deleted jobId={} status={}", jobId, job.getStatus());
     }
 
     @Transactional
@@ -1294,6 +1337,22 @@ public class VodJobService {
 
     private static String normalizeArtifactPath(String path) {
         return path.replace('\\', '/');
+    }
+
+    private void deleteLocalFileIfPresent(Long jobId, String storedPath, String description) {
+        if (storedPath == null || storedPath.isBlank()) {
+            return;
+        }
+        try {
+            Path resolved = PathSafety.requireWithinRoot(
+                    storageProperties.getLocalRoot(),
+                    Path.of(storedPath),
+                    description
+            );
+            Files.deleteIfExists(resolved);
+        } catch (InvalidPathException | IOException ex) {
+            log.warn("job_delete_{}_failed jobId={} path={} message={}", description.replace(' ', '_'), jobId, storedPath, ex.getMessage());
+        }
     }
 
     private static String validateHttpUrl(String rawUrl) {

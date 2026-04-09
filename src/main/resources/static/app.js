@@ -9,6 +9,7 @@
     retryJob: (id) => postJson(`/api/jobs/${id}/retry`),
     cancelJob: (id) => postJson(`/api/jobs/${id}/cancel`),
     forceFailJob: (id) => postJson(`/api/jobs/${id}/force-fail`),
+    deleteJob: (id) => deleteRequest(`/api/jobs/${id}`),
     createUrlJob: (url) => postJson("/api/jobs/url", {
       headers: {
         "Content-Type": "application/json"
@@ -382,6 +383,26 @@ ${renderJobFailureSummary(job, candidates)}
       }
     });
 
+    root.querySelectorAll("[data-delete-job]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        const jobId = button.dataset.jobId;
+        const previousLabel = button.textContent;
+        setLiveInteractionLock(true, "Deleting job...");
+        button.disabled = true;
+        button.textContent = "Deleting...";
+        try {
+          await api.deleteJob(jobId);
+          await renderJobsPage(root, `Job #${jobId} was deleted.`, "success");
+        } catch (error) {
+          showInlineBanner(root, error.message || "Failed to delete job.", "error");
+          button.disabled = false;
+          button.textContent = previousLabel;
+        } finally {
+          setLiveInteractionLock(false);
+        }
+      });
+    });
+
     urlForm?.addEventListener("submit", async (event) => {
       event.preventDefault();
       const submitButton = urlForm.querySelector("button[type='submit']");
@@ -467,7 +488,8 @@ ${renderJobFailureSummary(job, candidates)}
         const actionLabelByType = {
           retry: "Retrying...",
           cancel: "Canceling...",
-          "force-fail": "Force Failing..."
+          "force-fail": "Force Failing...",
+          delete: "Deleting..."
         };
         const previousLabel = button.textContent;
         setLiveInteractionLock(true, `${previousLabel} in progress.`);
@@ -488,6 +510,11 @@ ${renderJobFailureSummary(job, candidates)}
           if (action === "force-fail") {
             await api.forceFailJob(jobId);
             await renderJobPage(root, jobId, `Job #${jobId} was force-failed by an operator.`, "warning");
+            return;
+          }
+          if (action === "delete") {
+            await api.deleteJob(jobId);
+            window.location.href = "/index.html";
             return;
           }
           throw new Error("Unknown job control action.");
@@ -876,6 +903,7 @@ ${renderJobFailureSummary(job, candidates)}
     const canRetry = isJobRetryable(job);
     const canCancel = isJobCancelable(job);
     const canForceFail = isJobForceFailable(job);
+    const canDelete = isJobDeletable(job);
     const progressLabel = job?.progressMessage || defaultProgressMessage(job);
     const phaseLabel = formatEventType(currentStatus);
     const heartbeat = describeWorkerHeartbeat(job);
@@ -888,6 +916,7 @@ ${renderJobFailureSummary(job, candidates)}
           ${canRetry ? '<button class="action-button action-button-primary" type="button" data-job-control="retry">Retry</button>' : ""}
           ${canCancel ? '<button class="action-button action-button-reject" type="button" data-job-control="cancel">Cancel</button>' : ""}
           ${canForceFail ? '<button class="action-button action-button-reject" type="button" data-job-control="force-fail">Force Fail</button>' : ""}
+          ${canDelete ? '<button class="action-button action-button-reject" type="button" data-job-control="delete">Delete</button>' : ""}
         </div>
         <div class="worker-progress-shell ${activeWorkerStatuses.has(currentStatus) ? "is-active" : ""}">
           <div class="worker-progress-meta">
@@ -1189,6 +1218,10 @@ ${renderJobFailureSummary(job, candidates)}
     return ["DOWNLOADING", "EXTRACTING_AUDIO", "TRANSCRIBING", "DETECTING_SILENCE", "ANALYZING_WINDOWS", "GENERATING_CANDIDATES", "EXPORTING_CLIP"].includes(status);
   }
 
+  function isJobDeletable(job) {
+    return terminalJobStatuses.has(String(job?.status || "").toUpperCase());
+  }
+
   function workerActionHint(job) {
     const status = String(job?.status || "").toUpperCase();
     if (isJobRetryable(job)) {
@@ -1199,6 +1232,9 @@ ${renderJobFailureSummary(job, candidates)}
     }
     if (isJobForceFailable(job)) {
       return "Force Fail marks the active worker run as failed and records an explicit operator recovery event.";
+    }
+    if (isJobDeletable(job)) {
+      return "Delete permanently removes this job, its source files, artifacts, and all pipeline data.";
     }
     return "No operator recovery action is available for the current state.";
   }
@@ -1628,6 +1664,7 @@ ${renderJobFailureSummary(job, candidates)}
         <td>${escapeHtml(sourceLabel(job))}</td>
         <td title="${escapeHtml(formatDate(job.createdAt))}">${escapeHtml(formatRelativeDateTime(job.createdAt))}</td>
         <td>${escapeHtml(formatDuration(job.durationSec))}</td>
+        <td>${isJobDeletable(job) ? `<button class="action-button action-button-reject" type="button" data-delete-job data-job-id="${escapeHtml(String(job.id))}">Delete</button>` : ""}</td>
       </tr>
     `).join("");
 
@@ -1642,6 +1679,7 @@ ${renderJobFailureSummary(job, candidates)}
               <th>Source</th>
               <th>Created</th>
               <th>Duration</th>
+              <th></th>
             </tr>
           </thead>
           <tbody>${rows}</tbody>
@@ -2320,6 +2358,22 @@ ${renderJobFailureSummary(job, candidates)}
       throw new Error(await readErrorMessage(response));
     }
     return response.json();
+  }
+
+  async function deleteRequest(url) {
+    const csrfToken = await getCsrfToken();
+    const response = await fetch(url, {
+      method: "DELETE",
+      headers: {
+        "X-XSRF-TOKEN": csrfToken
+      }
+    });
+    if (handleAuthFailure(response)) {
+      throw new Error("Authentication required.");
+    }
+    if (!response.ok) {
+      throw new Error(await readErrorMessage(response));
+    }
   }
 
   async function getCsrfToken() {

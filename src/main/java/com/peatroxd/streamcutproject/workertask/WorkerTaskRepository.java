@@ -2,6 +2,9 @@ package com.peatroxd.streamcutproject.workertask;
 
 import com.peatroxd.streamcutproject.workerexecution.WorkerTaskType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.util.Collection;
 import java.util.List;
@@ -64,4 +67,12 @@ public interface WorkerTaskRepository extends JpaRepository<WorkerTask, Long> {
             Long candidateId,
             WorkerTaskStatus status
     );
+
+    @Modifying
+    @Query("""
+            delete
+            from WorkerTask t
+            where t.vodJob.id = :jobId
+            """)
+    void deleteAllByVodJobId(@Param("jobId") Long jobId);
 }
