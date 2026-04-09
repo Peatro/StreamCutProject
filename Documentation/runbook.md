@@ -1,5 +1,16 @@
 # Operator Runbook
 
+## Release Validation Status
+
+1. `TASK-067` rerun passed on 2026-04-09 against the checked-in runtime shape used for `v1.0.0`.
+2. Recorded evidence lives under `C:\Users\Peatr\AppData\Local\Temp\streamcut-task067-rerun`:
+   - `job1.json`
+   - `job1-export.json`
+   - `restore-check.json`
+   - `job2.json`
+   - `recovery-check.json`
+3. The recorded outcomes cover backup, restore, export recovery, post-restore health checks, and a second successful job/export after restore.
+
 ## 1. Service Overview
 
 1. Preconditions: This runbook covers the checked-in Docker runtime. `docker-compose.yml` is the local full-stack path with `postgres` and `minio`. `docker-compose.production.yml` is the production-oriented package with `edge`, `backend`, `download-worker`, and `processing-worker`, and it expects PostgreSQL and S3-compatible artifact storage to be provided separately through environment variables.
@@ -25,7 +36,7 @@
 1. Preconditions: Docker Engine and the Docker Compose plugin are installed, the repository is checked out on the target host, external PostgreSQL and S3-compatible artifact storage are reachable for the production package, and an environment file such as `env.production` exists.
 2. First-time setup:
    - copy `env.production.example` to `env.production`
-   - set `SPRING_DATASOURCE_URL`, `SPRING_DATASOURCE_USERNAME`, `SPRING_DATASOURCE_PASSWORD`, `APP_OPERATOR_USERNAME`, `APP_OPERATOR_PASSWORD`, `APP_ARTIFACT_STORAGE_*`, and `APP_STORAGE_LOCAL_ROOT`
+   - set `SPRING_DATASOURCE_URL`, `SPRING_DATASOURCE_USERNAME`, `SPRING_DATASOURCE_PASSWORD`, `APP_OPERATOR_USERNAME`, `APP_OPERATOR_PASSWORD`, `APP_ARTIFACT_STORAGE_*`, and `APP_STORAGE_LOCAL_ROOT=/data/storage`
    - keep the same `APP_STORAGE_LOCAL_ROOT` value for `backend`, `download-worker`, and `processing-worker`
    - if you need source videos to survive container replacement, back the chosen storage root with durable host storage before first start
 3. Volume setup: no manual volume creation is required. Compose creates the declared named volumes on first start. In the production package these are `streamcut-data` and `streamcut-hf-cache`. In the local full-stack file they also include `streamcut-postgres` and `streamcut-minio`.

@@ -9,7 +9,7 @@ It tracks:
 - the next architecture track after `v1.0.0`
 
 Last updated: 2026-04-09
-Branch snapshot: `develop`
+Branch snapshot: `main` and `develop` synchronized at `v1.0.0` after `release/1.0.0`
 Synced note: Obsidian backlog mirror in `StreamCutProject`
 
 ## Sync Policy
@@ -40,8 +40,12 @@ Synced note: Obsidian backlog mirror in `StreamCutProject`
 - `TASK-042` browser happy-path QA passed in a live browser against the running Docker stack.
 - `TASK-043` and `TASK-054` are merged into the validated MVP baseline.
 - `TASK-053` moved the validated MVP baseline from `develop` to `main` at commit `22f61b4`.
-- `TASK-055`, `TASK-056`, `TASK-057`, and `TASK-058` are merged into `develop`, and `develop` is now the active branch for `v1.0.0` buildout.
-- `main` remains the validated MVP baseline while `develop` continues service-hardening.
+- `TASK-055` through `TASK-065` were merged into `develop` during the `v1.0.0` service-hardening track.
+- `TASK-067` rerun passed on 2026-04-09 with backup, restore, export recovery, and post-restore health evidence captured under `C:\Users\Peatr\AppData\Local\Temp\streamcut-task067-rerun`.
+- The release-candidate defect found during the drill was fixed before release: processing workers now defer queued `ANALYZE` claims until the referenced source video exists under `APP_STORAGE_LOCAL_ROOT`.
+- `TASK-066` cut the controlled `v1.0.0` release through `release/1.0.0`, merged it to `main`, and back-merged it to `develop`.
+- `main` and `develop` now both contain the `v1.0.0` release state, identified by git tag `v1.0.0`.
+- Release notes and known limitations for this cut are recorded in `Documentation/v1.0.0-release.md`.
 - The canonical MVP upload policy is defined in `runtime.md`:
   - single-file uploads only
   - supported formats: `video/mp4`, `video/quicktime`, `video/x-matroska`, `video/webm`, `video/x-msvideo`, `video/mpeg`
@@ -81,7 +85,12 @@ Synced note: Obsidian backlog mirror in `StreamCutProject`
   - `VodJob` is increasingly treated as a projection over task state instead of the primary orchestration source
   - task and execution history are exposed in the API, and latest task/execution summaries are visible in the UI
 - `TASK-059`, `TASK-060`, `TASK-061`, `TASK-062`, and `TASK-063` are now merged into `develop`.
-- `TASK-064` is already on `develop` and currently sits in reviewer/QA validation rather than in the earlier implementation phase:
+- `TASK-064` browser E2E coverage and CI gating are now present in source:
+  - the repository contains a dedicated `src/e2eTest` suite
+  - `.github/workflows/ci.yml` runs `./gradlew e2eTest` after backend tests
+  - local execution is documented in `src/e2eTest/README.md`
+- `TASK-065` operator runbook, backup/restore, and upgrade guidance are now present in source through `Documentation/runbook.md`.
+- The remaining larger architecture gaps are still future work:
   - retries, backoff, and dead-letter semantics are still missing
   - a dedicated `TaskTransitionService` does not exist yet
   - export still runs on the `processing-worker`
@@ -98,37 +107,36 @@ Synced note: Obsidian backlog mirror in `StreamCutProject`
 ## Task Status Index
 
 ### Completed
-- `TASK-059` Add Health, Readiness, And Worker Diagnostics
+- `TASK-066` Prepare And Execute `v1.0.0` Release
+- `TASK-067` Run Backup Restore And Rollback Drill
 - `TASK-055` Add Authentication And Protected Operator Access
 - `TASK-056` Add Security Baseline And Input Hardening
 - `TASK-057` Introduce Production Runtime Profiles And Secret Handling
 - `TASK-058` Replace MVP Container Strategy And Add Production Edge Runtime
+- `TASK-059` Add Health, Readiness, And Worker Diagnostics
 - `TASK-060` Harden Queue Reliability And Stuck-Job Recovery
 - `TASK-061` Add Operator Recovery Controls
 - `TASK-062` Add Metrics And Alertable Observability
 - `TASK-063` Add Source And Artifact Retention Cleanup
+- `TASK-064` Add Browser E2E Regression And CI Gate
 - `TASK-065` Write Operator Runbook, Backup Restore, And Upgrade Notes
 
 ### In Progress
-- `TASK-064` Add Browser E2E Regression And CI Gate
+- none currently
 
 Status note:
 - this backlog pass records a real status transition:
-  - `TASK-059` -> completed / merged
-  - `TASK-061` -> completed / merged
-  - `TASK-062` -> completed / merged
-  - `TASK-063` -> completed / merged
-  - `TASK-064` -> on `develop`, under reviewer/QA pass
+  - `TASK-064` -> completed / merged
   - `TASK-065` -> completed / merged
+  - `TASK-067` -> completed / passed on 2026-04-09
+  - `TASK-066` -> completed / `v1.0.0` released
 
 Current release-track snapshot:
-- `TASK-059` through `TASK-063`: merged into `develop`
-- `TASK-064`: on `develop`, reviewer/QA in progress
-- `TASK-065`: completed / merged, operator runbook and recovery documentation
+- `v1.0.0` is released on `main` and back-merged into `develop`
+- the release point is explicit and reproducible through git tag `v1.0.0`
+- the next tracked work starts at `TASK-068`
 
-### Planned For `v1.0.0`
-- `TASK-064` Add Browser E2E Regression And CI Gate
-- `TASK-065` Write Operator Runbook, Backup Restore, And Upgrade Notes
+### Closed In `v1.0.0`
 - `TASK-067` Run Backup Restore And Rollback Drill
 - `TASK-066` Prepare And Execute `v1.0.0` Release
 
@@ -263,30 +271,25 @@ Current release-track snapshot:
   - `/api/exports/{id}/file` and `/api/exports/{id}/stream` served artifacts correctly
 
 ## IN_PROGRESS
-- `TASK-064` is now the active bounded runtime slice.
-- Current staged execution:
-  - Recovery semantics from `TASK-060` are merged and form the base contract for operator actions
-  - Operator recovery controls from `TASK-061` are merged
-  - Metrics and alertable observability from `TASK-062` are merged
-  - Retention cleanup from `TASK-063` is merged with safety fixes
-  - `TASK-064` browser E2E and CI gating is now on `develop` and awaiting final reviewer/QA closure
+- No repository task is currently marked `in progress`.
+- The `v1.0.0` release track is closed.
 - Export remains on the `processing-worker` for now.
 
 ## NEXT
 
 ### Immediate
-- `TASK-059` Add Health, Readiness, And Worker Diagnostics
-- surface role-specific diagnostics in the UI and health endpoints
-- expose task-aware stuck-run diagnostics and operator-facing recovery visibility
+- `TASK-068` Expand Task Model With Retry, Backoff, And Dead-Letter Semantics
+- `TASK-069` Extract Task Transition Service And Task-Centric Claim Flow
+- keep post-release work on top of the tagged `v1.0.0` baseline
 
 ### Validation
-- The MVP release baseline has been promoted to `main`.
+- `TASK-064` browser E2E suite and CI gate are now present in source.
+- `TASK-065` operator runbook and recovery docs are now present in source.
+- `TASK-067` backup, restore, export recovery, and post-restore health checks passed on 2026-04-09.
 
-### Stabilization
-- `TASK-064` Add Browser E2E Regression And CI Gate
-- validate the split worker flow against large URL ingest so download time no longer blocks processing capacity
-- close the remaining CI and browser regression gate for release-critical flows
-- keep building on the now-merged recovery, observability, and retention slices
+### Post-release
+- `TASK-068` should introduce bounded retries, backoff, and dead-letter semantics on top of the released task model.
+- `TASK-069` should extract orchestration out of `VodJobService` without undoing the tagged release baseline.
 
 ### Architectural Follow-Up After `v1.0.0`
 - the current `v1.0.0` track hardens the service for a small authenticated operator team
@@ -294,9 +297,9 @@ Current release-track snapshot:
 - this follow-up should not preempt the current release gate, but it should already be visible in the source backlog so the project does not drift back into a monolithic `VodJobService` orchestration model
 
 ### Release Checklist
-- `release-checklist.md` is the current gate document for moving `develop` to `main`.
-- The current MVP gate was satisfied and executed through `TASK-053`.
-- Future release movement should continue to treat `release-checklist.md` as the gate document.
+- `release-checklist.md` is the gate document used for the controlled `v1.0.0` cut.
+- `Documentation/v1.0.0-release.md` is the release record for the `v1.0.0` tag.
+- Future stable milestones should continue to record their gate outcome explicitly before merging to `main`.
 
 ## ROADMAP TO FULL SERVICE
 
@@ -321,18 +324,19 @@ Status: completed locally on 2026-04-06
 - MVP baseline promoted to `main` through `TASK-053`
 
 ### v1.0.0 Buildout
-- `TASK-056` Add Security Baseline And Input Hardening
-- `TASK-057` Introduce Production Runtime Profiles And Secret Handling
-- `TASK-058` Replace MVP Container Strategy And Add Production Edge Runtime
-- `TASK-059` Add Health, Readiness, And Worker Diagnostics
-- `TASK-060` Harden Queue Reliability And Stuck-Job Recovery
-- `TASK-061` Add Operator Recovery Controls
-- `TASK-062` Add Metrics And Alertable Observability
-- `TASK-063` Add Source And Artifact Retention Cleanup
-- `TASK-064` Add Browser E2E Regression And CI Gate
-- `TASK-065` Write Operator Runbook, Backup Restore, And Upgrade Notes
-- `TASK-067` Run Backup Restore And Rollback Drill
-- `TASK-066` Prepare And Execute `v1.0.0` Release
+- completed: `TASK-055` Add Authentication And Protected Operator Access
+- completed: `TASK-056` Add Security Baseline And Input Hardening
+- completed: `TASK-057` Introduce Production Runtime Profiles And Secret Handling
+- completed: `TASK-058` Replace MVP Container Strategy And Add Production Edge Runtime
+- completed: `TASK-059` Add Health, Readiness, And Worker Diagnostics
+- completed: `TASK-060` Harden Queue Reliability And Stuck-Job Recovery
+- completed: `TASK-061` Add Operator Recovery Controls
+- completed: `TASK-062` Add Metrics And Alertable Observability
+- completed: `TASK-063` Add Source And Artifact Retention Cleanup
+- completed: `TASK-064` Add Browser E2E Regression And CI Gate
+- completed: `TASK-065` Write Operator Runbook, Backup Restore, And Upgrade Notes
+- completed: `TASK-067` Run Backup Restore And Rollback Drill
+- completed: `TASK-066` Prepare And Execute `v1.0.0` Release
 
 ### Post-`v1.0.0` Target Architecture Track
 - `TASK-068` Expand Task Model With Retry, Backoff, And Dead-Letter Semantics
@@ -356,11 +360,9 @@ Status: completed locally on 2026-04-06
 - `TASK-054` has been merged into `develop` and no longer gates the current release baseline.
 - `TASK-055` should complete before `TASK-056`, because the security baseline depends on the chosen auth model.
 - `TASK-057` and `TASK-058` can run in parallel once runtime secrets and deployment assumptions are clear.
-- `TASK-059` through `TASK-063` are now part of the current `develop` baseline.
-- `TASK-059`, `TASK-060`, `TASK-061`, `TASK-062`, and `TASK-063` are now merged, so `TASK-064` and later tasks should treat diagnostics, recovery, observability, and retention behavior as the current baseline rather than as future design work.
-- `TASK-064` should start after the main browser flows and negative paths are already stable enough to avoid flaky E2E coverage.
-- `TASK-067` should consume the concrete procedures written in `TASK-065`, not invent them during the drill.
-- `TASK-066` must not start until every preceding phase has documented evidence.
+- `TASK-055` through `TASK-065` are now part of the current `develop` baseline.
+- `TASK-067` consumed the concrete procedures written in `TASK-065` instead of inventing ad hoc recovery steps.
+- `TASK-066` executed only after `TASK-067` evidence was recorded and the accepted drill fix was captured in source.
 - `TASK-068` should now expand the already-implemented task model with retry budgets, backoff, and dead-letter handling instead of introducing task persistence from scratch.
 - `TASK-069` should extract a dedicated transition/orchestration layer from the current `VodJobService` and projection code now that the task model exists.
 - `TASK-070` depends on `TASK-069`, because export routing should sit on explicit task ownership rather than the current mixed processing role.
@@ -384,15 +386,15 @@ Status: completed locally on 2026-04-06
 - Add decision logging for infrastructure and architecture choices.
 
 ## Risks
-- The MVP baseline is now aligned on both `main` and `develop`, but the service is still not at the `v1.0.0` operating standard.
+- `v1.0.0` is released, but the service still carries explicit post-release architecture work.
 - Upload ingest now uses the explicit multipart limits from `TASK-040`, and oversized files fail with stable `413` semantics.
 - `TASK-044` has been revalidated for malformed URL and `404` cases; residual coverage gaps remain only for timeout and unsupported-source variants, and they are not release blockers for the current gate.
 - Restart resilience on export looks acceptable from `TASK-046`: a worker bounce mid-export recovered and completed instead of ghosting the job.
 - `TASK-046` also showed that restart recovery is not very observable: file-backed work and exports can continue, but the API may sit on `DOWNLOADING` or `IN_PROGRESS` without an explicit progress signal.
 - Worker cold start depends on external model download and is slower without a configured `HF_TOKEN`.
 - Very large URL ingests still create long-running `DOWNLOADING` occupancy; this is the direct reason for moving toward a dedicated `download-worker`.
-- The dedicated `download-worker` / `processing-worker` split is now implemented in source, but it still needs live-stack validation and role-specific diagnostics before it can be treated as an operationally closed recovery story.
-- Negative-path recovery behavior is partially known from smoke tests, but not yet documented as release-safe behavior.
+- The dedicated `download-worker` / `processing-worker` split is now validated for backup, restore, and export recovery, but it still lacks automatic retry, backoff, and dead-letter semantics.
+- Recovery behavior is now documented and exercised for the runbook paths, but not every failure permutation has a dedicated drill.
 - `TASK-045` QA found that export retries are allowed, export failure correctly marks the job `FAILED`, and the stale-artifact behavior was addressed in `TASK-054`.
 - The current task model is still too thin for scale-out work:
   - no persisted `attempt`
@@ -402,14 +404,14 @@ Status: completed locally on 2026-04-06
 - Backend media streaming endpoints still exist for source and export delivery, which is acceptable for the MVP but not the desired long-term contract.
 
 ## Recommended Next Sequence
-1. `TASK-064` Add Browser E2E Regression And CI Gate.
-2. close reviewer and QA pass for `TASK-064`.
-3. `TASK-065` Write Operator Runbook, Backup Restore, And Upgrade Notes.
-4. `TASK-067` Run Backup Restore And Rollback Drill.
-5. `TASK-066` Prepare And Execute `v1.0.0` Release.
-6. after `v1.0.0`, continue with `TASK-068` and `TASK-069` on top of the already-implemented `worker_task` / `worker_execution` base before any broker or cluster work.
+1. `TASK-068` Expand Task Model With Retry, Backoff, And Dead-Letter Semantics.
+2. `TASK-069` Extract Task Transition Service And Task-Centric Claim Flow.
+3. `TASK-070` Introduce Dedicated `export-worker` Pool.
+4. Continue post-`v1.0.0` architecture work on top of the tagged `worker_task` / `worker_execution` baseline instead of reopening release-scope work.
 
 ## Path To Service v1.0.0
+
+Status: completed on 2026-04-09 through `TASK-066`
 
 ### v1.0.0 Assumptions
 - `v1.0.0` means a finished operator-facing service for a small authenticated team, not a public consumer app.
@@ -451,10 +453,10 @@ Status: completed locally on 2026-04-06
 - completed: `TASK-063` Add Source And Artifact Retention Cleanup
 
 #### Phase 3. Quality And Launch
-- in progress: `TASK-064` Add Browser E2E Regression And CI Gate
+- completed: `TASK-064` Add Browser E2E Regression And CI Gate
 - completed: `TASK-065` Write Operator Runbook, Backup Restore, And Upgrade Notes
-- `TASK-067` Run Backup Restore And Rollback Drill
-- `TASK-066` Prepare And Execute `v1.0.0` Release
+- completed: `TASK-067` Run Backup Restore And Rollback Drill
+- completed: `TASK-066` Prepare And Execute `v1.0.0` Release
 
 ### Post-`v1.0.0` Architecture Phase
 1. expand the existing task lifecycle with retries, backoff, and dead-letter behavior
