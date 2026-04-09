@@ -34,6 +34,7 @@ If a document exists both in the repository and in Obsidian, the repository vers
 | `Documentation/doc-index.md` | documentation map and ownership guide | repository | `Doc Index.md` |
 | `Documentation/architecture-roadmap.md` | post-`v1.0.0` architecture direction and sequencing | repository | `Architecture Roadmap.md` |
 | `Documentation/runtime.md` | actual runtime assumptions and operator-facing runtime contract | repository | none required yet |
+| `Documentation/alerts.md` | sample Prometheus alert rules for the runtime metrics surface | repository | none required yet |
 | `Documentation/release-checklist.md` | release gate document | repository | none required yet |
 | `Documentation/STORAGE.md` | storage behavior and constraints | repository | none required yet |
 | `Documentation/worker-scaling-roadmap.md` | worker/runtime scaling direction | repository | may be reflected in architecture notes |
@@ -142,6 +143,9 @@ The current active documentation registry also includes:
 - `Documentation/operations.md`
   operator-facing operational model and monitoring/recovery overview
 
+- `Documentation/alerts.md`
+  sample alert rules for the actuator and Prometheus metrics surface
+
 - `Documentation/adr/ADR-001-repo-first-document-sync.md`
   canonical rule for repository-first documentation sync
 
@@ -194,6 +198,7 @@ Near-term likely ADRs:
 - `Documentation/documentarian-role.md`
 - `Documentation/architecture-roadmap.md`
 - `Documentation/runtime.md`
+- `Documentation/alerts.md`
 - `Documentation/operations.md`
 - `Documentation/release-checklist.md`
 - `Documentation/STORAGE.md`

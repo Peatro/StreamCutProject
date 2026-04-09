@@ -121,9 +121,32 @@ PostgreSQL:
   - `APP_OPERATOR_USERNAME`
   - `APP_OPERATOR_PASSWORD`
 - Protected surfaces include the dashboard pages, operator-facing `/api/**` endpoints, and artifact download/stream endpoints.
+- Actuator metrics are exposed on `/actuator/metrics` and `/actuator/prometheus` in both `local` and `prod`.
+- The actuator metrics surface stays behind the authenticated operator session; it is not a public endpoint.
 - `/health` stays public.
 - `/api/internal/worker/**` stays public for now so worker transport is not blocked in `TASK-055`; machine auth can be handled in `TASK-056`.
 - The static frontend sends `X-XSRF-TOKEN` on operator POST requests after bootstrapping the CSRF token from `/csrf`.
+
+## Metrics Surface
+- Use `/actuator/metrics` to inspect the registered Micrometer names and drill into tagged series.
+- Use `/actuator/prometheus` to retrieve the Prometheus exposition for the current process.
+- Local reproduction path:
+  - start the stack with `docker compose up --build`
+  - sign in at `http://localhost:8080/login.html` with the configured operator credentials
+  - open `http://localhost:8080/actuator/metrics`
+  - open `http://localhost:8080/actuator/prometheus`
+- The custom metric families for `TASK-062` are:
+  - `streamcut.jobs.created{source_type=URL|FILE}`
+  - `streamcut.jobs.completed`
+  - `streamcut.jobs.failed{reason=worker_failure|operator_force}`
+  - `streamcut.jobs.retried`
+  - `streamcut.jobs.canceled`
+  - `streamcut.recovery.stale.actions`
+  - `streamcut.queue.depth{queue_type=download|processing}`
+  - `streamcut.jobs.active{activity_type=processing|export}`
+- `streamcut.jobs.completed` increments when processing reaches `READY_FOR_REVIEW`; optional clip export does not increment it again.
+- `streamcut.recovery.stale.actions` tracks `TASK-060` stale-lease requeues. Stale recovery does not increment `streamcut.jobs.failed` because the job is requeued rather than terminally failed.
+- The queue-depth and active-job gauges query the database on scrape. If the backend is later replicated, alerting should use `max` rather than `sum` across backend instances to avoid double-counting the same shared queue state.
 
 ## Input Hardening
 - URL ingest only accepts absolute `http` or `https` URLs.
