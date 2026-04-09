@@ -106,6 +106,9 @@ public final class JobProjection {
                 if (projectedTask.getTaskType() == WorkerTaskType.ANALYZE && isAnalyzeStage(job.getStatus())) {
                     job.setLastWorkerHeartbeatAt(projectionTime);
                     job.setUpdatedAt(projectionTime);
+                } else if (projectedTask.getTaskType() == WorkerTaskType.DOWNLOAD && job.getStatus() == JobStatus.DOWNLOADING) {
+                    job.setLastWorkerHeartbeatAt(projectionTime);
+                    job.setUpdatedAt(projectionTime);
                 } else {
                     applyClaimedTask(job, projectedTask.getTaskType(), job.getCurrentWorkerId(), projectionTime);
                 }
