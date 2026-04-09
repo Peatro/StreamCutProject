@@ -461,6 +461,7 @@ Status: completed locally on 2026-04-06
 3. split export work into its own pool
 4. move media delivery toward signed URLs and durable object storage references
 5. add quotas and queue-delivery abstraction only after the execution model is stable
+6. migrate operator UI to React when candidate review or multi-developer frontend work makes local component state unavoidable (`TASK-075`)
 
 ### Post-`v1.0.0` Architecture Task Queue
 - `TASK-068` Expand Task Model With Retry, Backoff, And Dead-Letter Semantics
@@ -470,6 +471,16 @@ Status: completed locally on 2026-04-06
 - `TASK-072` Make Object Storage The Durable Artifact Contract
 - `TASK-073` Add Product Quotas And Runtime Limits
 - `TASK-074` Prepare Queue Delivery Abstraction For Broker Migration
+- `TASK-075` Migrate Operator UI To React
+
+  **Do not start until at least one of the following is true:**
+  - Candidate review needs per-candidate local state (scrubber, inline approval, clip preview). The current full-`innerHTML` re-render strategy kills local component state on every 5-second poll; React's reconciliation makes this tractable.
+  - A second developer joins frontend work. Template-literal rendering does not scale across contributors.
+  - A third interactive panel is needed on the job detail page where optimistic UI or local-only transitions are required.
+
+  **Not a trigger on its own:** file size, "feels like vanilla", or adding a stage progress bar. Those are solvable with targeted DOM patching and a local interval without a framework migration.
+
+  **Scope when the time comes:** Preact is the low-overhead entry point if the backend stays Spring and there is no build infrastructure yet. Full React + Vite is the right call if TypeScript is introduced at the same time.
 
 ### Critical Path To v1.0.0
 1. Finish the current release baseline and move it intentionally to `main`.
