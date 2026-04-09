@@ -206,7 +206,8 @@ docker compose -f docker-compose.production.yml --env-file env.production up -d 
 4. Use `Retry` from the UI only for `FAILED` jobs. It increments the processing version, clears prior analysis artifacts, and requeues the job from the download stage.
 5. Use `Cancel` from the UI only for `QUEUED_FOR_DOWNLOAD` or `QUEUED_FOR_PROCESSING`. It is the operator path for stopping queued work before a worker picks it up.
 6. Use `Force Fail` from the UI only for active worker states such as `DOWNLOADING`, `EXTRACTING_AUDIO`, `TRANSCRIBING`, `DETECTING_SILENCE`, `ANALYZING_WINDOWS`, `GENERATING_CANDIDATES`, or `EXPORTING_CLIP`. It records an explicit operator failure event and leaves the job in `FAILED`.
-7. After any recovery action, refresh the job page and confirm the latest event shows `JOB_RETRIED`, `JOB_CANCELED`, or `JOB_FORCE_FAILED` as expected.
+7. Use `Delete` from the UI only for terminal jobs in `COMPLETED`, `FAILED`, or `CANCELED` status. It permanently removes the job record, all pipeline data, and any stored source video and export artifacts. There is no undo. Use it to clean up finished or failed jobs that are no longer needed.
+8. After any recovery action, refresh the job page and confirm the latest event shows `JOB_RETRIED`, `JOB_CANCELED`, or `JOB_FORCE_FAILED` as expected.
 
 ## 8. Retention And Cleanup
 

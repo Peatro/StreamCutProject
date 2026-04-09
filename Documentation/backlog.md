@@ -107,6 +107,7 @@ Synced note: Obsidian backlog mirror in `StreamCutProject`
 - `TASK-061` Add Operator Recovery Controls
 - `TASK-062` Add Metrics And Alertable Observability
 - `TASK-063` Add Source And Artifact Retention Cleanup
+- `TASK-065` Write Operator Runbook, Backup Restore, And Upgrade Notes
 
 ### In Progress
 - `TASK-064` Add Browser E2E Regression And CI Gate
@@ -118,12 +119,12 @@ Status note:
   - `TASK-062` -> completed / merged
   - `TASK-063` -> completed / merged
   - `TASK-064` -> on `develop`, under reviewer/QA pass
-  - `TASK-065` -> next planned task
+  - `TASK-065` -> completed / merged
 
 Current release-track snapshot:
 - `TASK-059` through `TASK-063`: merged into `develop`
 - `TASK-064`: on `develop`, reviewer/QA in progress
-- `TASK-065`: next planned task, operator runbook and recovery documentation
+- `TASK-065`: completed / merged, operator runbook and recovery documentation
 
 ### Planned For `v1.0.0`
 - `TASK-064` Add Browser E2E Regression And CI Gate
@@ -451,7 +452,7 @@ Status: completed locally on 2026-04-06
 
 #### Phase 3. Quality And Launch
 - in progress: `TASK-064` Add Browser E2E Regression And CI Gate
-- `TASK-065` Write Operator Runbook, Backup Restore, And Upgrade Notes
+- completed: `TASK-065` Write Operator Runbook, Backup Restore, And Upgrade Notes
 - `TASK-067` Run Backup Restore And Rollback Drill
 - `TASK-066` Prepare And Execute `v1.0.0` Release
 
