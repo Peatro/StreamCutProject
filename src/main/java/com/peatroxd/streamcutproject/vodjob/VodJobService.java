@@ -631,10 +631,12 @@ public class VodJobService {
             return Optional.of(workerDispatchPayloadFactory.fromExportCandidate(candidate, execution.getId()));
         }
 
-        Optional<WorkerTask> queuedAnalyzeTask = workerTaskRepository.findFirstByTaskTypeAndStatusOrderByIdAsc(
-                WorkerTaskType.ANALYZE,
-                WorkerTaskStatus.QUEUED
-        );
+        Optional<WorkerTask> queuedAnalyzeTask = workerTaskRepository.findAllByTaskTypeAndStatusOrderByIdAsc(
+                        WorkerTaskType.ANALYZE,
+                        WorkerTaskStatus.QUEUED
+                ).stream()
+                .filter(task -> isAnalyzeSourceVideoReady(task.getVodJob(), task.getId()))
+                .findFirst();
         if (queuedAnalyzeTask.isEmpty()) {
             return Optional.empty();
         }
@@ -669,6 +671,42 @@ public class VodJobService {
         log.info("analysis_claimed jobId={} workerId={} status={}", job.getId(), workerId, job.getStatus());
 
         return Optional.of(payload);
+    }
+
+    private boolean isAnalyzeSourceVideoReady(VodJob job, Long taskId) {
+        String storageVideoPath = job.getStorageVideoPath();
+        if (storageVideoPath == null || storageVideoPath.isBlank()) {
+            log.warn("analysis_claim_deferred_missing_video_path jobId={} taskId={}", job.getId(), taskId);
+            return false;
+        }
+
+        try {
+            Path normalizedPath = PathSafety.requireWithinRoot(
+                    storageProperties.getLocalRoot(),
+                    Path.of(storageVideoPath),
+                    "job storage video path"
+            ).toAbsolutePath().normalize();
+            if (!Files.isRegularFile(normalizedPath)) {
+                log.warn(
+                        "analysis_claim_deferred_missing_video jobId={} taskId={} videoPath={}",
+                        job.getId(),
+                        taskId,
+                        normalizeArtifactPath(normalizedPath.toString())
+                );
+                return false;
+            }
+            job.setStorageVideoPath(normalizeArtifactPath(normalizedPath.toString()));
+            return true;
+        } catch (InvalidPathException | ResponseStatusException ex) {
+            log.warn(
+                    "analysis_claim_deferred_invalid_video_path jobId={} taskId={} videoPath={} message={}",
+                    job.getId(),
+                    taskId,
+                    storageVideoPath,
+                    ex.getMessage()
+            );
+            return false;
+        }
     }
 
     @Transactional

@@ -17,6 +17,11 @@ public interface WorkerTaskRepository extends JpaRepository<WorkerTask, Long> {
             WorkerTaskStatus status
     );
 
+    List<WorkerTask> findAllByTaskTypeAndStatusOrderByIdAsc(
+            WorkerTaskType taskType,
+            WorkerTaskStatus status
+    );
+
     List<WorkerTask> findAllByStatusInOrderByIdAsc(
             Collection<WorkerTaskStatus> statuses
     );
