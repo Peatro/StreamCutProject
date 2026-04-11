@@ -40,3 +40,18 @@ out/
 __pycache__/
 *.py[cod]
 e2e/artifacts/
+
+### Graphify ###
+.graphify*
+vendor/
+node_modules/
+dist/
+graphify-out
+*.generated.py
+
+### Agent tooling ###
+.claude/
+.codex/
+/CLAUDE.md
+/AGENTS.md
+/tools/
