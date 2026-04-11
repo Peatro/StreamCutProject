@@ -149,6 +149,8 @@ class VodJobServiceTest {
         lenient().when(workerTaskRepository.findFirstByVodJobIdAndProcessingVersionAndTaskTypeAndStatusInOrderByIdAsc(
                 anyLong(), anyLong(), any(), any()
         )).thenReturn(java.util.Optional.empty());
+        lenient().when(workerTaskRepository.findAllByTaskTypeAndStatusOrderByIdAsc(any(), any()))
+                .thenReturn(List.of());
         lenient().when(workerTaskRepository.findFirstByVodJobIdAndProcessingVersionAndTaskTypeAndCandidateIdAndStatusInOrderByIdAsc(
                 anyLong(), anyLong(), any(), anyLong(), any()
         )).thenReturn(java.util.Optional.empty());
@@ -910,24 +912,32 @@ class VodJobServiceTest {
 
     @Test
     void claimNextProcessingJobMarksJobExtractingAudioAndWritesClaimEvent() {
+        storageProperties.setLocalRoot(tempDir);
         VodJob job = buildJob(1L, "https://example.com/video", Instant.parse("2026-04-05T10:00:00Z"));
         job.setStatus(JobStatus.QUEUED_FOR_PROCESSING);
-        job.setStorageVideoPath("/var/lib/streamcut/jobs/1/source/video.mp4");
+        Path videoPath = tempDir.resolve("jobs/1/source/video.mp4");
+        job.setStorageVideoPath(videoPath.toString());
         WorkerTask queuedTask = buildQueuedTask(job, WorkerTaskType.ANALYZE, null);
+        try {
+            Files.createDirectories(videoPath.getParent());
+            Files.writeString(videoPath, "video-bytes");
+        } catch (java.io.IOException ex) {
+            throw new IllegalStateException("Failed to create analyze source video fixture", ex);
+        }
         when(workerTaskRepository.findFirstByTaskTypeAndStatusOrderByIdAsc(
                 WorkerTaskType.EXPORT,
                 WorkerTaskStatus.QUEUED
         )).thenReturn(java.util.Optional.empty());
-        when(workerTaskRepository.findFirstByTaskTypeAndStatusOrderByIdAsc(
+        when(workerTaskRepository.findAllByTaskTypeAndStatusOrderByIdAsc(
                 WorkerTaskType.ANALYZE,
                 WorkerTaskStatus.QUEUED
-        )).thenReturn(java.util.Optional.of(queuedTask));
+        )).thenReturn(List.of(queuedTask));
         WorkerDispatchPayload payload = new WorkerDispatchPayload(
                 92L,
                 1L,
                 1L,
                 "ANALYZE",
-                "/var/lib/streamcut/jobs/1/source/video.mp4",
+                videoPath.toString().replace('\\', '/'),
                 "URL",
                 "https://example.com/video",
                 null,
@@ -945,6 +955,61 @@ class VodJobServiceTest {
         verify(vodJobRepository).save(job);
         verify(workerExecutionRepository).save(any(WorkerExecution.class));
         verify(jobEventRepository).save(any(JobEvent.class));
+    }
+
+    @Test
+    void claimNextProcessingJobSkipsMissingAnalyzeSourceAndClaimsNextReadyTask() {
+        storageProperties.setLocalRoot(tempDir);
+        VodJob missingJob = buildJob(1L, "https://example.com/missing", Instant.parse("2026-04-05T10:00:00Z"));
+        missingJob.setStatus(JobStatus.QUEUED_FOR_PROCESSING);
+        missingJob.setStorageVideoPath(tempDir.resolve("jobs/1/source/missing.mp4").toString());
+        WorkerTask missingTask = buildQueuedTask(missingJob, WorkerTaskType.ANALYZE, null);
+        missingTask.setId(201L);
+
+        VodJob readyJob = buildJob(2L, "https://example.com/ready", Instant.parse("2026-04-05T10:01:00Z"));
+        readyJob.setStatus(JobStatus.QUEUED_FOR_PROCESSING);
+        Path readyVideoPath = tempDir.resolve("jobs/2/source/ready.mp4");
+        readyJob.setStorageVideoPath(readyVideoPath.toString());
+        WorkerTask readyTask = buildQueuedTask(readyJob, WorkerTaskType.ANALYZE, null);
+        readyTask.setId(202L);
+        try {
+            Files.createDirectories(readyVideoPath.getParent());
+            Files.writeString(readyVideoPath, "video-bytes");
+        } catch (java.io.IOException ex) {
+            throw new IllegalStateException("Failed to create ready analyze source video fixture", ex);
+        }
+
+        when(workerTaskRepository.findFirstByTaskTypeAndStatusOrderByIdAsc(
+                WorkerTaskType.EXPORT,
+                WorkerTaskStatus.QUEUED
+        )).thenReturn(java.util.Optional.empty());
+        when(workerTaskRepository.findAllByTaskTypeAndStatusOrderByIdAsc(
+                WorkerTaskType.ANALYZE,
+                WorkerTaskStatus.QUEUED
+        )).thenReturn(List.of(missingTask, readyTask));
+        WorkerDispatchPayload payload = new WorkerDispatchPayload(
+                93L,
+                2L,
+                1L,
+                "ANALYZE",
+                readyVideoPath.toString().replace('\\', '/'),
+                "URL",
+                "https://example.com/ready",
+                null,
+                null,
+                null,
+                null
+        );
+        when(workerDispatchPayloadFactory.fromAnalyzeJob(Mockito.eq(readyJob), anyLong())).thenReturn(payload);
+
+        var result = vodJobService.claimNextQueuedJob("processing-worker-1", "processing");
+
+        assertThat(result).contains(payload);
+        assertThat(missingTask.getStatus()).isEqualTo(WorkerTaskStatus.QUEUED);
+        assertThat(readyTask.getStatus()).isEqualTo(WorkerTaskStatus.CLAIMED);
+        assertThat(readyJob.getStatus()).isEqualTo(JobStatus.EXTRACTING_AUDIO);
+        verify(workerDispatchPayloadFactory, Mockito.never()).fromAnalyzeJob(Mockito.eq(missingJob), anyLong());
+        verify(workerDispatchPayloadFactory).fromAnalyzeJob(Mockito.eq(readyJob), anyLong());
     }
 
     @Test
@@ -1007,10 +1072,6 @@ class VodJobServiceTest {
                 WorkerTaskType.EXPORT,
                 WorkerTaskStatus.QUEUED
         )).thenReturn(java.util.Optional.empty());
-        when(workerTaskRepository.findFirstByTaskTypeAndStatusOrderByIdAsc(
-                WorkerTaskType.ANALYZE,
-                WorkerTaskStatus.QUEUED
-        )).thenReturn(java.util.Optional.empty());
 
         var result = vodJobService.claimNextQueuedJob("processing-worker-2", "processing");
 
@@ -1042,10 +1103,6 @@ class VodJobServiceTest {
                 .thenReturn(java.util.Optional.of(execution));
         when(workerTaskRepository.findFirstByTaskTypeAndStatusOrderByIdAsc(
                 WorkerTaskType.EXPORT,
-                WorkerTaskStatus.QUEUED
-        )).thenReturn(java.util.Optional.empty());
-        when(workerTaskRepository.findFirstByTaskTypeAndStatusOrderByIdAsc(
-                WorkerTaskType.ANALYZE,
                 WorkerTaskStatus.QUEUED
         )).thenReturn(java.util.Optional.empty());
 

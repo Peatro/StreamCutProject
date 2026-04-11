@@ -81,13 +81,14 @@ PostgreSQL:
 - The production compose entrypoint is `docker-compose.production.yml`.
 - The public entry path is the `edge` container on port `80` by default; `backend` is internal-only behind the reverse proxy.
 - The production package keeps PostgreSQL and S3-compatible object storage as external runtime dependencies and does not expose a database container publicly.
+- `APP_STORAGE_LOCAL_ROOT=/data/storage` is the production storage root inside the application containers, backed by the shared `streamcut-data:/data` volume in `docker-compose.production.yml`.
 - Required backend environment for `prod`:
   - `EDGE_PORT` if the reverse proxy should listen on a host port other than `80`
   - `SPRING_PROFILES_ACTIVE=prod`
   - `SPRING_DATASOURCE_URL`
   - `SPRING_DATASOURCE_USERNAME`
   - `SPRING_DATASOURCE_PASSWORD`
-  - `APP_STORAGE_LOCAL_ROOT`
+  - `APP_STORAGE_LOCAL_ROOT=/data/storage`
   - `APP_OPERATOR_USERNAME`
   - `APP_OPERATOR_PASSWORD`
   - `APP_ARTIFACT_STORAGE_MODE`

@@ -36,14 +36,12 @@ abstract class E2ETestBase {
     private URI baseUri;
     private String username;
     private String password;
-    private String csrfToken;
 
     @BeforeEach
     void setUpE2e() {
         baseUri = URI.create(System.getProperty("selenide.baseUrl", "http://localhost:8080"));
         username = System.getProperty("e2e.username", "operator");
         password = System.getProperty("e2e.password", "operator-password");
-        csrfToken = null;
 
         Configuration.baseUrl = baseUri.toString();
         Configuration.browser = System.getProperty("selenide.browser", "chrome");
@@ -53,12 +51,7 @@ abstract class E2ETestBase {
 
         closeWebDriver();
 
-        CookieManager cookieManager = new CookieManager(null, CookiePolicy.ACCEPT_ALL);
-        httpClient = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(10))
-                .followRedirects(HttpClient.Redirect.NEVER)
-                .cookieHandler(cookieManager)
-                .build();
+        httpClient = newHttpClient();
 
         resetState();
     }
@@ -103,7 +96,7 @@ abstract class E2ETestBase {
                 .header("Accept", "application/json")
                 .GET()
                 .build();
-        return send(request);
+        return send(newHttpClient(), request);
     }
 
     protected void resetState() {
@@ -115,7 +108,7 @@ abstract class E2ETestBase {
                 .timeout(Duration.ofSeconds(15))
                 .header("Accept", "application/json")
                 .header("Authorization", basicAuthHeader())
-                .header("X-XSRF-TOKEN", csrfToken())
+                .header("X-XSRF-TOKEN", fetchCsrfToken())
                 .POST(body == null
                         ? HttpRequest.BodyPublishers.noBody()
                         : HttpRequest.BodyPublishers.ofString(writeJson(body), StandardCharsets.UTF_8));
@@ -136,11 +129,7 @@ abstract class E2ETestBase {
         return readJson(response.body());
     }
 
-    private String csrfToken() {
-        if (csrfToken != null) {
-            return csrfToken;
-        }
-
+    private String fetchCsrfToken() {
         HttpRequest request = HttpRequest.newBuilder(resolve("/csrf"))
                 .timeout(Duration.ofSeconds(10))
                 .header("Accept", "application/json")
@@ -152,20 +141,33 @@ abstract class E2ETestBase {
                 .withFailMessage("Expected /csrf to return 200 but got %s", response.statusCode())
                 .isEqualTo(200);
 
-        csrfToken = readJson(response.body()).path("token").asText();
+        String csrfToken = readJson(response.body()).path("token").asText();
         assertThat(csrfToken).isNotBlank();
         return csrfToken;
     }
 
     private HttpResponse<String> send(HttpRequest request) {
+        return send(httpClient, request);
+    }
+
+    private HttpResponse<String> send(HttpClient client, HttpRequest request) {
         try {
-            return httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            return client.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
         } catch (IOException ex) {
             throw new IllegalStateException("HTTP call failed for " + request.uri(), ex);
         } catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("HTTP call interrupted for " + request.uri(), ex);
         }
+    }
+
+    private static HttpClient newHttpClient() {
+        CookieManager cookieManager = new CookieManager(null, CookiePolicy.ACCEPT_ALL);
+        return HttpClient.newBuilder()
+                .connectTimeout(Duration.ofSeconds(10))
+                .followRedirects(HttpClient.Redirect.NEVER)
+                .cookieHandler(cookieManager)
+                .build();
     }
 
     private URI resolve(String path) {
