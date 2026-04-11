@@ -34,8 +34,8 @@ class CandidateAnalysisRequest:
     duration_sec: float | None = None
     window_duration_sec: float = 30.0
     step_sec: float = 5.0
-    top_n: int = 10
-    min_overlap_ratio: float = 0.5
+    top_n: int | None = None
+    min_overlap_ratio: float = 0.0
     emotion_keywords: tuple[str, ...] = field(default_factory=tuple)
 
 

@@ -48,7 +48,7 @@ public final class JobProjection {
         job.setCurrentWorkerId(null);
         job.setLastWorkerHeartbeatAt(now);
         job.setProgressPercent(progressPercentFor(JobStatus.READY_FOR_REVIEW));
-        job.setProgressMessage("Analysis completed and candidates are ready for review");
+        job.setProgressMessage("Analysis completed");
         job.setErrorMessage(null);
     }
 
@@ -169,7 +169,9 @@ public final class JobProjection {
                 }
             }
             case ANALYZE -> {
-                if (job.getStatus() != JobStatus.EXPORTING_CLIP && job.getStatus() != JobStatus.COMPLETED) {
+                if (job.getStatus() != JobStatus.READY_FOR_REVIEW
+                        && job.getStatus() != JobStatus.EXPORTING_CLIP
+                        && job.getStatus() != JobStatus.COMPLETED) {
                     applyReadyForReview(job, projectionTime);
                 }
             }

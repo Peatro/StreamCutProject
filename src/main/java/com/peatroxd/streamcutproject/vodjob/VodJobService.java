@@ -1,6 +1,7 @@
 package com.peatroxd.streamcutproject.vodjob;
 
 import com.peatroxd.streamcutproject.clipcandidate.ClipCandidate;
+import com.peatroxd.streamcutproject.clipcandidate.ClipCandidateWorkerPayload;
 import com.peatroxd.streamcutproject.clipcandidate.ClipCandidatePersistenceMapper;
 import com.peatroxd.streamcutproject.clipcandidate.ClipCandidateRepository;
 import com.peatroxd.streamcutproject.clipcandidate.ExportStatus;
@@ -8,8 +9,10 @@ import com.peatroxd.streamcutproject.clipcandidate.ModerationStatus;
 import com.peatroxd.streamcutproject.clipcandidate.api.ClipCandidateMapper;
 import com.peatroxd.streamcutproject.clipcandidate.api.ClipCandidateResponse;
 import com.peatroxd.streamcutproject.clipcandidate.api.ExportStatusResponse;
+import com.peatroxd.streamcutproject.analysiswindow.AnalysisWindowWorkerPayload;
 import com.peatroxd.streamcutproject.analysiswindow.AnalysisWindowRepository;
 import com.peatroxd.streamcutproject.analysiswindow.AnalysisWindowPersistenceMapper;
+import com.peatroxd.streamcutproject.silence.SilenceSegmentWorkerPayload;
 import com.peatroxd.streamcutproject.silence.SilenceSegmentPersistenceMapper;
 import com.peatroxd.streamcutproject.silence.SilenceSegmentRepository;
 import com.peatroxd.streamcutproject.vodjob.api.JobListItemResponse;
@@ -22,6 +25,7 @@ import com.peatroxd.streamcutproject.vodjob.api.WorkerExecutionResponse;
 import com.peatroxd.streamcutproject.vodjob.api.WorkerTaskResponse;
 import com.peatroxd.streamcutproject.vodjob.event.JobEvent;
 import com.peatroxd.streamcutproject.vodjob.event.JobEventRepository;
+import com.peatroxd.streamcutproject.transcript.TranscriptSegmentWorkerPayload;
 import com.peatroxd.streamcutproject.transcript.TranscriptSegmentRepository;
 import com.peatroxd.streamcutproject.transcript.TranscriptSegmentPersistenceMapper;
 import com.peatroxd.streamcutproject.storage.ArtifactStorageService;
@@ -294,6 +298,7 @@ public class VodJobService {
         Long previousProcessingVersion = job.getProcessingVersion();
         job.setProcessingVersion(nextProcessingVersion(job));
         cancelOpenWorkerState(job.getId(), previousProcessingVersion, now, "Retried by operator");
+        clearWorkerProgressEvents(job.getId());
         resetAnalysisArtifacts(job);
         queueJobForDownload(job, now);
         vodJobRepository.save(job);
@@ -322,6 +327,7 @@ public class VodJobService {
 
         Instant now = Instant.now();
         cancelOpenWorkerState(job.getId(), job.getProcessingVersion(), now, "Canceled by operator");
+        clearWorkerProgressEvents(job.getId());
         JobProjection.applyCanceled(job, now, "Canceled by operator");
         job.setProgressMessage("Job canceled by operator");
         job.setLastWorkerHeartbeatAt(null);
@@ -359,6 +365,7 @@ public class VodJobService {
         }
 
         failOpenWorkerState(job.getId(), job.getProcessingVersion(), now, "Operator forced failure");
+        clearWorkerProgressEvents(job.getId());
         JobProjection.applyFailure(job, now, "Operator forced failure");
         vodJobRepository.save(job);
         jobEventRepository.save(JobEvent.create(
@@ -735,6 +742,9 @@ public class VodJobService {
                 expectedTaskTypeForStage(stageStatus),
                 null
         );
+        if (job.getStatus() != stageStatus) {
+            clearWorkerProgressEvents(job.getId());
+        }
         Instant now = Instant.now();
         execution.setStatus(WorkerExecutionStatus.RUNNING);
         execution.setLastHeartbeatAt(now);
@@ -772,6 +782,10 @@ public class VodJobService {
                 WorkerTaskType.ANALYZE,
                 null
         );
+        List<TranscriptSegmentWorkerPayload> transcriptSegments = safeList(payload.transcriptSegments());
+        List<SilenceSegmentWorkerPayload> silenceSegments = safeList(payload.silenceSegments());
+        List<AnalysisWindowWorkerPayload> analysisWindows = safeList(payload.analysisWindows());
+        List<ClipCandidateWorkerPayload> clipCandidates = safeList(payload.clipCandidates());
 
         transcriptSegmentRepository.deleteAllByJobId(job.getId());
         silenceSegmentRepository.deleteAllByJobId(job.getId());
@@ -780,19 +794,19 @@ public class VodJobService {
 
         transcriptSegmentRepository.saveAll(TranscriptSegmentPersistenceMapper.toEntities(
                 job,
-                safeList(payload.transcriptSegments())
+                transcriptSegments
         ));
         silenceSegmentRepository.saveAll(SilenceSegmentPersistenceMapper.toEntities(
                 job,
-                safeList(payload.silenceSegments())
+                silenceSegments
         ));
         analysisWindowRepository.saveAll(AnalysisWindowPersistenceMapper.toEntities(
                 job,
-                safeList(payload.analysisWindows())
+                analysisWindows
         ));
         clipCandidateRepository.saveAll(ClipCandidatePersistenceMapper.toEntities(
                 job,
-                safeList(payload.clipCandidates())
+                clipCandidates
         ));
 
         Instant now = Instant.now();
@@ -809,11 +823,14 @@ public class VodJobService {
         execution.setFinishedAt(now);
         completeExecutionTask(execution, now);
         workerExecutionRepository.save(execution);
+        clearWorkerProgressEvents(job.getId());
         recomputeAndPersistJob(job);
+        job.setProgressMessage(readyForReviewProgressMessage(clipCandidates.size()));
+        vodJobRepository.save(job);
         jobEventRepository.save(JobEvent.create(
                 job,
                 EVENT_JOB_READY_FOR_REVIEW,
-                "Worker processing completed and job is ready for review",
+                readyForReviewEventMessage(clipCandidates.size()),
                 now
         ));
         incrementCounterAfterCommit(METRIC_JOBS_COMPLETED);
@@ -821,10 +838,10 @@ public class VodJobService {
                 "job_result_ingested jobId={} status={} transcriptSegments={} silenceSegments={} analysisWindows={} clipCandidates={}",
                 job.getId(),
                 job.getStatus(),
-                safeList(payload.transcriptSegments()).size(),
-                safeList(payload.silenceSegments()).size(),
-                safeList(payload.analysisWindows()).size(),
-                safeList(payload.clipCandidates()).size()
+                transcriptSegments.size(),
+                silenceSegments.size(),
+                analysisWindows.size(),
+                clipCandidates.size()
         );
 
         return new WorkerTransportAck(job.getId(), JobStatus.READY_FOR_REVIEW.name());
@@ -851,6 +868,7 @@ public class VodJobService {
         execution.setFinishedAt(now);
         completeExecutionTask(execution, now);
         workerExecutionRepository.save(execution);
+        clearWorkerProgressEvents(job.getId());
         queueWorkerTask(job, job.getProcessingVersion(), WorkerTaskType.ANALYZE, null, now);
         recomputeAndPersistJob(job);
         jobEventRepository.save(JobEvent.create(
@@ -919,6 +937,7 @@ public class VodJobService {
         execution.setFinishedAt(now);
         completeExecutionTask(execution, now);
         workerExecutionRepository.save(execution);
+        clearWorkerProgressEvents(job.getId());
         clipCandidateRepository.save(candidate);
         recomputeAndPersistJob(job);
         jobEventRepository.save(JobEvent.create(
@@ -967,6 +986,7 @@ public class VodJobService {
         execution.setFailureMessage(failureSummary);
         failExecutionTask(execution, now, failureSummary);
         workerExecutionRepository.save(execution);
+        clearWorkerProgressEvents(job.getId());
         vodJobRepository.save(job);
         jobEventRepository.save(JobEvent.create(
                 job,
@@ -1188,6 +1208,7 @@ public class VodJobService {
         task.markQueued(now);
         task.setFailureMessage(recoveryMessage);
         workerTaskRepository.save(task);
+        clearWorkerProgressEvents(job.getId());
 
         switch (task.getTaskType()) {
             case DOWNLOAD -> requeueRecoveredDownload(job, now, recoveryMessage);
@@ -1459,6 +1480,30 @@ public class VodJobService {
 
     private static <T> List<T> safeList(List<T> values) {
         return values == null ? List.of() : values;
+    }
+
+    private void clearWorkerProgressEvents(Long jobId) {
+        jobEventRepository.deleteAllByVodJobIdAndEventType(jobId, EVENT_WORKER_PROGRESS);
+    }
+
+    private static String readyForReviewProgressMessage(int clipCandidateCount) {
+        if (clipCandidateCount == 0) {
+            return "Analysis completed but no non-overlapping clip candidates were found";
+        }
+        if (clipCandidateCount == 1) {
+            return "Analysis completed and 1 clip candidate is ready for review";
+        }
+        return "Analysis completed and " + clipCandidateCount + " clip candidates are ready for review";
+    }
+
+    private static String readyForReviewEventMessage(int clipCandidateCount) {
+        if (clipCandidateCount == 0) {
+            return "Worker processing completed but no non-overlapping clip candidates were found";
+        }
+        if (clipCandidateCount == 1) {
+            return "Worker processing completed and 1 clip candidate is ready for review";
+        }
+        return "Worker processing completed and " + clipCandidateCount + " clip candidates are ready for review";
     }
 
     private void queueJobForDownload(VodJob job, Instant queuedAt) {

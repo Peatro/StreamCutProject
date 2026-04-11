@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Callable
 
 from streamcut_worker.models import (
@@ -23,6 +23,9 @@ class WorkerPollingLoop:
     worker_role: str
     poll_interval_sec: float = 5.0
     whisper_device: str | None = None
+    progress_update_interval_sec: float = 1.0
+    _last_progress_payload: WorkerProgressPayload | None = field(default=None, init=False, repr=False)
+    _last_progress_sent_at: float | None = field(default=None, init=False, repr=False)
 
     @staticmethod
     def _is_lost_lease(exc: BackendTransportError) -> bool:
@@ -36,6 +39,31 @@ class WorkerPollingLoop:
             self.worker_role,
             exc,
         )
+
+    def _reset_progress_state(self) -> None:
+        self._last_progress_payload = None
+        self._last_progress_sent_at = None
+
+    def _submit_progress(self, payload: WorkerProgressPayload) -> None:
+        now = time.monotonic()
+        last_payload = self._last_progress_payload
+
+        if last_payload is not None:
+            if payload.status == last_payload.status:
+                if (
+                    payload.progress_percent == last_payload.progress_percent
+                    and payload.message == last_payload.message
+                ):
+                    return
+                if (
+                    self._last_progress_sent_at is not None
+                    and now - self._last_progress_sent_at < self.progress_update_interval_sec
+                ):
+                    return
+
+        self.backend_client.submit_progress(payload)
+        self._last_progress_payload = payload
+        self._last_progress_sent_at = now
 
     def run_forever(self, should_continue: Callable[[], bool]) -> None:
         while should_continue():
@@ -57,11 +85,12 @@ class WorkerPollingLoop:
                 claimed_job.source_type,
                 self.worker_id,
             )
+            self._reset_progress_state()
 
             try:
                 result = self.job_runner.run(
                     claimed_job,
-                    lambda status, progress_percent, message: self.backend_client.submit_progress(
+                    lambda status, progress_percent, message: self._submit_progress(
                         WorkerProgressPayload(
                             execution_id=claimed_job.execution_id,
                             job_id=claimed_job.job_id,

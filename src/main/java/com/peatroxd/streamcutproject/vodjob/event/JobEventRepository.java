@@ -24,4 +24,13 @@ public interface JobEventRepository extends JpaRepository<JobEvent, Long> {
             where e.vodJob.id = :jobId
             """)
     void deleteAllByVodJobId(@Param("jobId") Long jobId);
+
+    @Modifying
+    @Query("""
+            delete
+            from JobEvent e
+            where e.vodJob.id = :jobId
+              and e.eventType = :eventType
+            """)
+    void deleteAllByVodJobIdAndEventType(@Param("jobId") Long jobId, @Param("eventType") String eventType);
 }

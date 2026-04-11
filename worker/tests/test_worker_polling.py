@@ -1,6 +1,7 @@
 from pathlib import Path
 import sys
 import unittest
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
@@ -24,6 +25,7 @@ class FakeBackendClient:
         self.download_results = []
         self.export_results = []
         self.failures = []
+        self.progress_updates = []
         self.result_error = result_error
 
     def claim_next_job(self, worker_id: str, worker_role: str, whisper_device: str | None = None):
@@ -52,17 +54,22 @@ class FakeBackendClient:
         return {"status": "COMPLETED"}
 
     def submit_progress(self, payload):
+        self.progress_updates.append(payload)
         return {"status": payload.status}
 
 
 class FakeJobRunner:
-    def __init__(self, result=None, error: Exception | None = None) -> None:
+    def __init__(self, result=None, error: Exception | None = None, progress_updates=None) -> None:
         self.result = result
         self.error = error
+        self.progress_updates = progress_updates or []
 
     def run(self, job: ClaimedJob, on_progress=None, *, worker_id: str):
         if self.error is not None:
             raise self.error
+        if on_progress is not None:
+            for status, progress_percent, message in self.progress_updates:
+                on_progress(status, progress_percent, message)
         return self.result
 
 
@@ -365,3 +372,102 @@ class WorkerPollingLoopTests(unittest.TestCase):
         loop.run_forever(lambda: next(iterations))
 
         self.assertEqual(len(backend.export_results), 1)
+
+    def test_polling_loop_throttles_same_stage_progress_updates(self) -> None:
+        backend = FakeBackendClient(
+            claimed_job=ClaimedJob(
+                execution_id=109,
+                job_id=15,
+                processing_version=2,
+                task_type="DOWNLOAD",
+                source_type="URL",
+                video_path=None,
+                source_url="https://example.com/video.mp4",
+            )
+        )
+        runner = FakeJobRunner(
+            result=WorkerDownloadCompletionPayload(
+                execution_id=109,
+                job_id=15,
+                worker_id="download-worker-1",
+                processing_version=2,
+                video_path="/tmp/video.mp4",
+            ),
+            progress_updates=[
+                ("DOWNLOADING", 20, "Downloading source video (12%)"),
+                ("DOWNLOADING", 20, "Downloading source video (12%)"),
+                ("DOWNLOADING", 20, "Downloading source video (13%)"),
+                ("DOWNLOADING", 20, "Downloading source video (13%)"),
+                ("DOWNLOADING", 21, "Downloading source video (18%)"),
+            ],
+        )
+        loop = WorkerPollingLoop(
+            backend_client=backend,
+            job_runner=runner,
+            worker_id="download-worker-1",
+            worker_role="download",
+            poll_interval_sec=0,
+            progress_update_interval_sec=1.0,
+        )
+
+        iterations = iter([True, False])
+        with mock.patch("streamcut_worker.pipeline.polling.time.monotonic", side_effect=[0.0, 0.1, 0.5, 0.9, 1.2]):
+            loop.run_forever(lambda: next(iterations))
+
+        self.assertEqual(
+            [(payload.progress_percent, payload.message) for payload in backend.progress_updates],
+            [
+                (20, "Downloading source video (12%)"),
+                (21, "Downloading source video (18%)"),
+            ],
+        )
+
+    def test_polling_loop_sends_stage_changes_immediately(self) -> None:
+        backend = FakeBackendClient(
+            claimed_job=ClaimedJob(
+                execution_id=110,
+                job_id=16,
+                processing_version=2,
+                task_type="ANALYZE",
+                source_type="FILE",
+                video_path=Path("/tmp/video.mp4"),
+                source_url=None,
+            )
+        )
+        runner = FakeJobRunner(
+            result=WorkerProcessingPayload(
+                execution_id=110,
+                job_id=16,
+                worker_id="processing-worker-1",
+                processing_version=2,
+                duration_sec=120,
+                language="en",
+                video_path="/tmp/video.mp4",
+                audio_path="/tmp/audio.wav",
+                transcript_segments=[],
+                silence_segments=[],
+                analysis_windows=[],
+                clip_candidates=[],
+            ),
+            progress_updates=[
+                ("EXTRACTING_AUDIO", 36, "Processing worker is extracting the audio track"),
+                ("TRANSCRIBING", 48, "Worker is transcribing the audio"),
+            ],
+        )
+        loop = WorkerPollingLoop(
+            backend_client=backend,
+            job_runner=runner,
+            worker_id="processing-worker-1",
+            worker_role="processing",
+            poll_interval_sec=0,
+            progress_update_interval_sec=1.0,
+        )
+
+        iterations = iter([True, False])
+        with mock.patch("streamcut_worker.pipeline.polling.time.monotonic", side_effect=[0.0, 0.2]):
+            loop.run_forever(lambda: next(iterations))
+
+        self.assertEqual(
+            [payload.status for payload in backend.progress_updates],
+            ["EXTRACTING_AUDIO", "TRANSCRIBING"],
+        )

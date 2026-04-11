@@ -1086,7 +1086,7 @@ ${renderJobFailureSummary(job, candidates)}
       DETECTING_SILENCE: "Worker is detecting silence spans.",
       ANALYZING_WINDOWS: "Worker is scoring sliding windows.",
       GENERATING_CANDIDATES: "Worker is assembling clip candidates.",
-      READY_FOR_REVIEW: "Analysis finished. Candidates are ready for review.",
+      READY_FOR_REVIEW: "Analysis finished.",
       EXPORTING_CLIP: "Worker is exporting the approved clip.",
       COMPLETED: "Worker run finished successfully.",
       FAILED: job?.errorMessage || "Worker run failed.",
@@ -1242,6 +1242,9 @@ ${renderJobFailureSummary(job, candidates)}
 
   function renderCandidates(job, candidates) {
     if (!candidates.length) {
+      if (String(job?.status || "").toUpperCase() === "READY_FOR_REVIEW") {
+        return `<div class="empty-state">Analysis completed, but no non-overlapping clip candidates were found.</div>`;
+      }
       return `<div class="empty-state">No candidates available yet.</div>`;
     }
 

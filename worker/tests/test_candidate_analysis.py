@@ -54,7 +54,7 @@ class CandidateAnalysisServiceTests(unittest.TestCase):
         self.assertTrue(payload["clipCandidates"][0]["transcriptExcerpt"])
 
     def test_analyze_deduplicates_overlapping_candidates(self) -> None:
-        service = SlidingWindowCandidateAnalysisService(window_duration_sec=20.0, step_sec=5.0, top_n=3)
+        service = SlidingWindowCandidateAnalysisService(window_duration_sec=20.0, step_sec=5.0)
         transcript_segments = [
             TranscriptSegment(0.0, 10.0, "wow wow wow", 3),
             TranscriptSegment(10.0, 20.0, "wow wow wow", 3),
@@ -68,13 +68,12 @@ class CandidateAnalysisServiceTests(unittest.TestCase):
             duration_sec=60.0,
             window_duration_sec=20.0,
             step_sec=5.0,
-            top_n=3,
             emotion_keywords=("wow",),
         )
 
         result = service.analyze(request)
 
-        self.assertGreaterEqual(len(result.clip_candidates), 2)
+        self.assertGreaterEqual(len(result.clip_candidates), 3)
         self.assertEqual(result.clip_candidates[0].start_sec, 40.0)
         self.assertEqual(result.clip_candidates[1].start_sec, 0.0)
         self.assertGreaterEqual(result.clip_candidates[0].score, result.clip_candidates[1].score)
@@ -88,12 +87,33 @@ class CandidateAnalysisServiceTests(unittest.TestCase):
                 overlap = max(0.0, min(left.end_sec, right.end_sec) - max(left.start_sec, right.start_sec))
                 union = max(left.end_sec, right.end_sec) - min(left.start_sec, right.start_sec)
                 if union > 0:
-                    self.assertLessEqual(overlap / union, 0.5)
+                    self.assertEqual(overlap / union, 0.0)
+
+    def test_analyze_returns_all_non_overlapping_candidates_when_limit_is_unset(self) -> None:
+        service = SlidingWindowCandidateAnalysisService(window_duration_sec=10.0, step_sec=10.0)
+        request = CandidateAnalysisRequest(
+            job_id="job-3",
+            transcript_segments=[
+                TranscriptSegment(0.0, 10.0, "clip one", 2),
+                TranscriptSegment(10.0, 20.0, "clip two", 2),
+                TranscriptSegment(20.0, 30.0, "clip three", 2),
+                TranscriptSegment(30.0, 40.0, "clip four", 2),
+            ],
+            silence_segments=[],
+            duration_sec=40.0,
+            window_duration_sec=10.0,
+            step_sec=10.0,
+        )
+
+        result = service.analyze(request)
+
+        self.assertEqual([candidate.start_sec for candidate in result.clip_candidates], [0.0, 10.0, 20.0, 30.0])
+        self.assertEqual(len(result.clip_candidates), 4)
 
     def test_analyze_handles_empty_inputs(self) -> None:
         service = SlidingWindowCandidateAnalysisService()
         request = CandidateAnalysisRequest(
-            job_id="job-3",
+            job_id="job-4",
             transcript_segments=[],
             silence_segments=[],
             duration_sec=0.0,

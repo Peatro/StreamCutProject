@@ -21,8 +21,8 @@ _EMPHASIS_WORD_RE = re.compile(r"\b[A-Z]{2,}\b")
 class SlidingWindowCandidateAnalysisService:
     window_duration_sec: float = 30.0
     step_sec: float = 5.0
-    top_n: int = 10
-    min_overlap_ratio: float = 0.5
+    top_n: int | None = None
+    min_overlap_ratio: float = 0.0
 
     def analyze(self, request: CandidateAnalysisRequest) -> CandidateAnalysisResult:
         duration_sec = self._resolve_duration(request)
@@ -174,8 +174,8 @@ class SlidingWindowCandidateAnalysisService:
 
         return normalized
 
-    def _select_candidates(self, windows: list["_WindowSample"], top_n: int) -> list[ClipCandidate]:
-        if top_n <= 0:
+    def _select_candidates(self, windows: list["_WindowSample"], top_n: int | None) -> list[ClipCandidate]:
+        if top_n is not None and top_n <= 0:
             return []
 
         selected: list[_WindowSample] = []
@@ -193,7 +193,7 @@ class SlidingWindowCandidateAnalysisService:
             ):
                 continue
             selected.append(window)
-            if len(selected) >= top_n:
+            if top_n is not None and len(selected) >= top_n:
                 break
 
         return [

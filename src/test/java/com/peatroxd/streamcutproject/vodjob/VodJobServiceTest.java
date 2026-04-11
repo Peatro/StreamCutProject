@@ -357,6 +357,34 @@ class VodJobServiceTest {
         assertThat(jobs).hasSize(1);
         assertThat(jobs.get(0).status()).isEqualTo("READY_FOR_REVIEW");
         assertThat(jobs.get(0).progressPercent()).isEqualTo(100);
+        assertThat(jobs.get(0).progressMessage()).isEqualTo("Analysis completed");
+    }
+
+    @Test
+    void listJobsPreservesReadyForReviewProgressMessage() {
+        VodJob job = buildJob(1L, "https://example.com/video", Instant.parse("2026-04-05T10:00:00Z"));
+        job.setStatus(JobStatus.READY_FOR_REVIEW);
+        job.setProgressPercent(100);
+        job.setProgressMessage("Analysis completed but no non-overlapping clip candidates were found");
+        WorkerTask latestTask = WorkerTask.createQueued(
+                job,
+                job.getProcessingVersion(),
+                WorkerTaskType.ANALYZE,
+                null,
+                Instant.parse("2026-04-05T10:01:00Z")
+        );
+        latestTask.setStatus(WorkerTaskStatus.SUCCEEDED);
+        latestTask.setFinishedAt(Instant.parse("2026-04-05T10:05:00Z"));
+        when(vodJobRepository.findAll(any(Sort.class))).thenReturn(List.of(job));
+        when(workerExecutionRepository.findAllByVodJobIdInOrderByVodJobIdAscIdAsc(List.of(1L))).thenReturn(List.of());
+        when(workerTaskRepository.findAllByVodJobIdInOrderByVodJobIdAscIdAsc(List.of(1L))).thenReturn(List.of(latestTask));
+
+        List<JobListItemResponse> jobs = vodJobService.listJobs();
+
+        assertThat(jobs).hasSize(1);
+        assertThat(jobs.get(0).status()).isEqualTo("READY_FOR_REVIEW");
+        assertThat(jobs.get(0).progressMessage())
+                .isEqualTo("Analysis completed but no non-overlapping clip candidates were found");
     }
 
     @Test
@@ -463,6 +491,7 @@ class VodJobServiceTest {
         verify(jobEventRepository).save(eventCaptor.capture());
         assertThat(eventCaptor.getValue().getEventType()).isEqualTo("JOB_RETRIED");
         assertThat(eventCaptor.getValue().getMessage()).contains("requeued it for download");
+        verify(jobEventRepository).deleteAllByVodJobIdAndEventType(1L, "WORKER_PROGRESS");
         assertThat(meterRegistry.get("streamcut.jobs.retried").counter().count()).isEqualTo(1.0d);
     }
 
@@ -505,6 +534,7 @@ class VodJobServiceTest {
         verify(jobEventRepository).save(eventCaptor.capture());
         assertThat(eventCaptor.getValue().getEventType()).isEqualTo("JOB_CANCELED");
         assertThat(eventCaptor.getValue().getMessage()).contains("queued job");
+        verify(jobEventRepository).deleteAllByVodJobIdAndEventType(1L, "WORKER_PROGRESS");
         assertThat(meterRegistry.get("streamcut.jobs.canceled").counter().count()).isEqualTo(1.0d);
     }
 
@@ -560,6 +590,7 @@ class VodJobServiceTest {
         verify(jobEventRepository).save(eventCaptor.capture());
         assertThat(eventCaptor.getValue().getEventType()).isEqualTo("JOB_FORCE_FAILED");
         assertThat(eventCaptor.getValue().getMessage()).contains("EXPORTING_CLIP");
+        verify(jobEventRepository).deleteAllByVodJobIdAndEventType(1L, "WORKER_PROGRESS");
         assertThat(meterRegistry.get("streamcut.jobs.failed")
                 .tag("reason", "operator_force")
                 .counter()
@@ -1157,8 +1188,10 @@ class VodJobServiceTest {
         assertThat(job.getStatus()).isEqualTo(JobStatus.READY_FOR_REVIEW);
         assertThat(job.getDurationSec()).isEqualTo(120L);
         assertThat(job.getLanguage()).isEqualTo("en");
+        assertThat(job.getProgressMessage()).isEqualTo("Analysis completed and 1 clip candidate is ready for review");
         assertThat(job.getStorageVideoPath()).isEqualTo("/var/lib/streamcut/jobs/1/source/video.mp4");
         assertThat(job.getStorageAudioPath()).isEqualTo("/var/lib/streamcut/jobs/1/audio/audio.wav");
+        verify(jobEventRepository).deleteAllByVodJobIdAndEventType(1L, "WORKER_PROGRESS");
         verify(transcriptSegmentRepository).deleteAllByJobId(1L);
         verify(silenceSegmentRepository).deleteAllByJobId(1L);
         verify(analysisWindowRepository).deleteAllByJobId(1L);
@@ -1170,6 +1203,44 @@ class VodJobServiceTest {
         verify(workerExecutionRepository, Mockito.atLeastOnce()).save(any(WorkerExecution.class));
         verify(jobEventRepository).save(any(JobEvent.class));
         assertThat(meterRegistry.get("streamcut.jobs.completed").counter().count()).isEqualTo(1.0d);
+    }
+
+    @Test
+    void ingestWorkerResultReportsWhenNoClipCandidatesWereFound() {
+        VodJob job = buildJob(1L, "https://example.com/video", Instant.parse("2026-04-05T10:00:00Z"));
+        job.setStatus(JobStatus.TRANSCRIBING);
+        job.setCurrentWorkerId("worker-1");
+        WorkerTask task = buildQueuedTask(job, WorkerTaskType.ANALYZE, null);
+        task.markRunning(Instant.parse("2026-04-05T10:01:00Z"));
+        when(vodJobRepository.findById(1L)).thenReturn(java.util.Optional.of(job));
+        when(workerExecutionRepository.findById(51L))
+                .thenReturn(java.util.Optional.of(buildExecution(job, task, "worker-1", WorkerTaskType.ANALYZE, 51L)));
+        when(workerTaskRepository.findAllByVodJobIdOrderByCreatedAtAscIdAsc(1L)).thenReturn(List.of(task));
+
+        WorkerTransportAck ack = vodJobService.ingestWorkerResult(new WorkerProcessingResultPayload(
+                51L,
+                1L,
+                "worker-1",
+                1L,
+                120L,
+                "en",
+                "/var/lib/streamcut/jobs/1/source/video.mp4",
+                "/var/lib/streamcut/jobs/1/audio/audio.wav",
+                List.of(new TranscriptSegmentWorkerPayload(0.0, 2.0, "hello", 1)),
+                List.of(new SilenceSegmentWorkerPayload(2.0, 3.0, 1.0)),
+                List.of(new AnalysisWindowWorkerPayload(0.0, 20.0, 1.0, 0.1, 0, 0.8, 0.9)),
+                List.of()
+        ));
+
+        ArgumentCaptor<JobEvent> eventCaptor = ArgumentCaptor.forClass(JobEvent.class);
+
+        assertThat(ack.status()).isEqualTo("READY_FOR_REVIEW");
+        assertThat(job.getStatus()).isEqualTo(JobStatus.READY_FOR_REVIEW);
+        assertThat(job.getProgressMessage()).isEqualTo("Analysis completed but no non-overlapping clip candidates were found");
+        verify(jobEventRepository).deleteAllByVodJobIdAndEventType(1L, "WORKER_PROGRESS");
+        verify(jobEventRepository).save(eventCaptor.capture());
+        assertThat(eventCaptor.getValue().getMessage())
+                .isEqualTo("Worker processing completed but no non-overlapping clip candidates were found");
     }
 
     @Test
@@ -1198,6 +1269,7 @@ class VodJobServiceTest {
         assertThat(job.getStatus()).isEqualTo(JobStatus.QUEUED_FOR_PROCESSING);
         assertThat(job.getStorageVideoPath()).isEqualTo("/var/lib/streamcut/jobs/1/source/video.mp4");
         assertThat(job.getCurrentWorkerId()).isNull();
+        verify(jobEventRepository).deleteAllByVodJobIdAndEventType(1L, "WORKER_PROGRESS");
         verify(workerExecutionRepository, Mockito.atLeastOnce()).save(any(WorkerExecution.class));
         verify(vodJobRepository).save(job);
         verify(jobEventRepository, Mockito.times(2)).save(any(JobEvent.class));
@@ -1298,6 +1370,7 @@ class VodJobServiceTest {
         assertThat(ack.status()).isEqualTo("FAILED");
         assertThat(job.getStatus()).isEqualTo(JobStatus.FAILED);
         assertThat(job.getErrorMessage()).isEqualTo("TRANSCRIBING: transcription failed");
+        verify(jobEventRepository).deleteAllByVodJobIdAndEventType(1L, "WORKER_PROGRESS");
         verify(workerExecutionRepository, Mockito.atLeastOnce()).save(any(WorkerExecution.class));
         verify(vodJobRepository).save(job);
         verify(jobEventRepository).save(any(JobEvent.class));
@@ -1349,9 +1422,68 @@ class VodJobServiceTest {
         assertThat(ack.status()).isEqualTo("COMPLETED");
         assertThat(job.getStatus()).isEqualTo(JobStatus.COMPLETED);
         assertThat(candidate.getExportedClipPath()).isEqualTo("s3://streamcut-artifacts/exports/jobs/1/candidate-7.mp4");
+        verify(jobEventRepository).deleteAllByVodJobIdAndEventType(1L, "WORKER_PROGRESS");
         verify(workerExecutionRepository, Mockito.atLeastOnce()).save(any(WorkerExecution.class));
         verify(clipCandidateRepository).save(candidate);
         verify(vodJobRepository).save(job);
+        verify(jobEventRepository).save(any(JobEvent.class));
+    }
+
+    @Test
+    void updateWorkerProgressClearsPreviousStageProgressEvents() {
+        VodJob job = buildJob(1L, "https://example.com/video", Instant.parse("2026-04-05T10:00:00Z"));
+        job.setStatus(JobStatus.EXTRACTING_AUDIO);
+        job.setCurrentWorkerId("worker-1");
+        WorkerTask task = buildQueuedTask(job, WorkerTaskType.ANALYZE, null);
+        task.markRunning(Instant.parse("2026-04-05T10:01:00Z"));
+        when(vodJobRepository.findById(1L)).thenReturn(java.util.Optional.of(job));
+        when(workerExecutionRepository.findById(56L))
+                .thenReturn(java.util.Optional.of(buildExecution(job, task, "worker-1", WorkerTaskType.ANALYZE, 56L)));
+
+        WorkerTransportAck ack = vodJobService.updateWorkerProgress(
+                new com.peatroxd.streamcutproject.workerdispatch.WorkerProgressUpdatePayload(
+                        56L,
+                        1L,
+                        "worker-1",
+                        1L,
+                        "TRANSCRIBING",
+                        60,
+                        "Worker is transcribing the audio"
+                )
+        );
+
+        assertThat(ack.status()).isEqualTo("TRANSCRIBING");
+        assertThat(job.getStatus()).isEqualTo(JobStatus.TRANSCRIBING);
+        verify(jobEventRepository).deleteAllByVodJobIdAndEventType(1L, "WORKER_PROGRESS");
+        verify(jobEventRepository).save(any(JobEvent.class));
+    }
+
+    @Test
+    void updateWorkerProgressKeepsCurrentStageProgressEvents() {
+        VodJob job = buildJob(1L, "https://example.com/video", Instant.parse("2026-04-05T10:00:00Z"));
+        job.setStatus(JobStatus.DOWNLOADING);
+        job.setCurrentWorkerId("worker-1");
+        WorkerTask task = buildQueuedTask(job, WorkerTaskType.DOWNLOAD, null);
+        task.markRunning(Instant.parse("2026-04-05T10:01:00Z"));
+        when(vodJobRepository.findById(1L)).thenReturn(java.util.Optional.of(job));
+        when(workerExecutionRepository.findById(57L))
+                .thenReturn(java.util.Optional.of(buildExecution(job, task, "worker-1", WorkerTaskType.DOWNLOAD, 57L)));
+
+        WorkerTransportAck ack = vodJobService.updateWorkerProgress(
+                new com.peatroxd.streamcutproject.workerdispatch.WorkerProgressUpdatePayload(
+                        57L,
+                        1L,
+                        "worker-1",
+                        1L,
+                        "DOWNLOADING",
+                        20,
+                        "Downloading source video (16%)"
+                )
+        );
+
+        assertThat(ack.status()).isEqualTo("DOWNLOADING");
+        assertThat(job.getStatus()).isEqualTo(JobStatus.DOWNLOADING);
+        verify(jobEventRepository, Mockito.never()).deleteAllByVodJobIdAndEventType(1L, "WORKER_PROGRESS");
         verify(jobEventRepository).save(any(JobEvent.class));
     }
 
