@@ -31,6 +31,8 @@ def main() -> None:
         for keyword in os.getenv("WORKER_EMOTION_KEYWORDS", "").split(",")
         if keyword.strip()
     )
+    whisper_device = os.getenv("WHISPER_DEVICE", "cpu").strip().lower() or "cpu"
+    whisper_compute_type = os.getenv("WHISPER_COMPUTE_TYPE", "int8").strip() or "int8"
 
     if worker_role not in {"download", "processing"}:
         raise ValueError("WORKER_ROLE must be 'download' or 'processing'")
@@ -45,6 +47,8 @@ def main() -> None:
         storage_root=storage_root,
         emotion_keywords=emotion_keywords,
         load_transcription_model=(worker_role == "processing"),
+        whisper_device=whisper_device,
+        whisper_compute_type=whisper_compute_type,
     )
 
     if worker_role == "processing":
@@ -56,6 +60,7 @@ def main() -> None:
         worker_id=worker_id,
         worker_role=worker_role,
         poll_interval_sec=poll_interval_sec,
+        whisper_device=whisper_device if worker_role == "processing" else None,
     )
 
     polling_loop.run_forever(lambda: _running)

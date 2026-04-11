@@ -8,8 +8,8 @@ It tracks:
 - remaining work required to stabilize the MVP and finish the service through `v1.0.0`
 - the next architecture track after `v1.0.0`
 
-Last updated: 2026-04-09
-Branch snapshot: `main` and `develop` synchronized at `v1.0.0` after `release/1.0.0`
+Last updated: 2026-04-11
+Branch snapshot: `develop` carries post-`v1.0.0` follow-up work ahead of `main`
 Synced note: Obsidian backlog mirror in `StreamCutProject`
 
 ## Sync Policy
@@ -84,6 +84,10 @@ Synced note: Obsidian backlog mirror in `StreamCutProject`
   - stale recovery is driven by task heartbeat ownership
   - `VodJob` is increasingly treated as a projection over task state instead of the primary orchestration source
   - task and execution history are exposed in the API, and latest task/execution summaries are visible in the UI
+- Processing workers can now report the whisper device they claimed with:
+  - `worker_execution.whisper_device` persisted in PostgreSQL
+  - latest execution summaries and execution history exposing the reported device in the API/UI
+  - an optional `docker-compose.gpu.yml` local override keeping the CPU-first runtime as the default path
 - `TASK-059`, `TASK-060`, `TASK-061`, `TASK-062`, and `TASK-063` are now merged into `develop`.
 - `TASK-064` browser E2E coverage and CI gating are now present in source:
   - the repository contains a dedicated `src/e2eTest` suite

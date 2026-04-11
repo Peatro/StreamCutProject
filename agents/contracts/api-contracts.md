@@ -94,9 +94,12 @@ Request:
 ```json
 {
   "workerId": "string",
-  "workerRole": "DOWNLOAD_OR_PROCESSING"
+  "workerRole": "DOWNLOAD_OR_PROCESSING",
+  "whisperDevice": "cpu_or_cuda_or_null"
 }
 ```
+
+- `whisperDevice` is optional and is expected only from processing workers.
 
 Response `200`:
 ```json

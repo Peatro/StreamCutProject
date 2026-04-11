@@ -88,6 +88,7 @@ Fields:
 - last_heartbeat_at
 - finished_at
 - failure_message
+- whisper_device
 
 Current execution statuses:
 - CLAIMED
@@ -99,6 +100,7 @@ Current execution statuses:
 Notes:
 - every worker callback must be tied to `execution_id`
 - `worker_execution` is the authoritative record for lease ownership and callback correlation
+- `whisper_device` records the processing worker's reported transcription device at claim time when available
 - a task may accumulate multiple executions over time as the model grows retry/recovery semantics
 
 ## transcript_segment

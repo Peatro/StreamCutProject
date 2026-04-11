@@ -32,3 +32,6 @@ databaseChangeLog:
   - include:
       file: changes/011-create-worker-task.yaml
       relativeToChangelogFile: true
+  - include:
+      file: changes/012-add-whisper-device-to-worker-execution.yaml
+      relativeToChangelogFile: true

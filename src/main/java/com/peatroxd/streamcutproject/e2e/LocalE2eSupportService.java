@@ -155,7 +155,7 @@ public class LocalE2eSupportService {
     }
 
     private WorkerDispatchPayload claimExpectedJob(Long jobId, String workerId, String workerRole) {
-        WorkerDispatchPayload payload = vodJobService.claimNextQueuedJob(workerId, workerRole)
+        WorkerDispatchPayload payload = vodJobService.claimNextQueuedJob(workerId, workerRole, null)
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.CONFLICT,
                         "Synthetic fixture could not claim a queued job for role: " + workerRole

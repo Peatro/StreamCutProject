@@ -87,7 +87,8 @@ public final class JobMapper {
                 execution.getClaimedAt(),
                 execution.getLastHeartbeatAt(),
                 execution.getFinishedAt(),
-                execution.getFailureMessage()
+                execution.getFailureMessage(),
+                execution.getWhisperDevice()
         );
     }
 

@@ -31,10 +31,13 @@ class BackendClient:
     base_url: str
     timeout_sec: float = 30.0
 
-    def claim_next_job(self, worker_id: str, worker_role: str) -> ClaimedJob | None:
+    def claim_next_job(self, worker_id: str, worker_role: str, whisper_device: str | None = None) -> ClaimedJob | None:
+        body: dict = {"workerId": worker_id, "workerRole": worker_role}
+        if whisper_device is not None:
+            body["whisperDevice"] = whisper_device
         response = self._post_json(
             "/api/internal/worker/claims/next",
-            {"workerId": worker_id, "workerRole": worker_role},
+            body,
             allow_no_content=True,
         )
         if response is None:

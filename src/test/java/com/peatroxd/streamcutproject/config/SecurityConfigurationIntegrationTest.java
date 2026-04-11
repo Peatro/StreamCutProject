@@ -209,7 +209,7 @@ class SecurityConfigurationIntegrationTest {
 
     @Test
     void allowsUnauthenticatedWorkerPostWithoutCsrf() throws Exception {
-        when(vodJobService.claimNextQueuedJob("worker-1", "processing")).thenReturn(
+        when(vodJobService.claimNextQueuedJob("worker-1", "processing", null)).thenReturn(
                 java.util.Optional.of(new WorkerDispatchPayload(
                         11L,
                         7L,

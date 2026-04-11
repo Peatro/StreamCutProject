@@ -18,7 +18,7 @@ public class WorkerClaimController {
 
     @PostMapping("/claims/next")
     public ResponseEntity<WorkerDispatchPayload> claimNextJob(@Valid @RequestBody WorkerClaimRequest request) {
-        return vodJobService.claimNextQueuedJob(request.workerId(), request.workerRole())
+        return vodJobService.claimNextQueuedJob(request.workerId(), request.workerRole(), request.whisperDevice())
                 .map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.noContent().build());
     }

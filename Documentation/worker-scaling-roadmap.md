@@ -191,6 +191,12 @@ Required outcomes:
 - separate throughput and latency metrics per worker pool
 - support for future CPU and GPU specialization
 
+Current source note:
+
+- the checked-in CPU-first runtime remains the default path
+- `docker-compose.gpu.yml` now provides an optional local GPU override for `processing-worker`
+- `worker_execution.whisper_device` now records the processing worker's reported whisper device for operator visibility
+
 ### 6. Add Real Observability
 Goal: understand system behavior numerically instead of inferring everything from logs.
 

@@ -1,0 +1,12 @@
+databaseChangeLog:
+  - changeSet:
+      id: 012-add-whisper-device-to-worker-execution
+      author: codex
+      comment: Track the whisper device (cpu/cuda) reported by the processing worker at claim time.
+      changes:
+        - addColumn:
+            tableName: worker_execution
+            columns:
+              - column:
+                  name: whisper_device
+                  type: VARCHAR(32)

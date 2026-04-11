@@ -22,6 +22,7 @@ class WorkerPollingLoop:
     worker_id: str
     worker_role: str
     poll_interval_sec: float = 5.0
+    whisper_device: str | None = None
 
     @staticmethod
     def _is_lost_lease(exc: BackendTransportError) -> bool:
@@ -39,7 +40,7 @@ class WorkerPollingLoop:
     def run_forever(self, should_continue: Callable[[], bool]) -> None:
         while should_continue():
             try:
-                claimed_job = self.backend_client.claim_next_job(self.worker_id, self.worker_role)
+                claimed_job = self.backend_client.claim_next_job(self.worker_id, self.worker_role, self.whisper_device)
             except BackendTransportError as exc:
                 logging.warning("Worker claim failed: %s", exc)
                 time.sleep(self.poll_interval_sec)

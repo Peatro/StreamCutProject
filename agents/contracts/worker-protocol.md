@@ -19,7 +19,7 @@ Defines the backend <-> worker transport and payload contract for the current ta
 - backend remains the source of truth for orchestration, ownership, and acceptance of callbacks
 
 ## Flow
-1. Worker sends a claim request with `workerId` and `workerRole`.
+1. Worker sends a claim request with `workerId`, `workerRole`, and optional `whisperDevice`.
 2. Backend atomically claims the next compatible task if one exists.
 3. Backend returns one dispatch payload tied to the new `executionId`.
 4. Worker executes exactly that task.
@@ -32,9 +32,14 @@ Defines the backend <-> worker transport and payload contract for the current ta
 ```json
 {
   "workerId": "string",
-  "workerRole": "DOWNLOAD_OR_PROCESSING"
+  "workerRole": "DOWNLOAD_OR_PROCESSING",
+  "whisperDevice": "cpu_or_cuda_or_null"
 }
 ```
+
+- `whisperDevice` is optional.
+- processing workers may send it to report the transcription device used for the claimed execution.
+- download workers should omit it.
 
 ## Claim Response Payload
 ```json

@@ -1038,6 +1038,7 @@ ${renderJobFailureSummary(job, candidates)}
         <div class="execution-history-grid">
           ${infoItem("Worker", execution.workerId || "n/a")}
           ${infoItem("Role", execution.workerRole || "n/a")}
+          ${execution.whisperDevice ? infoItem("Device", execution.whisperDevice.toUpperCase()) : ""}
           ${infoItem("Version", execution.processingVersion ? `v${execution.processingVersion}` : "n/a")}
           ${infoItem("Scope", candidateLabel)}
           ${infoItem("Claimed", formatRelativeDateTime(execution.claimedAt))}

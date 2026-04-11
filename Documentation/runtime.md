@@ -35,11 +35,12 @@ This is the explicit MVP upload policy for `POST /api/jobs/upload`.
 - If future release work changes the upload envelope, update this section first and keep backend config, API docs, backlog notes, and UI copy aligned with it.
 
 ## Local Startup
-1. Build and start everything with `docker compose up --build`.
-2. Wait for PostgreSQL health checks to pass.
-3. Open the backend on `http://localhost:8080`.
-4. Use `docker compose logs -f backend worker postgres` to follow startup and runtime output.
-5. This path is explicitly local-only and uses `docker-compose.yml`.
+1. Build and start the CPU-first local stack with `docker compose up --build`.
+2. If the host has an NVIDIA GPU and Docker GPU support configured, use `docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build` to switch only the processing worker to the GPU image.
+3. Wait for PostgreSQL health checks to pass.
+4. Open the backend on `http://localhost:8080`.
+5. Use `docker compose logs -f backend download-worker processing-worker postgres` to follow startup and runtime output.
+6. This path is explicitly local-only and uses `docker-compose.yml`, optionally layered with `docker-compose.gpu.yml`.
 
 ## Runtime Profiles
 - `local` is the default Spring profile and is the profile used by `docker-compose.yml`.
@@ -68,6 +69,8 @@ Worker:
 - `APP_STORAGE_LOCAL_ROOT=/data/storage`
 - `PYTHONUNBUFFERED=1`
 - `HF_HOME=/model-cache` for `processing-worker` so the transcription model cache persists outside image builds
+- `WHISPER_DEVICE=cpu` by default, or `cuda` through `docker-compose.gpu.yml`
+- `WHISPER_COMPUTE_TYPE=int8` by default, or `float16` through `docker-compose.gpu.yml`
 
 PostgreSQL:
 - `POSTGRES_DB=streamcut`
@@ -171,6 +174,7 @@ PostgreSQL:
 ## Docker Runtime Notes
 - `Dockerfile.backend` now builds the Spring Boot jar in a Gradle build stage on `public.ecr.aws/docker/library/gradle:8.14.3-jdk21` and runs it on `public.ecr.aws/amazoncorretto/amazoncorretto:21-al2023-headless`.
 - `worker/Dockerfile` now runs on `public.ecr.aws/docker/library/python:3.12.11-slim-bookworm` with only the extra packages it needs for the worker process.
+- `worker/Dockerfile.gpu` is an optional CUDA-oriented variant for the processing worker and is intended to be layered in through `docker-compose.gpu.yml`, not to replace the CPU-first default runtime.
 - `docker-compose.yml` remains the local full-stack path, while `docker-compose.production.yml` defines the production-oriented package with an explicit edge runtime.
 - `docker-compose.yml` is explicitly the local-runtime path; it should not be treated as a production deploy manifest.
 - `deploy/Caddyfile` defines the minimal production edge runtime and routes public UI/API traffic to `backend:8080`.

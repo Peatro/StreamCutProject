@@ -141,6 +141,7 @@ class VodJobControllerTest {
                                 Instant.parse("2026-04-05T10:00:10Z"),
                                 Instant.parse("2026-04-05T10:00:20Z"),
                                 null,
+                                null,
                                 null
                         ),
                         new WorkerTaskResponse(
@@ -327,6 +328,7 @@ class VodJobControllerTest {
                         Instant.parse("2026-04-05T10:00:10Z"),
                         Instant.parse("2026-04-05T10:00:20Z"),
                         Instant.parse("2026-04-05T10:00:25Z"),
+                        null,
                         null
                 ),
                 new WorkerExecutionResponse(
@@ -340,7 +342,8 @@ class VodJobControllerTest {
                         Instant.parse("2026-04-05T10:00:30Z"),
                         Instant.parse("2026-04-05T10:01:00Z"),
                         null,
-                        null
+                        null,
+                        "cuda"
                 )
         ));
 
@@ -352,7 +355,8 @@ class VodJobControllerTest {
                 .andExpect(jsonPath("$[0].status").value("SUCCEEDED"))
                 .andExpect(jsonPath("$[1].id").value(22))
                 .andExpect(jsonPath("$[1].taskType").value("ANALYZE"))
-                .andExpect(jsonPath("$[1].status").value("RUNNING"));
+                .andExpect(jsonPath("$[1].status").value("RUNNING"))
+                .andExpect(jsonPath("$[1].whisperDevice").value("cuda"));
     }
 
     @Test

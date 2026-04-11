@@ -12,7 +12,9 @@ import org.springframework.validation.beanvalidation.LocalValidatorFactoryBean;
 import java.util.Optional;
 
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -33,7 +35,7 @@ class WorkerClaimControllerTest {
 
     @Test
     void returnsClaimedJobPayloadWhenQueuedJobExists() throws Exception {
-        when(vodJobService.claimNextQueuedJob(anyString(), anyString())).thenReturn(Optional.of(
+        when(vodJobService.claimNextQueuedJob(anyString(), anyString(), anyString())).thenReturn(Optional.of(
                 new WorkerDispatchPayload(
                         11L,
                         7L,
@@ -54,7 +56,8 @@ class WorkerClaimControllerTest {
                         .content("""
                                 {
                                   "workerId": "worker-1",
-                                  "workerRole": "processing"
+                                  "workerRole": "processing",
+                                  "whisperDevice": "cuda"
                                 }
                                 """))
                 .andExpect(status().isOk())
@@ -65,11 +68,13 @@ class WorkerClaimControllerTest {
                 .andExpect(jsonPath("$.taskType").value("ANALYZE"))
                 .andExpect(jsonPath("$.videoPath").value("/data/storage/jobs/7/source/video.mp4"))
                 .andExpect(jsonPath("$.sourceType").value("FILE"));
+
+        verify(vodJobService).claimNextQueuedJob("worker-1", "processing", "cuda");
     }
 
     @Test
     void returnsNoContentWhenNoQueuedJobExists() throws Exception {
-        when(vodJobService.claimNextQueuedJob(anyString(), anyString())).thenReturn(Optional.empty());
+        when(vodJobService.claimNextQueuedJob(anyString(), anyString(), isNull())).thenReturn(Optional.empty());
 
         mockMvc.perform(post("/api/internal/worker/claims/next")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -80,6 +85,8 @@ class WorkerClaimControllerTest {
                                 }
                                 """))
                 .andExpect(status().isNoContent());
+
+        verify(vodJobService).claimNextQueuedJob("worker-1", "download", null);
     }
 
     @Test

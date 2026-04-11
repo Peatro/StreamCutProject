@@ -26,9 +26,9 @@ class FakeBackendClient:
         self.failures = []
         self.result_error = result_error
 
-    def claim_next_job(self, worker_id: str, worker_role: str):
+    def claim_next_job(self, worker_id: str, worker_role: str, whisper_device: str | None = None):
         self.claim_calls += 1
-        self.claim_roles.append((worker_id, worker_role))
+        self.claim_roles.append((worker_id, worker_role, whisper_device))
         claimed_job = self.claimed_job
         self.claimed_job = None
         return claimed_job
@@ -101,13 +101,14 @@ class WorkerPollingLoopTests(unittest.TestCase):
             worker_id="processing-worker-1",
             worker_role="processing",
             poll_interval_sec=0,
+            whisper_device="cuda",
         )
 
         iterations = iter([True, False])
         loop.run_forever(lambda: next(iterations))
 
         self.assertEqual(backend.claim_calls, 1)
-        self.assertEqual(backend.claim_roles, [("processing-worker-1", "processing")])
+        self.assertEqual(backend.claim_roles, [("processing-worker-1", "processing", "cuda")])
         self.assertEqual(len(backend.results), 1)
         self.assertEqual(backend.results[0].job_id, 7)
 
@@ -143,7 +144,7 @@ class WorkerPollingLoopTests(unittest.TestCase):
         iterations = iter([True, False])
         loop.run_forever(lambda: next(iterations))
 
-        self.assertEqual(backend.claim_roles, [("download-worker-1", "download")])
+        self.assertEqual(backend.claim_roles, [("download-worker-1", "download", None)])
         self.assertEqual(len(backend.download_results), 1)
         self.assertEqual(backend.download_results[0].job_id, 8)
 

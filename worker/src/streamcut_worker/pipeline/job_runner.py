@@ -418,12 +418,17 @@ def create_default_job_runner(
     storage_root: Path,
     emotion_keywords: tuple[str, ...] = (),
     load_transcription_model: bool = True,
+    whisper_device: str = "cpu",
+    whisper_compute_type: str = "int8",
 ) -> WorkerJobRunner:
     return WorkerJobRunner(
         storage_root=storage_root,
         source_materializer=SourceMaterializer(storage_root=storage_root),
         audio_service=FfmpegAudioExtractionService(),
-        transcription_service=create_default_transcription_service() if load_transcription_model else None,
+        transcription_service=create_default_transcription_service(
+            device=whisper_device,
+            compute_type=whisper_compute_type,
+        ) if load_transcription_model else None,
         silence_service=FfmpegSilenceDetectionService(),
         analysis_service=SlidingWindowCandidateAnalysisService(),
         export_service=FfmpegClipExportService(storage_root),

@@ -6,6 +6,7 @@ public record WorkerClaimRequest(
         @NotBlank(message = "workerId must not be blank")
         String workerId,
         @NotBlank(message = "workerRole must not be blank")
-        String workerRole
+        String workerRole,
+        String whisperDevice
 ) {
 }

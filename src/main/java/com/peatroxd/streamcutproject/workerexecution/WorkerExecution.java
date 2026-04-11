@@ -71,6 +71,9 @@ public class WorkerExecution {
     @Column(name = "failure_message", length = 1000)
     private String failureMessage;
 
+    @Column(name = "whisper_device", length = 32)
+    private String whisperDevice;
+
     public static WorkerExecution create(
             VodJob vodJob,
             WorkerTask workerTask,
@@ -79,7 +82,8 @@ public class WorkerExecution {
             String workerRole,
             WorkerTaskType taskType,
             Long candidateId,
-            Instant claimedAt
+            Instant claimedAt,
+            String whisperDevice
     ) {
         WorkerExecution execution = new WorkerExecution();
         execution.setVodJob(vodJob);
@@ -92,6 +96,7 @@ public class WorkerExecution {
         execution.setStatus(WorkerExecutionStatus.CLAIMED);
         execution.setClaimedAt(claimedAt);
         execution.setLastHeartbeatAt(claimedAt);
+        execution.setWhisperDevice(whisperDevice);
         return execution;
     }
 }

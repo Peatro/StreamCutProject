@@ -144,7 +144,8 @@ class VodJobApiIntegrationTest {
                 "processing",
                 WorkerTaskType.ANALYZE,
                 null,
-                Instant.parse("2026-04-05T10:00:30Z")
+                Instant.parse("2026-04-05T10:00:30Z"),
+                null
         ));
 
         vodJobService.ingestWorkerResult(new WorkerProcessingResultPayload(
@@ -187,7 +188,8 @@ class VodJobApiIntegrationTest {
                 "processing",
                 WorkerTaskType.EXPORT,
                 candidate.getId(),
-                Instant.parse("2026-04-05T10:01:00Z")
+                Instant.parse("2026-04-05T10:01:00Z"),
+                null
         ));
 
         vodJobService.ingestWorkerExportResult(

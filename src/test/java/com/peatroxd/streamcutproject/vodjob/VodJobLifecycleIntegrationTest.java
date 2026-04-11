@@ -134,7 +134,8 @@ class VodJobLifecycleIntegrationTest {
                 "processing",
                 WorkerTaskType.ANALYZE,
                 null,
-                Instant.parse("2026-04-05T10:00:30Z")
+                Instant.parse("2026-04-05T10:00:30Z"),
+                null
         ));
 
         WorkerProcessingResultPayload payload = new WorkerProcessingResultPayload(
@@ -178,7 +179,8 @@ class VodJobLifecycleIntegrationTest {
                 "processing",
                 WorkerTaskType.ANALYZE,
                 null,
-                Instant.parse("2026-04-05T10:00:30Z")
+                Instant.parse("2026-04-05T10:00:30Z"),
+                null
         ));
 
         vodJobService.reportWorkerFailure(
@@ -224,7 +226,8 @@ class VodJobLifecycleIntegrationTest {
                 "processing",
                 WorkerTaskType.EXPORT,
                 savedCandidate.getId(),
-                Instant.parse("2026-04-05T10:01:00Z")
+                Instant.parse("2026-04-05T10:01:00Z"),
+                null
         ));
 
         vodJobService.ingestWorkerExportResult(

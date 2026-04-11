@@ -13,6 +13,7 @@ public record WorkerExecutionResponse(
         Instant claimedAt,
         Instant lastHeartbeatAt,
         Instant finishedAt,
-        String failureMessage
+        String failureMessage,
+        String whisperDevice
 ) {
 }

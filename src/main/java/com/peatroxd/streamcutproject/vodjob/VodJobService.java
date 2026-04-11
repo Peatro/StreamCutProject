@@ -67,6 +67,7 @@ import java.time.Instant;
 import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -538,16 +539,18 @@ public class VodJobService {
     }
 
     @Transactional
-    public Optional<WorkerDispatchPayload> claimNextQueuedJob(String workerId, String workerRole) {
+    public Optional<WorkerDispatchPayload> claimNextQueuedJob(String workerId, String workerRole, String whisperDevice) {
         recoverStaleExecutions();
         String normalizedRole = normalizeWorkerRole(workerRole);
+        String normalizedWhisperDevice = normalizeWhisperDevice(whisperDevice);
         if (WORKER_ROLE_PROCESSING.equals(normalizedRole)) {
-            return claimNextProcessingJob(workerId);
+            return claimNextProcessingJob(workerId, normalizedWhisperDevice);
         }
         return claimNextDownloadJob(workerId);
     }
 
     private Optional<WorkerDispatchPayload> claimNextDownloadJob(String workerId) {
+        // Download workers do not use whisper; whisperDevice is not recorded for this role.
         Optional<WorkerTask> queuedTask = workerTaskRepository.findFirstByTaskTypeAndStatusOrderByIdAsc(
                 WorkerTaskType.DOWNLOAD,
                 WorkerTaskStatus.QUEUED
@@ -574,7 +577,8 @@ public class VodJobService {
                 WORKER_ROLE_DOWNLOAD,
                 WorkerTaskType.DOWNLOAD,
                 null,
-                now
+                now,
+                null
         ));
         WorkerDispatchPayload payload = workerDispatchPayloadFactory.fromDownloadJob(job, execution.getId());
         jobEventRepository.save(JobEvent.create(
@@ -588,7 +592,7 @@ public class VodJobService {
         return Optional.of(payload);
     }
 
-    private Optional<WorkerDispatchPayload> claimNextProcessingJob(String workerId) {
+    private Optional<WorkerDispatchPayload> claimNextProcessingJob(String workerId, String whisperDevice) {
         Optional<WorkerTask> queuedExportTask = workerTaskRepository.findFirstByTaskTypeAndStatusOrderByIdAsc(
                 WorkerTaskType.EXPORT,
                 WorkerTaskStatus.QUEUED
@@ -613,7 +617,8 @@ public class VodJobService {
                     WORKER_ROLE_PROCESSING,
                     WorkerTaskType.EXPORT,
                     candidate.getId(),
-                    now
+                    now,
+                    whisperDevice
             ));
             jobEventRepository.save(JobEvent.create(
                     candidate.getVodJob(),
@@ -659,7 +664,8 @@ public class VodJobService {
                 WORKER_ROLE_PROCESSING,
                 WorkerTaskType.ANALYZE,
                 null,
-                now
+                now,
+                whisperDevice
         ));
         WorkerDispatchPayload payload = workerDispatchPayloadFactory.fromAnalyzeJob(job, execution.getId());
         jobEventRepository.save(JobEvent.create(
@@ -671,6 +677,14 @@ public class VodJobService {
         log.info("analysis_claimed jobId={} workerId={} status={}", job.getId(), workerId, job.getStatus());
 
         return Optional.of(payload);
+    }
+
+    private String normalizeWhisperDevice(String whisperDevice) {
+        if (whisperDevice == null) {
+            return null;
+        }
+        String normalized = whisperDevice.trim().toLowerCase(Locale.ROOT);
+        return normalized.isEmpty() ? null : normalized;
     }
 
     private boolean isAnalyzeSourceVideoReady(VodJob job, Long taskId) {

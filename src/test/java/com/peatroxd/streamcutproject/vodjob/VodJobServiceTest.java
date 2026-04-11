@@ -869,7 +869,7 @@ class VodJobServiceTest {
                 WorkerTaskStatus.QUEUED
         )).thenReturn(java.util.Optional.empty());
 
-        var result = vodJobService.claimNextQueuedJob("worker-1", "download");
+        var result = vodJobService.claimNextQueuedJob("worker-1", "download", null);
 
         assertThat(result).isEmpty();
     }
@@ -899,14 +899,16 @@ class VodJobServiceTest {
         );
         when(workerDispatchPayloadFactory.fromDownloadJob(Mockito.eq(job), anyLong())).thenReturn(payload);
 
-        var result = vodJobService.claimNextQueuedJob("worker-1", "download");
+        var result = vodJobService.claimNextQueuedJob("worker-1", "download", null);
 
         assertThat(result).contains(payload);
         assertThat(job.getStatus()).isEqualTo(JobStatus.DOWNLOADING);
         assertThat(job.getStartedAt()).isNotNull();
         assertThat(job.getUpdatedAt()).isNotNull();
         verify(vodJobRepository).save(job);
-        verify(workerExecutionRepository).save(any(WorkerExecution.class));
+        ArgumentCaptor<WorkerExecution> executionCaptor = ArgumentCaptor.forClass(WorkerExecution.class);
+        verify(workerExecutionRepository).save(executionCaptor.capture());
+        assertThat(executionCaptor.getValue().getWhisperDevice()).isNull();
         verify(jobEventRepository).save(any(JobEvent.class));
     }
 
@@ -947,13 +949,15 @@ class VodJobServiceTest {
         );
         when(workerDispatchPayloadFactory.fromAnalyzeJob(Mockito.eq(job), anyLong())).thenReturn(payload);
 
-        var result = vodJobService.claimNextQueuedJob("processing-worker-1", "processing");
+        var result = vodJobService.claimNextQueuedJob("processing-worker-1", "processing", "CUDA");
 
         assertThat(result).contains(payload);
         assertThat(job.getStatus()).isEqualTo(JobStatus.EXTRACTING_AUDIO);
         assertThat(job.getUpdatedAt()).isNotNull();
         verify(vodJobRepository).save(job);
-        verify(workerExecutionRepository).save(any(WorkerExecution.class));
+        ArgumentCaptor<WorkerExecution> executionCaptor = ArgumentCaptor.forClass(WorkerExecution.class);
+        verify(workerExecutionRepository).save(executionCaptor.capture());
+        assertThat(executionCaptor.getValue().getWhisperDevice()).isEqualTo("cuda");
         verify(jobEventRepository).save(any(JobEvent.class));
     }
 
@@ -1002,7 +1006,7 @@ class VodJobServiceTest {
         );
         when(workerDispatchPayloadFactory.fromAnalyzeJob(Mockito.eq(readyJob), anyLong())).thenReturn(payload);
 
-        var result = vodJobService.claimNextQueuedJob("processing-worker-1", "processing");
+        var result = vodJobService.claimNextQueuedJob("processing-worker-1", "processing", "cuda");
 
         assertThat(result).contains(payload);
         assertThat(missingTask.getStatus()).isEqualTo(WorkerTaskStatus.QUEUED);
@@ -1041,7 +1045,7 @@ class VodJobServiceTest {
         when(clipCandidateRepository.findById(7L)).thenReturn(java.util.Optional.of(candidate));
         when(workerDispatchPayloadFactory.fromExportCandidate(Mockito.eq(candidate), anyLong())).thenReturn(payload);
 
-        var result = vodJobService.claimNextQueuedJob("processing-worker-1", "processing");
+        var result = vodJobService.claimNextQueuedJob("processing-worker-1", "processing", "cuda");
 
         assertThat(result).contains(payload);
         assertThat(job.getCurrentWorkerId()).isEqualTo("processing-worker-1");
@@ -1073,7 +1077,7 @@ class VodJobServiceTest {
                 WorkerTaskStatus.QUEUED
         )).thenReturn(java.util.Optional.empty());
 
-        var result = vodJobService.claimNextQueuedJob("processing-worker-2", "processing");
+        var result = vodJobService.claimNextQueuedJob("processing-worker-2", "processing", "cuda");
 
         assertThat(result).isEmpty();
         assertThat(execution.getStatus()).isEqualTo(WorkerExecutionStatus.FAILED);
@@ -1106,7 +1110,7 @@ class VodJobServiceTest {
                 WorkerTaskStatus.QUEUED
         )).thenReturn(java.util.Optional.empty());
 
-        var result = vodJobService.claimNextQueuedJob("processing-worker-2", "processing");
+        var result = vodJobService.claimNextQueuedJob("processing-worker-2", "processing", "cuda");
 
         assertThat(result).isEmpty();
         assertThat(execution.getStatus()).isEqualTo(WorkerExecutionStatus.FAILED);
@@ -1607,7 +1611,8 @@ class VodJobServiceTest {
                 "processing",
                 taskType,
                 candidateId,
-                Instant.parse("2026-04-05T10:00:30Z")
+                Instant.parse("2026-04-05T10:00:30Z"),
+                null
         );
         execution.setId(executionId);
         execution.setStatus(WorkerExecutionStatus.RUNNING);
