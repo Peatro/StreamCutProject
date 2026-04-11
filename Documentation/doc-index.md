@@ -30,6 +30,7 @@ If a document exists both in the repository and in Obsidian, the repository vers
 | Document | Purpose | Source Of Truth | Mirror |
 |---|---|---|---|
 | `Documentation/backlog.md` | project status, release track, task queue, roadmap status | repository | Obsidian backlog mirror |
+| `README.md` | repository landing page with overview, quick start, and entry points to deeper docs | repository | none required |
 | `Documentation/documentarian-role.md` | documentation ownership and sync rules | repository | `Documentarian Role.md` |
 | `Documentation/doc-index.md` | documentation map and ownership guide | repository | `Doc Index.md` |
 | `Documentation/architecture-roadmap.md` | post-`v1.0.0` architecture direction and sequencing | repository | `Architecture Roadmap.md` |
