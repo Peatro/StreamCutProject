@@ -7,7 +7,8 @@ class TranscriptionException(RuntimeError):
         model_name: str | None = None,
         stderr: str | None = None,
     ) -> None:
-        super().__init__(message)
+        detail = f": {stderr}" if stderr else ""
+        super().__init__(f"{message}{detail}")
         self.audio_path = audio_path
         self.model_name = model_name
         self.stderr = stderr
