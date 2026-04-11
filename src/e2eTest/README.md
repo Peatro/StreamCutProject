@@ -1,6 +1,7 @@
 # Browser E2E Tests
 
 Start the backend first with the `local` profile so the authenticated UI and `/api/internal/e2e/**` fixture endpoints are available.
+Run the browser suite against the backend only. Do not start the download or processing workers, otherwise queued fixtures can be claimed before the page assertions run.
 
 Run the suite in headless Chrome:
 

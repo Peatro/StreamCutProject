@@ -28,6 +28,7 @@ class OperatorControlsE2ETest extends E2ETestBase {
         login();
         open("/job.html?id=" + job.id());
 
+        $(".worker-runtime-summary").click();
         $("[data-job-control='retry']").shouldBe(visible).click();
         $(".page-status").shouldHave(text("requeued for download"));
         $(".page-header").shouldHave(text("QUEUED_FOR_DOWNLOAD"));
