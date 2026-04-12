@@ -1,6 +1,7 @@
 package com.peatroxd.streamcutproject.vodjob;
 
 import com.peatroxd.streamcutproject.clipcandidate.api.ClipCandidateResponse;
+import com.peatroxd.streamcutproject.clipcandidate.api.ClipCandidatePageResponse;
 import com.peatroxd.streamcutproject.config.ApiExceptionHandler;
 import com.peatroxd.streamcutproject.vodjob.api.CreateJobByUrlRequest;
 import com.peatroxd.streamcutproject.vodjob.api.JobDetailResponse;
@@ -279,6 +280,44 @@ class VodJobControllerTest {
                 .andExpect(jsonPath("$[0].id").value(7))
                 .andExpect(jsonPath("$[0].moderationStatus").value("PENDING"))
                 .andExpect(jsonPath("$[0].transcriptExcerpt").value("A candidate excerpt"));
+    }
+
+    @Test
+    void listsCandidatesPage() throws Exception {
+        when(vodJobService.listCandidatesPage(1L, 2, 20)).thenReturn(new ClipCandidatePageResponse(
+                List.of(new ClipCandidateResponse(
+                        7L,
+                        5.0,
+                        12.0,
+                        0.91,
+                        "A candidate excerpt",
+                        "PENDING",
+                        null,
+                        null,
+                        "NOT_REQUESTED",
+                        false
+                )),
+                2,
+                20,
+                390L,
+                20,
+                true,
+                true
+        ));
+
+        mockMvc.perform(get("/api/jobs/1/candidates")
+                        .param("page", "2")
+                        .param("size", "20"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.items[0].id").value(7))
+                .andExpect(jsonPath("$.items[0].moderationStatus").value("PENDING"))
+                .andExpect(jsonPath("$.pageNumber").value(2))
+                .andExpect(jsonPath("$.pageSize").value(20))
+                .andExpect(jsonPath("$.totalItems").value(390))
+                .andExpect(jsonPath("$.totalPages").value(20))
+                .andExpect(jsonPath("$.hasPrevious").value(true))
+                .andExpect(jsonPath("$.hasNext").value(true));
     }
 
     @Test

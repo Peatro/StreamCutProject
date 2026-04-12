@@ -1,6 +1,7 @@
 package com.peatroxd.streamcutproject.clipcandidate;
 
 import jakarta.persistence.LockModeType;
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -19,6 +20,8 @@ public interface ClipCandidateRepository extends JpaRepository<ClipCandidate, Lo
             order by c.score desc, c.startSec asc, c.id asc
             """)
     List<ClipCandidate> findAllByJobIdOrderByScoreDescStartSecAscIdAsc(@Param("jobId") Long jobId);
+
+    Page<ClipCandidate> findAllByVodJobId(Long jobId, Pageable pageable);
 
     @Modifying
     @Query("""

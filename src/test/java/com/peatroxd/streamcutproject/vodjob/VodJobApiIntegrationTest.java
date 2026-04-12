@@ -29,6 +29,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.List;
+import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -205,6 +206,35 @@ class VodJobApiIntegrationTest {
         assertThat(jobEventRepository.findAllByJobIdOrderByCreatedAtAscIdAsc(job.getId()))
                 .extracting(event -> event.getEventType())
                 .contains("JOB_READY_FOR_REVIEW", "EXPORT_STARTED", "EXPORT_COMPLETED");
+    }
+
+    @Test
+    void candidatesEndpointReturnsPagedCandidates() throws Exception {
+        VodJob job = vodJobRepository.save(newUrlJob("https://example.com/video"));
+        clipCandidateRepository.saveAll(IntStream.rangeClosed(1, 25)
+                .mapToObj(index -> ClipCandidate.create(
+                        job,
+                        5.0 + index,
+                        15.0 + index,
+                        1.0 - (index * 0.01),
+                        "candidate-" + index
+                ))
+                .toList());
+
+        mockMvc.perform(get("/api/jobs/{id}/candidates", job.getId())
+                        .param("page", "2")
+                        .param("size", "20"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith("application/json"))
+                .andExpect(jsonPath("$.pageNumber").value(2))
+                .andExpect(jsonPath("$.pageSize").value(20))
+                .andExpect(jsonPath("$.totalItems").value(25))
+                .andExpect(jsonPath("$.totalPages").value(2))
+                .andExpect(jsonPath("$.hasPrevious").value(true))
+                .andExpect(jsonPath("$.hasNext").value(false))
+                .andExpect(jsonPath("$.items.length()").value(5))
+                .andExpect(jsonPath("$.items[0].transcriptExcerpt").value("candidate-21"))
+                .andExpect(jsonPath("$.items[4].transcriptExcerpt").value("candidate-25"));
     }
 
     private static VodJob newUrlJob(String sourceUrl) {

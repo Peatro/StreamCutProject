@@ -1,6 +1,7 @@
 package com.peatroxd.streamcutproject.vodjob;
 
 import com.peatroxd.streamcutproject.clipcandidate.api.ClipCandidateResponse;
+import com.peatroxd.streamcutproject.clipcandidate.api.ClipCandidatePageResponse;
 import com.peatroxd.streamcutproject.vodjob.api.CreateJobByUrlRequest;
 import com.peatroxd.streamcutproject.vodjob.api.JobDetailResponse;
 import com.peatroxd.streamcutproject.vodjob.api.JobEventResponse;
@@ -10,6 +11,8 @@ import com.peatroxd.streamcutproject.vodjob.api.TranscriptSegmentResponse;
 import com.peatroxd.streamcutproject.vodjob.api.WorkerExecutionResponse;
 import com.peatroxd.streamcutproject.vodjob.api.WorkerTaskResponse;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -18,6 +21,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
@@ -82,9 +86,18 @@ public class VodJobController {
         vodJobService.deleteJob(id);
     }
 
-    @GetMapping("/{id}/candidates")
+    @GetMapping(value = "/{id}/candidates", params = "!page")
     public List<ClipCandidateResponse> listCandidates(@PathVariable Long id) {
         return vodJobService.listCandidates(id);
+    }
+
+    @GetMapping(value = "/{id}/candidates", params = "page")
+    public ClipCandidatePageResponse listCandidatesPage(
+            @PathVariable Long id,
+            @RequestParam @Min(1) int page,
+            @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size
+    ) {
+        return vodJobService.listCandidatesPage(id, page, size);
     }
 
     @GetMapping("/{id}/transcript")

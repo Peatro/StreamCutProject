@@ -6,6 +6,7 @@
     getEvents: (id) => fetchJson(`/api/jobs/${id}/events`),
     getExecutions: (id) => fetchJson(`/api/jobs/${id}/executions`),
     getCandidates: (id) => fetchJson(`/api/jobs/${id}/candidates`),
+    getCandidatesPage: (id, page, size) => fetchJson(`/api/jobs/${id}/candidates?page=${encodeURIComponent(page)}&size=${encodeURIComponent(size)}`),
     retryJob: (id) => postJson(`/api/jobs/${id}/retry`),
     cancelJob: (id) => postJson(`/api/jobs/${id}/cancel`),
     forceFailJob: (id) => postJson(`/api/jobs/${id}/force-fail`),
@@ -68,6 +69,10 @@
     keyHandler: null
   };
 
+  const candidatePagination = {
+    defaultPageSize: 20
+  };
+
   let savedEventFilter = "all";
 
   const liveIntervals = {
@@ -121,9 +126,10 @@
   }
 
   async function renderJobPage(root, jobId, flashMessage = null, flashType = "info", pageData = null) {
-    const { job, transcript, events, executions, candidates } = pageData || await loadJobPageData(jobId);
+    const { job, transcript, events, executions, candidates, candidatePage } = pageData || await loadJobPageData(jobId);
+    syncCandidatePageUrl(candidatePage?.pageNumber || 1);
 
-    const queueSummary = summarizeCandidatesForHeader(candidates);
+    const queueSummary = summarizeCandidatePageForHeader(job, candidatePage);
     document.title = `Job #${job.id} - ${labelForJob(job)}`;
 
     root.innerHTML = `
@@ -153,7 +159,7 @@
           </div>
         </aside>
       </section>
-${renderJobFailureSummary(job, candidates)}
+${renderJobFailureSummary(job)}
       <section class="job-console-grid">
         <div class="job-console-main">
           <section class="panel panel-compact">
@@ -212,20 +218,21 @@ ${renderJobFailureSummary(job, candidates)}
           </div>
           <div class="shortcut-hint">Shortcuts: A approve | R reject | J/K next/prev</div>
         </div>
-        ${renderCandidates(job, candidates)}
+        ${renderCandidates(job, candidates, candidatePage)}
       </section>
     `;
 
     bindCandidateActions(root, jobId);
+    bindCandidatePagination(root, jobId);
     bindJobPageActions(root, jobId);
     bindEventControls(root);
     bindCandidatePreviewPlayers(root);
     bindCandidateKeyboardShortcuts(root);
-    syncLiveSnapshot("job", buildJobPageSnapshot(job, transcript, events, executions, candidates), root, jobId);
+    syncLiveSnapshot("job", buildJobPageSnapshot(job, transcript, events, executions, candidates, candidatePage), root, jobId);
     if (liveUpdates.mode === "job" && String(liveUpdates.jobId) === String(jobId)) {
       updateLiveIndicator(root, "live", describeJobLiveState(job, candidates));
     }
-    return { job, transcript, events, executions, candidates };
+    return { job, transcript, events, executions, candidates, candidatePage };
   }
 
   async function renderJobsPage(root, flashMessage = null, flashType = "info", jobsData = null) {
@@ -579,15 +586,16 @@ ${renderJobFailureSummary(job, candidates)}
   }
 
   async function loadJobPageData(jobId) {
-    const [job, transcript, events, executions, candidates] = await Promise.all([
+    const candidatePageNumber = getCandidatePageFromUrl();
+    const [job, transcript, events, executions, candidatePage] = await Promise.all([
       api.getJob(jobId),
       api.getTranscript(jobId),
       api.getEvents(jobId),
       api.getExecutions(jobId),
-      api.getCandidates(jobId)
+      api.getCandidatesPage(jobId, candidatePageNumber, candidatePagination.defaultPageSize)
     ]);
 
-    return { job, transcript, events, executions, candidates };
+    return { job, transcript, events, executions, candidates: candidatePage.items || [], candidatePage };
   }
 
   function startJobsLiveUpdates(root, jobs) {
@@ -604,7 +612,7 @@ ${renderJobFailureSummary(job, candidates)}
     liveUpdates.mode = "job";
     liveUpdates.root = root;
     liveUpdates.jobId = String(jobId);
-    liveUpdates.snapshot = buildJobPageSnapshot(pageData.job, pageData.transcript, pageData.events, pageData.executions, pageData.candidates);
+    liveUpdates.snapshot = buildJobPageSnapshot(pageData.job, pageData.transcript, pageData.events, pageData.executions, pageData.candidates, pageData.candidatePage);
     updateLiveIndicator(root, "live", describeJobLiveState(pageData.job, pageData.candidates));
     scheduleLiveRefresh(computeJobLiveDelay(pageData.job, pageData.candidates));
   }
@@ -706,7 +714,7 @@ ${renderJobFailureSummary(job, candidates)}
 
     try {
       pageData = await loadJobPageData(liveUpdates.jobId);
-      const snapshot = buildJobPageSnapshot(pageData.job, pageData.transcript, pageData.events, pageData.executions, pageData.candidates);
+      const snapshot = buildJobPageSnapshot(pageData.job, pageData.transcript, pageData.events, pageData.executions, pageData.candidates, pageData.candidatePage);
       const currentPauseReason = getJobLivePauseReason(root);
       if (currentPauseReason) {
         updateLiveIndicator(root, "paused", currentPauseReason);
@@ -738,7 +746,7 @@ ${renderJobFailureSummary(job, candidates)}
     ]));
   }
 
-  function buildJobPageSnapshot(job, transcript, events, executions, candidates) {
+  function buildJobPageSnapshot(job, transcript, events, executions, candidates, candidatePage) {
     return JSON.stringify({
       job: {
         id: job?.id,
@@ -774,6 +782,12 @@ ${renderJobFailureSummary(job, candidates)}
         execution.finishedAt,
         execution.failureMessage
       ]),
+      candidatePage: {
+        pageNumber: candidatePage?.pageNumber,
+        pageSize: candidatePage?.pageSize,
+        totalItems: candidatePage?.totalItems,
+        totalPages: candidatePage?.totalPages
+      },
       candidates: (candidates || []).map((candidate) => [
         candidate.id,
         candidate.moderationStatus,
@@ -1240,8 +1254,8 @@ ${renderJobFailureSummary(job, candidates)}
     return "No operator recovery action is available for the current state.";
   }
 
-  function renderCandidates(job, candidates) {
-    if (!candidates.length) {
+  function renderCandidates(job, candidates, candidatePage) {
+    if (!candidatePage?.totalItems) {
       if (String(job?.status || "").toUpperCase() === "READY_FOR_REVIEW") {
         return `<div class="empty-state">Analysis completed, but no non-overlapping clip candidates were found.</div>`;
       }
@@ -1250,6 +1264,7 @@ ${renderJobFailureSummary(job, candidates)}
 
     return `
       <div class="stack">
+        ${renderCandidatePagination(candidatePage)}
         ${candidates.map((candidate) => `
           <details class="candidate-card" data-candidate-card data-candidate-id="${escapeHtml(candidate.id)}" ${shouldExpandCandidate(candidate) ? "open" : ""}>
             <summary class="candidate-summary">
@@ -1305,6 +1320,7 @@ ${renderJobFailureSummary(job, candidates)}
             </div>
           </details>
         `).join("")}
+        ${renderCandidatePagination(candidatePage)}
       </div>
     `;
   }
@@ -1346,7 +1362,7 @@ ${renderJobFailureSummary(job, candidates)}
     return `<div class="banner banner-${level}">${escapeHtml(message)}</div>`;
   }
 
-  function renderJobFailureSummary(job, candidates) {
+  function renderJobFailureSummary(job) {
     if (job.status === "CANCELED") {
       return `
         <section class="failure-summary">
@@ -1361,7 +1377,7 @@ ${renderJobFailureSummary(job, candidates)}
       return "";
     }
 
-    const failureKind = candidates.some((candidate) => candidate.exportStatus === "FAILED")
+    const failureKind = String(job?.latestExecution?.taskType || job?.latestTask?.taskType || "").toUpperCase() === "EXPORT"
       ? "Export failure"
       : "Ingest failure";
 
@@ -1499,6 +1515,82 @@ ${renderJobFailureSummary(job, candidates)}
     nextCard.open = true;
     setSelectedCandidate(nextCard.dataset.candidateId);
     nextCard.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }
+
+  function renderCandidatePagination(candidatePage) {
+    if (!candidatePage?.totalItems) {
+      return "";
+    }
+
+    const pageNumber = candidatePage.pageNumber || 1;
+    const totalPages = Math.max(candidatePage.totalPages || 1, 1);
+    const startIndex = ((pageNumber - 1) * (candidatePage.pageSize || candidatePagination.defaultPageSize)) + 1;
+    const endIndex = Math.min(candidatePage.totalItems, startIndex + (candidatePage.pageSize || candidatePagination.defaultPageSize) - 1);
+    const showingLabel = candidatePage.totalItems === 1
+      ? "Showing 1 candidate"
+      : `Showing ${startIndex}-${endIndex} of ${candidatePage.totalItems} candidates`;
+
+    return `
+      <div class="candidate-pagination">
+        <div class="candidate-pagination-summary">
+          <strong>${escapeHtml(showingLabel)}</strong>
+          <span>Page ${escapeHtml(pageNumber)} of ${escapeHtml(totalPages)}</span>
+        </div>
+        <div class="candidate-pagination-controls">
+          <button class="action-button action-button-neutral" type="button" data-candidate-page-target="1" ${candidatePage.hasPrevious ? "" : "disabled"}>First</button>
+          <button class="action-button action-button-neutral" type="button" data-candidate-page-target="${escapeHtml(pageNumber - 1)}" ${candidatePage.hasPrevious ? "" : "disabled"}>Previous</button>
+          <button class="action-button action-button-neutral" type="button" data-candidate-page-target="${escapeHtml(pageNumber + 1)}" ${candidatePage.hasNext ? "" : "disabled"}>Next</button>
+          <button class="action-button action-button-neutral" type="button" data-candidate-page-target="${escapeHtml(totalPages)}" ${candidatePage.hasNext ? "" : "disabled"}>Last</button>
+        </div>
+      </div>
+    `;
+  }
+
+  function bindCandidatePagination(root, jobId) {
+    root.querySelectorAll("[data-candidate-page-target]").forEach((button) => {
+      button.addEventListener("click", async (event) => {
+        const nextPage = Number(event.currentTarget.dataset.candidatePageTarget || "1");
+        if (!Number.isInteger(nextPage) || nextPage < 1) {
+          return;
+        }
+
+        setLiveInteractionLock(true, "Live updates paused while candidate pages are loading.");
+        try {
+          await renderJobPage(root, jobId, null, "info", await loadJobPageDataForCandidatePage(jobId, nextPage));
+        } catch (error) {
+          showInlineBanner(root, error.message || "Unable to load candidate page.", "error");
+        } finally {
+          setLiveInteractionLock(false);
+        }
+      });
+    });
+  }
+
+  async function loadJobPageDataForCandidatePage(jobId, candidatePageNumber) {
+    setCandidatePageInUrl(candidatePageNumber);
+    return loadJobPageData(jobId);
+  }
+
+  function getCandidatePageFromUrl() {
+    const rawPage = new URLSearchParams(window.location.search).get("candidatePage");
+    const parsedPage = Number(rawPage || "1");
+    return Number.isInteger(parsedPage) && parsedPage > 0 ? parsedPage : 1;
+  }
+
+  function setCandidatePageInUrl(pageNumber) {
+    const url = new URL(window.location.href);
+    if (pageNumber <= 1) {
+      url.searchParams.delete("candidatePage");
+    } else {
+      url.searchParams.set("candidatePage", String(pageNumber));
+    }
+    window.history.replaceState({}, "", url);
+  }
+
+  function syncCandidatePageUrl(pageNumber) {
+    if (getCandidatePageFromUrl() !== pageNumber) {
+      setCandidatePageInUrl(pageNumber);
+    }
   }
 
   function bindCandidatePreviewPlayers(root) {
@@ -2076,23 +2168,19 @@ ${renderJobFailureSummary(job, candidates)}
     }, { total: 0, active: 0, ready: 0, finished: 0 });
   }
 
-  function summarizeCandidates(candidates) {
-    return candidates.reduce((acc, candidate) => {
-      acc.total += 1;
-      if (candidate.moderationStatus === "APPROVED") {
-        acc.approved += 1;
-      }
-      if (candidate.moderationStatus === "PENDING") {
-        acc.pending += 1;
-      }
-      return acc;
-    }, { total: 0, approved: 0, pending: 0 });
-  }
+  function summarizeCandidatePageForHeader(job, candidatePage) {
+    const totalItems = candidatePage?.totalItems || 0;
+    if (totalItems === 0) {
+      return String(job?.status || "").toUpperCase() === "READY_FOR_REVIEW"
+        ? "0 candidates generated"
+        : "No candidates yet";
+    }
 
-  function summarizeCandidatesForHeader(candidates) {
-    const rejected = candidates.filter((candidate) => candidate.moderationStatus === "REJECTED").length;
-    const summary = summarizeCandidates(candidates);
-    return `${summary.pending} pending | ${summary.approved} approved | ${rejected} rejected`;
+    const totalPages = Math.max(candidatePage?.totalPages || 1, 1);
+    if (totalItems === 1) {
+      return "1 candidate ready for review";
+    }
+    return `${totalItems} candidates | page ${candidatePage.pageNumber} of ${totalPages}`;
   }
 
   function sourceLabel(job) {

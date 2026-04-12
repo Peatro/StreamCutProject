@@ -7,6 +7,7 @@ import com.peatroxd.streamcutproject.clipcandidate.ClipCandidateRepository;
 import com.peatroxd.streamcutproject.clipcandidate.ExportStatus;
 import com.peatroxd.streamcutproject.clipcandidate.ModerationStatus;
 import com.peatroxd.streamcutproject.clipcandidate.api.ClipCandidateMapper;
+import com.peatroxd.streamcutproject.clipcandidate.api.ClipCandidatePageResponse;
 import com.peatroxd.streamcutproject.clipcandidate.api.ClipCandidateResponse;
 import com.peatroxd.streamcutproject.clipcandidate.api.ExportStatusResponse;
 import com.peatroxd.streamcutproject.analysiswindow.AnalysisWindowWorkerPayload;
@@ -54,6 +55,8 @@ import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -82,6 +85,11 @@ import java.util.Set;
 public class VodJobService {
 
     private static final Logger log = LoggerFactory.getLogger(VodJobService.class);
+    private static final Sort CANDIDATE_SORT = Sort.by(
+            Sort.Order.desc("score"),
+            Sort.Order.asc("startSec"),
+            Sort.Order.asc("id")
+    );
 
     private static final String SOURCE_TYPE_URL = "URL";
     private static final String SOURCE_TYPE_FILE = "FILE";
@@ -250,6 +258,24 @@ public class VodJobService {
                         exportReady(candidate)
                 ))
                 .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public ClipCandidatePageResponse listCandidatesPage(Long jobId, int pageNumber, int pageSize) {
+        requireJob(jobId);
+
+        Page<ClipCandidate> candidatePage = findCandidatePage(jobId, pageNumber, pageSize);
+        return new ClipCandidatePageResponse(
+                candidatePage.getContent().stream()
+                        .map(candidate -> ClipCandidateMapper.toResponse(candidate, exportReady(candidate)))
+                        .toList(),
+                candidatePage.getNumber() + 1,
+                candidatePage.getSize(),
+                candidatePage.getTotalElements(),
+                candidatePage.getTotalPages(),
+                candidatePage.hasPrevious(),
+                candidatePage.hasNext()
+        );
     }
 
     @Transactional(readOnly = true)
@@ -1504,6 +1530,18 @@ public class VodJobService {
             return "Worker processing completed and 1 clip candidate is ready for review";
         }
         return "Worker processing completed and " + clipCandidateCount + " clip candidates are ready for review";
+    }
+
+    private Page<ClipCandidate> findCandidatePage(Long jobId, int pageNumber, int pageSize) {
+        PageRequest requestedPage = PageRequest.of(Math.max(pageNumber - 1, 0), pageSize, CANDIDATE_SORT);
+        Page<ClipCandidate> candidatePage = clipCandidateRepository.findAllByVodJobId(jobId, requestedPage);
+
+        if (candidatePage.getTotalPages() > 0 && pageNumber > candidatePage.getTotalPages()) {
+            PageRequest lastPage = PageRequest.of(candidatePage.getTotalPages() - 1, pageSize, CANDIDATE_SORT);
+            return clipCandidateRepository.findAllByVodJobId(jobId, lastPage);
+        }
+
+        return candidatePage;
     }
 
     private void queueJobForDownload(VodJob job, Instant queuedAt) {

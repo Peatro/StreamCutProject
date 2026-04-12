@@ -5,6 +5,7 @@ import com.peatroxd.streamcutproject.clipcandidate.ClipCandidateWorkerPayload;
 import com.peatroxd.streamcutproject.clipcandidate.ClipCandidateRepository;
 import com.peatroxd.streamcutproject.clipcandidate.ExportStatus;
 import com.peatroxd.streamcutproject.clipcandidate.ModerationStatus;
+import com.peatroxd.streamcutproject.clipcandidate.api.ClipCandidatePageResponse;
 import com.peatroxd.streamcutproject.clipcandidate.api.ClipCandidateResponse;
 import com.peatroxd.streamcutproject.clipcandidate.api.ExportStatusResponse;
 import com.peatroxd.streamcutproject.analysiswindow.AnalysisWindowRepository;
@@ -50,6 +51,8 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.Mockito;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.http.MediaType;
@@ -64,6 +67,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.lenient;
@@ -690,6 +694,64 @@ class VodJobServiceTest {
         assertThat(candidates).hasSize(2);
         assertThat(candidates.get(0).exportReady()).isTrue();
         assertThat(candidates.get(1).exportReady()).isFalse();
+    }
+
+    @Test
+    void listCandidatesPageReturnsMetadataAndSortedPage() {
+        VodJob job = buildJob(1L, "https://example.com/video", Instant.parse("2026-04-05T10:00:00Z"));
+        ClipCandidate candidate = ClipCandidate.create(job, 25.0, 38.0, 0.87, "page candidate");
+        candidate.setId(77L);
+
+        when(vodJobRepository.findById(1L)).thenReturn(java.util.Optional.of(job));
+        when(clipCandidateRepository.findAllByVodJobId(eq(1L), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(candidate), org.springframework.data.domain.PageRequest.of(1, 20), 390));
+
+        ClipCandidatePageResponse response = vodJobService.listCandidatesPage(1L, 2, 20);
+
+        ArgumentCaptor<Pageable> pageableCaptor = ArgumentCaptor.forClass(Pageable.class);
+        verify(clipCandidateRepository).findAllByVodJobId(eq(1L), pageableCaptor.capture());
+
+        Pageable pageable = pageableCaptor.getValue();
+        assertThat(pageable.getPageNumber()).isEqualTo(1);
+        assertThat(pageable.getPageSize()).isEqualTo(20);
+        assertThat(pageable.getSort()).isEqualTo(Sort.by(
+                Sort.Order.desc("score"),
+                Sort.Order.asc("startSec"),
+                Sort.Order.asc("id")
+        ));
+        assertThat(response.pageNumber()).isEqualTo(2);
+        assertThat(response.pageSize()).isEqualTo(20);
+        assertThat(response.totalItems()).isEqualTo(390);
+        assertThat(response.totalPages()).isEqualTo(20);
+        assertThat(response.hasPrevious()).isTrue();
+        assertThat(response.hasNext()).isTrue();
+        assertThat(response.items()).singleElement().extracting(ClipCandidateResponse::id).isEqualTo(77L);
+    }
+
+    @Test
+    void listCandidatesPageClampsOutOfRangeRequestsToLastPage() {
+        VodJob job = buildJob(1L, "https://example.com/video", Instant.parse("2026-04-05T10:00:00Z"));
+        ClipCandidate candidate = ClipCandidate.create(job, 25.0, 38.0, 0.87, "last page");
+        candidate.setId(88L);
+
+        when(vodJobRepository.findById(1L)).thenReturn(java.util.Optional.of(job));
+        when(clipCandidateRepository.findAllByVodJobId(eq(1L), any(Pageable.class)))
+                .thenReturn(
+                        new PageImpl<>(List.of(), org.springframework.data.domain.PageRequest.of(49, 20), 25),
+                        new PageImpl<>(List.of(candidate), org.springframework.data.domain.PageRequest.of(1, 20), 25)
+                );
+
+        ClipCandidatePageResponse response = vodJobService.listCandidatesPage(1L, 50, 20);
+
+        ArgumentCaptor<Pageable> pageableCaptor = ArgumentCaptor.forClass(Pageable.class);
+        verify(clipCandidateRepository, Mockito.times(2)).findAllByVodJobId(eq(1L), pageableCaptor.capture());
+
+        List<Pageable> requests = pageableCaptor.getAllValues();
+        assertThat(requests.get(0).getPageNumber()).isEqualTo(49);
+        assertThat(requests.get(1).getPageNumber()).isEqualTo(1);
+        assertThat(response.pageNumber()).isEqualTo(2);
+        assertThat(response.totalPages()).isEqualTo(2);
+        assertThat(response.items()).singleElement().extracting(ClipCandidateResponse::id).isEqualTo(88L);
     }
 
     @Test
