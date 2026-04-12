@@ -8,8 +8,8 @@ It tracks:
 - remaining work required to stabilize the MVP and finish the service through `v1.0.0`
 - the next architecture track after `v1.0.0`
 
-Last updated: 2026-04-11
-Branch snapshot: `develop` carries post-`v1.0.0` follow-up work ahead of `main`
+Last updated: 2026-04-12
+Branch snapshot: `develop` carries post-`v1.0.0` follow-up fixes and documentation updates ahead of `main`
 Synced note: Obsidian backlog mirror in `StreamCutProject`
 
 ## Sync Policy
@@ -44,8 +44,9 @@ Synced note: Obsidian backlog mirror in `StreamCutProject`
 - `TASK-067` rerun passed on 2026-04-09 with backup, restore, export recovery, and post-restore health evidence captured under `C:\Users\Peatr\AppData\Local\Temp\streamcut-task067-rerun`.
 - The release-candidate defect found during the drill was fixed before release: processing workers now defer queued `ANALYZE` claims until the referenced source video exists under `APP_STORAGE_LOCAL_ROOT`.
 - `TASK-066` cut the controlled `v1.0.0` release through `release/1.0.0`, merged it to `main`, and back-merged it to `develop`.
-- `main` and `develop` now both contain the `v1.0.0` release state, identified by git tag `v1.0.0`.
+- `main` contains the `v1.0.0` release state identified by git tag `v1.0.0`, and `develop` now carries that baseline plus additional post-release fixes.
 - Release notes and known limitations for this cut are recorded in `Documentation/v1.0.0-release.md`.
+- The repository now has a top-level `README.md` that serves as the landing page for overview, quick start, and documentation entry points.
 - The canonical MVP upload policy is defined in `runtime.md`:
   - single-file uploads only
   - supported formats: `video/mp4`, `video/quicktime`, `video/x-matroska`, `video/webm`, `video/x-msvideo`, `video/mpeg`
@@ -88,6 +89,14 @@ Synced note: Obsidian backlog mirror in `StreamCutProject`
   - `worker_execution.whisper_device` persisted in PostgreSQL
   - latest execution summaries and execution history exposing the reported device in the API/UI
   - an optional `docker-compose.gpu.yml` local override keeping the CPU-first runtime as the default path
+- Download worker failures now surface platform-downloader stderr more clearly, and platform downloads are constrained to the intended primary result instead of ambiguous multi-item fetches.
+- Candidate generation is no longer hard-limited to 10 review items:
+  - worker-side analysis now returns all non-overlapping candidates
+  - zero-candidate completion is surfaced explicitly instead of pretending candidates are ready
+- Worker progress reporting is now throttled and trimmed:
+  - workers emit stage-local progress updates at a bounded rate instead of flooding the backend
+  - transient `WORKER_PROGRESS` event rows are cleaned during stage transitions and completion to avoid avoidable database growth
+- Candidate review pagination is now present in the job detail UI so large result sets do not exhaust browser memory.
 - `TASK-059`, `TASK-060`, `TASK-061`, `TASK-062`, and `TASK-063` are now merged into `develop`.
 - `TASK-064` browser E2E coverage and CI gating are now present in source:
   - the repository contains a dedicated `src/e2eTest` suite
@@ -138,6 +147,7 @@ Status note:
 Current release-track snapshot:
 - `v1.0.0` is released on `main` and back-merged into `develop`
 - the release point is explicit and reproducible through git tag `v1.0.0`
+- `develop` already carries small post-release runtime and UI fixes on top of the release baseline
 - the next tracked work starts at `TASK-068`
 
 ### Closed In `v1.0.0`
