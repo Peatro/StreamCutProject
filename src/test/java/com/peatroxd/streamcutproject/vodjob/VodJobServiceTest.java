@@ -122,11 +122,18 @@ class VodJobServiceTest {
     private WorkerDispatchPayloadFactory workerDispatchPayloadFactory;
 
     private VodJobService vodJobService;
+    private WorkerTaskOrchestrationService workerTaskOrchestrationService;
 
     @BeforeEach
     void setUp() {
         storageProperties.setLocalRoot(Path.of("/var/lib/streamcut"));
         workerExecutionProperties.setStaleTimeout(Duration.ofMinutes(2));
+        workerTaskOrchestrationService = new WorkerTaskOrchestrationService(
+                storageProperties,
+                workerExecutionProperties,
+                workerTaskRetryProperties,
+                workerTaskRepository
+        );
         vodJobService = new VodJobService(
                 vodJobRepository,
                 jobEventRepository,
@@ -137,8 +144,7 @@ class VodJobServiceTest {
                 storageService,
                 artifactStorageService,
                 storageProperties,
-                workerExecutionProperties,
-                workerTaskRetryProperties,
+                workerTaskOrchestrationService,
                 workerTaskRepository,
                 workerExecutionRepository,
                 workerDispatchPort,

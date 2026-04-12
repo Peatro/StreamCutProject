@@ -34,6 +34,7 @@ Fields:
 Notes:
 - `vod_job` is not the primary runtime execution record.
 - `vod_job.status` is a projection of task/execution progress for UI and operators.
+- claim/retry/recovery decisions are owned by the backend orchestration service, not by `vod_job` itself.
 - operator retry increments `processing_version` so stale worker callbacks can be rejected cleanly.
 
 ## worker_task
@@ -76,6 +77,7 @@ Notes:
 - one `vod_job` may produce multiple `worker_task` rows across its lifecycle
 - `EXPORT` tasks may target one `clip_candidate` through `candidate_id`
 - the active queue contract is task-centric even if some API names still include `job`
+- task selection is explicit and based on `status` plus `available_at`; aggregate job status is only a projection signal.
 - `attempt_count` tracks how many times the task has been claimed
 - `max_attempts` stores the retry budget for the task type as persisted metadata
 - `available_at` delays retry eligibility until the backoff window elapses

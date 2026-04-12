@@ -31,8 +31,8 @@ import com.peatroxd.streamcutproject.transcript.TranscriptSegmentRepository;
 import com.peatroxd.streamcutproject.transcript.TranscriptSegmentPersistenceMapper;
 import com.peatroxd.streamcutproject.storage.ArtifactStorageService;
 import com.peatroxd.streamcutproject.storage.StorageService;
-import com.peatroxd.streamcutproject.storage.StorageProperties;
 import com.peatroxd.streamcutproject.storage.PathSafety;
+import com.peatroxd.streamcutproject.storage.StorageProperties;
 import com.peatroxd.streamcutproject.workerdispatch.WorkerDispatchPayload;
 import com.peatroxd.streamcutproject.workerdispatch.WorkerDispatchPayloadFactory;
 import com.peatroxd.streamcutproject.workerdispatch.WorkerDownloadResultPayload;
@@ -43,14 +43,12 @@ import com.peatroxd.streamcutproject.workerdispatch.WorkerProgressUpdatePayload;
 import com.peatroxd.streamcutproject.workerdispatch.WorkerDispatchPort;
 import com.peatroxd.streamcutproject.workerdispatch.WorkerTransportAck;
 import com.peatroxd.streamcutproject.workerexecution.WorkerExecution;
-import com.peatroxd.streamcutproject.workerexecution.WorkerExecutionProperties;
 import com.peatroxd.streamcutproject.workerexecution.WorkerExecutionRepository;
 import com.peatroxd.streamcutproject.workerexecution.WorkerExecutionStatus;
 import com.peatroxd.streamcutproject.workerexecution.WorkerTaskType;
 import com.peatroxd.streamcutproject.workertask.WorkerTask;
 import com.peatroxd.streamcutproject.workertask.WorkerTaskRepository;
 import com.peatroxd.streamcutproject.workertask.WorkerTaskStatus;
-import com.peatroxd.streamcutproject.workertask.WorkerTaskRetryProperties;
 import io.micrometer.core.instrument.MeterRegistry;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
@@ -149,8 +147,7 @@ public class VodJobService {
     private final StorageService storageService;
     private final ArtifactStorageService artifactStorageService;
     private final StorageProperties storageProperties;
-    private final WorkerExecutionProperties workerExecutionProperties;
-    private final WorkerTaskRetryProperties workerTaskRetryProperties;
+    private final WorkerTaskOrchestrationService workerTaskOrchestrationService;
     private final WorkerTaskRepository workerTaskRepository;
     private final WorkerExecutionRepository workerExecutionRepository;
     private final WorkerDispatchPort workerDispatchPort;
@@ -328,9 +325,15 @@ public class VodJobService {
         cancelOpenWorkerState(job.getId(), previousProcessingVersion, now, "Retried by operator");
         clearWorkerProgressEvents(job.getId());
         resetAnalysisArtifacts(job);
-        queueJobForDownload(job, now);
+        workerTaskOrchestrationService.queueDownloadJob(job, now);
         vodJobRepository.save(job);
-        queueWorkerTask(job, job.getProcessingVersion(), WorkerTaskType.DOWNLOAD, null, now);
+        workerTaskRepository.save(workerTaskOrchestrationService.prepareWorkerTask(
+                job,
+                job.getProcessingVersion(),
+                WorkerTaskType.DOWNLOAD,
+                null,
+                now
+        ));
         jobEventRepository.save(JobEvent.create(
                 job,
                 EVENT_JOB_RETRIED,
@@ -478,13 +481,17 @@ public class VodJobService {
 
         candidate.setExportedClipPath(artifactPath);
         candidate.setExportStatus(ExportStatus.IN_PROGRESS);
-        JobProjection.applyQueuedTask(job, WorkerTaskType.EXPORT, now, "Queued for clip export");
+        workerTaskOrchestrationService.queueTaskForRetry(job, WorkerTaskType.EXPORT, now, "Queued for clip export");
         job.setLastWorkerHeartbeatAt(null);
-        job.setFinishedAt(null);
-        job.setErrorMessage(null);
 
         clipCandidateRepository.save(candidate);
-        queueWorkerTask(job, job.getProcessingVersion(), WorkerTaskType.EXPORT, candidate.getId(), now);
+        workerTaskRepository.save(workerTaskOrchestrationService.prepareWorkerTask(
+                job,
+                job.getProcessingVersion(),
+                WorkerTaskType.EXPORT,
+                candidate.getId(),
+                now
+        ));
         recomputeAndPersistJob(job);
         jobEventRepository.save(JobEvent.create(
                 job,
@@ -558,9 +565,15 @@ public class VodJobService {
         workerDispatchPort.dispatch(payload);
 
         Instant now = Instant.now();
-        queueJobForDownload(job, now);
+        workerTaskOrchestrationService.queueDownloadJob(job, now);
         vodJobRepository.save(job);
-        queueWorkerTask(job, job.getProcessingVersion(), WorkerTaskType.DOWNLOAD, null, now);
+        workerTaskRepository.save(workerTaskOrchestrationService.prepareWorkerTask(
+                job,
+                job.getProcessingVersion(),
+                WorkerTaskType.DOWNLOAD,
+                null,
+                now
+        ));
 
         jobEventRepository.save(JobEvent.create(
                 job,
@@ -587,13 +600,7 @@ public class VodJobService {
     private Optional<WorkerDispatchPayload> claimNextDownloadJob(String workerId) {
         // Download workers do not use whisper; whisperDevice is not recorded for this role.
         Instant now = Instant.now();
-        Optional<WorkerTask> queuedTask = claimableTask(
-                workerTaskRepository.findAllByTaskTypeAndStatusOrderByAvailableAtAscIdAsc(
-                        WorkerTaskType.DOWNLOAD,
-                        WorkerTaskStatus.QUEUED
-                ),
-                now
-        );
+        Optional<WorkerTask> queuedTask = workerTaskOrchestrationService.selectNextDownloadTask(now);
         if (queuedTask.isEmpty()) {
             return Optional.empty();
         }
@@ -632,15 +639,13 @@ public class VodJobService {
 
     private Optional<WorkerDispatchPayload> claimNextProcessingJob(String workerId, String whisperDevice) {
         Instant now = Instant.now();
-        Optional<WorkerTask> queuedExportTask = claimableTask(
-                workerTaskRepository.findAllByTaskTypeAndStatusOrderByAvailableAtAscIdAsc(
-                        WorkerTaskType.EXPORT,
-                        WorkerTaskStatus.QUEUED
-                ),
-                now
-        );
-        if (queuedExportTask.isPresent()) {
-            WorkerTask task = queuedExportTask.get();
+        Optional<WorkerTask> queuedTask = workerTaskOrchestrationService.selectNextProcessingTask(now);
+        if (queuedTask.isEmpty()) {
+            return Optional.empty();
+        }
+
+        WorkerTask task = queuedTask.get();
+        if (task.getTaskType() == WorkerTaskType.EXPORT) {
             ClipCandidate candidate = clipCandidateRepository.findById(task.getCandidateId())
                     .orElseThrow(() -> new ResponseStatusException(
                             HttpStatus.CONFLICT,
@@ -677,18 +682,6 @@ public class VodJobService {
             return Optional.of(workerDispatchPayloadFactory.fromExportCandidate(candidate, execution.getId()));
         }
 
-        Optional<WorkerTask> queuedAnalyzeTask = workerTaskRepository.findAllByTaskTypeAndStatusOrderByAvailableAtAscIdAsc(
-                        WorkerTaskType.ANALYZE,
-                        WorkerTaskStatus.QUEUED
-                ).stream()
-                .filter(task -> isTaskClaimable(task, now))
-                .filter(task -> isAnalyzeSourceVideoReady(task.getVodJob(), task.getId()))
-                .findFirst();
-        if (queuedAnalyzeTask.isEmpty()) {
-            return Optional.empty();
-        }
-
-        WorkerTask task = queuedAnalyzeTask.get();
         VodJob job = task.getVodJob();
         JobProjection.applyClaimedTask(job, WorkerTaskType.ANALYZE, workerId, now);
         if (job.getStartedAt() == null) {
@@ -720,59 +713,12 @@ public class VodJobService {
         return Optional.of(payload);
     }
 
-    private Optional<WorkerTask> claimableTask(List<WorkerTask> tasks, Instant now) {
-        return tasks.stream()
-                .filter(task -> isTaskClaimable(task, now))
-                .findFirst();
-    }
-
-    private boolean isTaskClaimable(WorkerTask task, Instant now) {
-        Instant availableAt = task.getAvailableAt();
-        return availableAt == null || !availableAt.isAfter(now);
-    }
-
     private String normalizeWhisperDevice(String whisperDevice) {
         if (whisperDevice == null) {
             return null;
         }
         String normalized = whisperDevice.trim().toLowerCase(Locale.ROOT);
         return normalized.isEmpty() ? null : normalized;
-    }
-
-    private boolean isAnalyzeSourceVideoReady(VodJob job, Long taskId) {
-        String storageVideoPath = job.getStorageVideoPath();
-        if (storageVideoPath == null || storageVideoPath.isBlank()) {
-            log.warn("analysis_claim_deferred_missing_video_path jobId={} taskId={}", job.getId(), taskId);
-            return false;
-        }
-
-        try {
-            Path normalizedPath = PathSafety.requireWithinRoot(
-                    storageProperties.getLocalRoot(),
-                    Path.of(storageVideoPath),
-                    "job storage video path"
-            ).toAbsolutePath().normalize();
-            if (!Files.isRegularFile(normalizedPath)) {
-                log.warn(
-                        "analysis_claim_deferred_missing_video jobId={} taskId={} videoPath={}",
-                        job.getId(),
-                        taskId,
-                        normalizeArtifactPath(normalizedPath.toString())
-                );
-                return false;
-            }
-            job.setStorageVideoPath(normalizeArtifactPath(normalizedPath.toString()));
-            return true;
-        } catch (InvalidPathException | ResponseStatusException ex) {
-            log.warn(
-                    "analysis_claim_deferred_invalid_video_path jobId={} taskId={} videoPath={} message={}",
-                    job.getId(),
-                    taskId,
-                    storageVideoPath,
-                    ex.getMessage()
-            );
-            return false;
-        }
     }
 
     @Transactional
@@ -906,7 +852,7 @@ public class VodJobService {
 
         Instant now = Instant.now();
         job.setStorageVideoPath(normalizeWorkerPath(payload.videoPath(), "worker download video path"));
-        JobProjection.applyQueuedTask(job, WorkerTaskType.ANALYZE, now, "Source video is ready and queued for processing");
+        workerTaskOrchestrationService.queueTaskForRetry(job, WorkerTaskType.ANALYZE, now, "Source video is ready and queued for processing");
         job.setErrorMessage(null);
         execution.setStatus(WorkerExecutionStatus.SUCCEEDED);
         execution.setLastHeartbeatAt(now);
@@ -914,7 +860,13 @@ public class VodJobService {
         completeExecutionTask(execution, now);
         workerExecutionRepository.save(execution);
         clearWorkerProgressEvents(job.getId());
-        queueWorkerTask(job, job.getProcessingVersion(), WorkerTaskType.ANALYZE, null, now);
+        workerTaskRepository.save(workerTaskOrchestrationService.prepareWorkerTask(
+                job,
+                job.getProcessingVersion(),
+                WorkerTaskType.ANALYZE,
+                null,
+                now
+        ));
         recomputeAndPersistJob(job);
         jobEventRepository.save(JobEvent.create(
                 job,
@@ -1026,12 +978,17 @@ public class VodJobService {
         execution.setFailureMessage(failureSummary);
         workerExecutionRepository.save(execution);
 
-        applyTaskFailurePolicy(task, now, failureSummary);
+        boolean retryScheduled = workerTaskOrchestrationService.applyTaskFailurePolicy(task, now, failureSummary);
         workerTaskRepository.save(task);
         clearWorkerProgressEvents(job.getId());
 
-        if (task.getStatus() == WorkerTaskStatus.QUEUED) {
-            queueJobForTaskRetry(job, task.getTaskType(), now, retryScheduledProgressMessage(task));
+        if (retryScheduled) {
+            workerTaskOrchestrationService.queueTaskForRetry(
+                    job,
+                    task.getTaskType(),
+                    now,
+                    workerTaskOrchestrationService.retryScheduledProgressMessage(task)
+            );
             vodJobRepository.save(job);
             log.warn(
                     "job_retry_scheduled jobId={} taskId={} taskType={} availableAt={} attempts={}/{}",
@@ -1040,7 +997,7 @@ public class VodJobService {
                     task.getTaskType(),
                     task.getAvailableAt(),
                     task.getAttemptCountOrZero(),
-                    effectiveMaxAttempts(task)
+                    task.getMaxAttempts()
             );
             return new WorkerTransportAck(job.getId(), job.getStatus().name());
         }
@@ -1053,7 +1010,7 @@ public class VodJobService {
                     });
         }
 
-        String deadLetterMessage = deadLetterMessage(task, failureSummary);
+        String deadLetterMessage = workerTaskOrchestrationService.deadLetterMessage(task, failureSummary);
         JobProjection.applyFailure(job, now, deadLetterMessage);
         job.setErrorMessage(deadLetterMessage);
         vodJobRepository.save(job);
@@ -1073,43 +1030,6 @@ public class VodJobService {
         );
 
         return new WorkerTransportAck(job.getId(), JobStatus.FAILED.name());
-    }
-
-    private void applyTaskFailurePolicy(WorkerTask task, Instant now, String failureSummary) {
-        if (isRetryBudgetExhausted(task)) {
-            task.markDeadLettered(now, failureSummary, deadLetterMessage(task, failureSummary));
-            return;
-        }
-
-        Instant availableAt = now.plus(workerTaskRetryProperties.resolveRetryBackoff(
-                task.getTaskType(),
-                task.getAttemptCountOrZero()
-        ));
-        task.markQueuedForRetry(now, availableAt, failureSummary);
-    }
-
-    private boolean isRetryBudgetExhausted(WorkerTask task) {
-        return task.getAttemptCountOrZero() >= effectiveMaxAttempts(task);
-    }
-
-    private int effectiveMaxAttempts(WorkerTask task) {
-        Integer configuredMaxAttempts = task.getMaxAttempts();
-        return configuredMaxAttempts == null || configuredMaxAttempts < 1
-                ? workerTaskRetryProperties.resolveMaxAttempts(task.getTaskType())
-                : configuredMaxAttempts;
-    }
-
-    private String retryScheduledProgressMessage(WorkerTask task) {
-        int nextAttemptNumber = task.getAttemptCountOrZero() + 1;
-        return switch (task.getTaskType()) {
-            case DOWNLOAD -> "Download worker retry attempt " + nextAttemptNumber + " is queued";
-            case ANALYZE -> "Processing worker retry attempt " + nextAttemptNumber + " is queued";
-            case EXPORT -> "Export worker retry attempt " + nextAttemptNumber + " is queued";
-        };
-    }
-
-    private String deadLetterMessage(WorkerTask task, String failureSummary) {
-        return failureSummary + " (retry budget exhausted after " + task.getAttemptCountOrZero() + " attempts)";
     }
 
     private WorkerExecution requireActiveExecution(
@@ -1288,7 +1208,7 @@ public class VodJobService {
         for (WorkerTask task : workerTaskRepository.findAllByStatusInOrderByIdAsc(
                 List.of(WorkerTaskStatus.CLAIMED, WorkerTaskStatus.RUNNING)
         )) {
-            if (!isTaskStale(task, now)) {
+            if (!workerTaskOrchestrationService.isTaskStale(task, now)) {
                 continue;
             }
             recoverStaleTask(task, now);
@@ -1311,12 +1231,17 @@ public class VodJobService {
             execution.setFailureMessage(recoveryMessage);
             workerExecutionRepository.save(execution);
         });
-        applyTaskFailurePolicy(task, now, recoveryMessage);
+        boolean retryScheduled = workerTaskOrchestrationService.applyTaskFailurePolicy(task, now, recoveryMessage);
         workerTaskRepository.save(task);
         clearWorkerProgressEvents(job.getId());
 
-        if (task.getStatus() == WorkerTaskStatus.QUEUED) {
-            queueJobForTaskRetry(job, task.getTaskType(), now, retryScheduledProgressMessage(task));
+        if (retryScheduled) {
+            workerTaskOrchestrationService.queueTaskForRetry(
+                    job,
+                    task.getTaskType(),
+                    now,
+                    workerTaskOrchestrationService.retryScheduledProgressMessage(task)
+            );
             vodJobRepository.save(job);
             jobEventRepository.save(JobEvent.create(
                     job,
@@ -1332,7 +1257,7 @@ public class VodJobService {
                     task.getTaskType(),
                     task.getAvailableAt(),
                     task.getAttemptCountOrZero(),
-                    effectiveMaxAttempts(task)
+                    task.getMaxAttempts()
             );
             return;
         }
@@ -1345,7 +1270,7 @@ public class VodJobService {
                     });
         }
 
-        String deadLetterMessage = deadLetterMessage(task, recoveryMessage);
+        String deadLetterMessage = workerTaskOrchestrationService.deadLetterMessage(task, recoveryMessage);
         JobProjection.applyFailure(job, now, deadLetterMessage);
         job.setErrorMessage(deadLetterMessage);
         vodJobRepository.save(job);
@@ -1368,16 +1293,6 @@ public class VodJobService {
                 job.getId(),
                 task.getTaskType()
         );
-    }
-
-    private boolean isTaskStale(WorkerTask task, Instant now) {
-        Instant lastHeartbeatAt = task.getLastHeartbeatAt();
-        if (lastHeartbeatAt == null) {
-            return false;
-        }
-
-        Instant staleBefore = now.minus(workerExecutionProperties.resolveStaleTimeout(task.getTaskType()));
-        return lastHeartbeatAt.isBefore(staleBefore);
     }
 
     private Map<Long, WorkerExecution> latestExecutionByJobId(List<VodJob> jobs) {
@@ -1445,10 +1360,16 @@ public class VodJobService {
 
     private VodJob queueCreatedJob(VodJob job) {
         Instant queuedAt = Instant.now();
-        queueJobForDownload(job, queuedAt);
+        workerTaskOrchestrationService.queueDownloadJob(job, queuedAt);
 
         VodJob queuedJob = vodJobRepository.save(job);
-        queueWorkerTask(queuedJob, queuedJob.getProcessingVersion(), WorkerTaskType.DOWNLOAD, null, queuedAt);
+        workerTaskRepository.save(workerTaskOrchestrationService.prepareWorkerTask(
+                queuedJob,
+                queuedJob.getProcessingVersion(),
+                WorkerTaskType.DOWNLOAD,
+                null,
+                queuedAt
+        ));
         jobEventRepository.save(JobEvent.create(
                 queuedJob,
                 EVENT_JOB_CREATED,
@@ -1616,88 +1537,6 @@ public class VodJobService {
         }
 
         return candidatePage;
-    }
-
-    private void queueJobForDownload(VodJob job, Instant queuedAt) {
-        JobProjection.applyQueuedTask(job, WorkerTaskType.DOWNLOAD, queuedAt, "Queued for download worker");
-        job.setLastWorkerHeartbeatAt(null);
-        job.setFinishedAt(null);
-        job.setErrorMessage(null);
-    }
-
-    private void queueJobForTaskRetry(VodJob job, WorkerTaskType taskType, Instant now, String progressMessage) {
-        JobProjection.applyQueuedTask(job, taskType, now, progressMessage);
-        job.setFinishedAt(null);
-        job.setErrorMessage(null);
-    }
-
-    private WorkerTask queueWorkerTask(
-            VodJob job,
-            Long processingVersion,
-            WorkerTaskType taskType,
-            Long candidateId,
-            Instant now
-    ) {
-        Optional<WorkerTask> existingTask = candidateId == null
-                ? workerTaskRepository.findFirstByVodJobIdAndProcessingVersionAndTaskTypeAndStatusInOrderByIdAsc(
-                        job.getId(),
-                        processingVersion,
-                        taskType,
-                        List.of(WorkerTaskStatus.QUEUED, WorkerTaskStatus.CLAIMED, WorkerTaskStatus.RUNNING)
-                )
-                : workerTaskRepository.findFirstByVodJobIdAndProcessingVersionAndTaskTypeAndCandidateIdAndStatusInOrderByIdAsc(
-                        job.getId(),
-                        processingVersion,
-                        taskType,
-                        candidateId,
-                        List.of(WorkerTaskStatus.QUEUED, WorkerTaskStatus.CLAIMED, WorkerTaskStatus.RUNNING)
-                );
-        if (existingTask.isPresent()) {
-            WorkerTask task = existingTask.get();
-            applyRetryPolicy(task, taskType, now);
-            return workerTaskRepository.save(task);
-        }
-        WorkerTask task = WorkerTask.createQueued(job, processingVersion, taskType, candidateId, now);
-        applyRetryPolicy(task, taskType, now);
-        return workerTaskRepository.save(task);
-    }
-
-    private void applyRetryPolicy(WorkerTask task, WorkerTaskType taskType, Instant now) {
-        if (task.getAttemptCount() == null) {
-            task.setAttemptCount(0);
-        }
-        if (task.getMaxAttempts() == null || task.getMaxAttempts() < 1) {
-            task.setMaxAttempts(workerTaskRetryProperties.resolveMaxAttempts(taskType));
-        }
-        if (task.getStatus() == WorkerTaskStatus.QUEUED && task.getAvailableAt() == null) {
-            task.setAvailableAt(now);
-        }
-    }
-
-    private WorkerTask requireQueuedTask(
-            Long jobId,
-            Long processingVersion,
-            WorkerTaskType taskType,
-            Long candidateId
-    ) {
-        return (candidateId == null
-                ? workerTaskRepository.findFirstByVodJobIdAndProcessingVersionAndTaskTypeAndStatusOrderByIdAsc(
-                        jobId,
-                        processingVersion,
-                        taskType,
-                        WorkerTaskStatus.QUEUED
-                )
-                : workerTaskRepository.findFirstByVodJobIdAndProcessingVersionAndTaskTypeAndCandidateIdAndStatusOrderByIdAsc(
-                        jobId,
-                        processingVersion,
-                        taskType,
-                        candidateId,
-                        WorkerTaskStatus.QUEUED
-                ))
-                .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.CONFLICT,
-                        "Worker task is missing for job: " + jobId
-                ));
     }
 
     private void updateExecutionTaskAsRunning(WorkerExecution execution, Instant now) {
