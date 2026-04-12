@@ -42,18 +42,7 @@ public class WorkerTaskOrchestrationService {
         );
     }
 
-    public Optional<WorkerTask> selectNextProcessingTask(Instant now) {
-        Optional<WorkerTask> queuedExportTask = claimableTask(
-                workerTaskRepository.findAllByTaskTypeAndStatusOrderByAvailableAtAscIdAsc(
-                        WorkerTaskType.EXPORT,
-                        WorkerTaskStatus.QUEUED
-                ),
-                now
-        );
-        if (queuedExportTask.isPresent()) {
-            return queuedExportTask;
-        }
-
+    public Optional<WorkerTask> selectNextAnalyzeTask(Instant now) {
         return workerTaskRepository.findAllByTaskTypeAndStatusOrderByAvailableAtAscIdAsc(
                         WorkerTaskType.ANALYZE,
                         WorkerTaskStatus.QUEUED
@@ -61,6 +50,16 @@ public class WorkerTaskOrchestrationService {
                 .filter(task -> isTaskClaimable(task, now))
                 .filter(task -> isAnalyzeSourceVideoReady(task.getVodJob(), task.getId()))
                 .findFirst();
+    }
+
+    public Optional<WorkerTask> selectNextExportTask(Instant now) {
+        return claimableTask(
+                workerTaskRepository.findAllByTaskTypeAndStatusOrderByAvailableAtAscIdAsc(
+                        WorkerTaskType.EXPORT,
+                        WorkerTaskStatus.QUEUED
+                ),
+                now
+        );
     }
 
     public void queueDownloadJob(VodJob job, Instant queuedAt) {

@@ -45,7 +45,9 @@ class HealthControllerTest {
                 .andExpect(jsonPath("$.roles.download.role").value("download"))
                 .andExpect(jsonPath("$.roles.download.queued").value(1))
                 .andExpect(jsonPath("$.roles.processing.running").value(1))
-                .andExpect(jsonPath("$.roles.processing.activeByTaskType.ANALYZE").value(1));
+                .andExpect(jsonPath("$.roles.processing.activeByTaskType.ANALYZE").value(1))
+                .andExpect(jsonPath("$.roles.export.role").value("export"))
+                .andExpect(jsonPath("$.roles.export.activeByTaskType.EXPORT").value(1));
     }
 
     private static final class FakeWorkerDiagnosticsService extends WorkerDiagnosticsService {
@@ -86,6 +88,17 @@ class HealthControllerTest {
                                     Instant.parse("2026-04-08T18:00:00Z"),
                                     Map.of(),
                                     Map.of(com.peatroxd.streamcutproject.workerexecution.WorkerTaskType.ANALYZE, 1)
+                            ),
+                            "export",
+                            new WorkerRoleDiagnostics(
+                                    "export",
+                                    0,
+                                    0,
+                                    1,
+                                    0,
+                                    Instant.parse("2026-04-08T18:05:00Z"),
+                                    Map.of(),
+                                    Map.of(com.peatroxd.streamcutproject.workerexecution.WorkerTaskType.EXPORT, 1)
                             )
                     )
             );

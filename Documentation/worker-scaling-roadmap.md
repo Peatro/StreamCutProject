@@ -9,7 +9,7 @@ The intent is to avoid premature Kubernetes adoption while still designing the s
 Today the system is effectively:
 
 - Spring Boot backend as the orchestration source of truth
-- `download-worker` and `processing-worker` running as separate Docker Compose services
+- `download-worker`, `processing-worker`, and `export-worker` running as separate Docker Compose services
 - worker progress reported back to backend through `/api/internal/worker/**`
 - shared local storage volume for media and intermediate artifacts
 - processing model cache stored outside image build and reused at runtime
@@ -54,7 +54,7 @@ Goal: make the current single-host runtime predictable, observable, and operatio
 
 Required outcomes:
 
-- `backend`, `download-worker`, and `processing-worker` start reliably
+- `backend`, `download-worker`, `processing-worker`, and `export-worker` start reliably
 - `processing-worker` model cache is decoupled from image build
 - job progress is visible in API and UI
 - worker heartbeat freshness and stale behavior are visible
@@ -551,7 +551,7 @@ Split scaling and metrics by worker pool.
 Status:
 
 - partially completed
-- worker roles are split, but dedicated export pool and metrics-driven scaling are still future work
+- worker roles are split across download, analysis, and export, but metrics-driven scaling is still future work
 
 #### Step F
 Only after the above is stable, deploy worker pools under Kubernetes if the runtime scale justifies it.

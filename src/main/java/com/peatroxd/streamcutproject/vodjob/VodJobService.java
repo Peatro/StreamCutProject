@@ -94,6 +94,7 @@ public class VodJobService {
     private static final String SOURCE_TYPE_FILE = "FILE";
     private static final String WORKER_ROLE_DOWNLOAD = "download";
     private static final String WORKER_ROLE_PROCESSING = "processing";
+    private static final String WORKER_ROLE_EXPORT = "export";
     private static final String EVENT_JOB_CREATED = "JOB_CREATED";
     private static final String EVENT_JOB_QUEUED_FOR_DOWNLOAD = "JOB_QUEUED_FOR_DOWNLOAD";
     private static final String EVENT_JOB_QUEUED_FOR_PROCESSING = "JOB_QUEUED_FOR_PROCESSING";
@@ -592,7 +593,10 @@ public class VodJobService {
         String normalizedRole = normalizeWorkerRole(workerRole);
         String normalizedWhisperDevice = normalizeWhisperDevice(whisperDevice);
         if (WORKER_ROLE_PROCESSING.equals(normalizedRole)) {
-            return claimNextProcessingJob(workerId, normalizedWhisperDevice);
+            return claimNextAnalyzeJob(workerId, normalizedWhisperDevice);
+        }
+        if (WORKER_ROLE_EXPORT.equals(normalizedRole)) {
+            return claimNextExportJob(workerId);
         }
         return claimNextDownloadJob(workerId);
     }
@@ -637,51 +641,14 @@ public class VodJobService {
         return Optional.of(payload);
     }
 
-    private Optional<WorkerDispatchPayload> claimNextProcessingJob(String workerId, String whisperDevice) {
+    private Optional<WorkerDispatchPayload> claimNextAnalyzeJob(String workerId, String whisperDevice) {
         Instant now = Instant.now();
-        Optional<WorkerTask> queuedTask = workerTaskOrchestrationService.selectNextProcessingTask(now);
+        Optional<WorkerTask> queuedTask = workerTaskOrchestrationService.selectNextAnalyzeTask(now);
         if (queuedTask.isEmpty()) {
             return Optional.empty();
         }
 
         WorkerTask task = queuedTask.get();
-        if (task.getTaskType() == WorkerTaskType.EXPORT) {
-            ClipCandidate candidate = clipCandidateRepository.findById(task.getCandidateId())
-                    .orElseThrow(() -> new ResponseStatusException(
-                            HttpStatus.CONFLICT,
-                            "Export candidate is missing for worker task: " + task.getId()
-                    ));
-            JobProjection.applyClaimedTask(candidate.getVodJob(), WorkerTaskType.EXPORT, workerId, now);
-            task.markClaimed(now);
-            workerTaskRepository.save(task);
-            vodJobRepository.save(candidate.getVodJob());
-            WorkerExecution execution = workerExecutionRepository.save(WorkerExecution.create(
-                    candidate.getVodJob(),
-                    task,
-                    candidate.getVodJob().getProcessingVersion(),
-                    workerId,
-                    WORKER_ROLE_PROCESSING,
-                    WorkerTaskType.EXPORT,
-                    candidate.getId(),
-                    now,
-                    whisperDevice
-            ));
-            jobEventRepository.save(JobEvent.create(
-                    candidate.getVodJob(),
-                    EVENT_JOB_CLAIMED,
-                    "Export claimed by worker " + workerId + " for candidate " + candidate.getId(),
-                    now
-            ));
-            log.info(
-                    "export_claimed jobId={} candidateId={} workerId={} status={}",
-                    candidate.getVodJob().getId(),
-                    candidate.getId(),
-                    workerId,
-                    candidate.getVodJob().getStatus()
-            );
-            return Optional.of(workerDispatchPayloadFactory.fromExportCandidate(candidate, execution.getId()));
-        }
-
         VodJob job = task.getVodJob();
         JobProjection.applyClaimedTask(job, WorkerTaskType.ANALYZE, workerId, now);
         if (job.getStartedAt() == null) {
@@ -711,6 +678,51 @@ public class VodJobService {
         log.info("analysis_claimed jobId={} workerId={} status={}", job.getId(), workerId, job.getStatus());
 
         return Optional.of(payload);
+    }
+
+    private Optional<WorkerDispatchPayload> claimNextExportJob(String workerId) {
+        Instant now = Instant.now();
+        Optional<WorkerTask> queuedTask = workerTaskOrchestrationService.selectNextExportTask(now);
+        if (queuedTask.isEmpty()) {
+            return Optional.empty();
+        }
+
+        WorkerTask task = queuedTask.get();
+        ClipCandidate candidate = clipCandidateRepository.findById(task.getCandidateId())
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.CONFLICT,
+                        "Export candidate is missing for worker task: " + task.getId()
+                ));
+        VodJob job = candidate.getVodJob();
+        JobProjection.applyClaimedTask(job, WorkerTaskType.EXPORT, workerId, now);
+        task.markClaimed(now);
+        workerTaskRepository.save(task);
+        vodJobRepository.save(job);
+        WorkerExecution execution = workerExecutionRepository.save(WorkerExecution.create(
+                job,
+                task,
+                job.getProcessingVersion(),
+                workerId,
+                WORKER_ROLE_EXPORT,
+                WorkerTaskType.EXPORT,
+                candidate.getId(),
+                now,
+                null
+        ));
+        jobEventRepository.save(JobEvent.create(
+                job,
+                EVENT_JOB_CLAIMED,
+                "Export claimed by worker " + workerId + " for candidate " + candidate.getId(),
+                now
+        ));
+        log.info(
+                "export_claimed jobId={} candidateId={} workerId={} status={}",
+                job.getId(),
+                candidate.getId(),
+                workerId,
+                job.getStatus()
+        );
+        return Optional.of(workerDispatchPayloadFactory.fromExportCandidate(candidate, execution.getId()));
     }
 
     private String normalizeWhisperDevice(String whisperDevice) {
@@ -1587,8 +1599,10 @@ public class VodJobService {
 
     private static String normalizeWorkerRole(String workerRole) {
         String normalized = workerRole == null ? "" : workerRole.trim().toLowerCase();
-        if (!WORKER_ROLE_DOWNLOAD.equals(normalized) && !WORKER_ROLE_PROCESSING.equals(normalized)) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "workerRole must be 'download' or 'processing'");
+        if (!WORKER_ROLE_DOWNLOAD.equals(normalized)
+                && !WORKER_ROLE_PROCESSING.equals(normalized)
+                && !WORKER_ROLE_EXPORT.equals(normalized)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "workerRole must be 'download', 'processing', or 'export'");
         }
         return normalized;
     }

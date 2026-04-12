@@ -354,7 +354,7 @@ class WorkerPollingLoopTests(unittest.TestCase):
             result=WorkerExportCompletionPayload(
                 execution_id=106,
                 job_id=9,
-                worker_id="processing-worker-1",
+                worker_id="export-worker-1",
                 processing_version=5,
                 candidate_id=3,
                 artifact_path="/tmp/candidate-3.mp4",
@@ -363,14 +363,15 @@ class WorkerPollingLoopTests(unittest.TestCase):
         loop = WorkerPollingLoop(
             backend_client=backend,
             job_runner=runner,
-            worker_id="processing-worker-1",
-            worker_role="processing",
+            worker_id="export-worker-1",
+            worker_role="export",
             poll_interval_sec=0,
         )
 
         iterations = iter([True, False])
         loop.run_forever(lambda: next(iterations))
 
+        self.assertEqual(backend.claim_roles, [("export-worker-1", "export", None)])
         self.assertEqual(len(backend.export_results), 1)
 
     def test_polling_loop_throttles_same_stage_progress_updates(self) -> None:

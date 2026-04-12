@@ -69,11 +69,11 @@ Synced note: Obsidian backlog mirror in `StreamCutProject`
 - `TASK-044` was revalidated on the live Docker stack: malformed URL and `404` cases now transition `QUEUED -> FAILED`, persist `JOB_FAILED`, and store readable failure messages instead of leaving jobs stuck in `DOWNLOADING`.
 - No task branch is currently ahead of `develop` in this backlog snapshot.
 - Worker runtime controls and progress reporting are now implemented in source.
-- The worker queue is now split in source into `download-worker` and `processing-worker` roles:
+- The worker queue is now split in source into `download-worker`, `processing-worker`, and `export-worker` roles:
   - jobs enter `QUEUED_FOR_DOWNLOAD`
   - download completion moves them to `QUEUED_FOR_PROCESSING`
-  - export remains on the `processing-worker`
-- Local and production compose now run one `download-worker` and one `processing-worker` on the same worker image, with future scale expected first on the download side.
+  - approved export tasks are claimed only by `export-worker`
+- Local and production compose now run one `download-worker`, one `processing-worker`, and one `export-worker` on the same worker image, with GPU override still scoped only to `processing-worker`.
 - Local Docker validation for the split worker flow was executed on 2026-04-08 against a real uploaded `.mp4`:
   - job created as `QUEUED_FOR_DOWNLOAD`
   - `download-worker` claimed and completed the download/materialization step
@@ -104,10 +104,8 @@ Synced note: Obsidian backlog mirror in `StreamCutProject`
   - local execution is documented in `src/e2eTest/README.md`
 - `TASK-065` operator runbook, backup/restore, and upgrade guidance are now present in source through `Documentation/runbook.md`.
 - The remaining larger architecture gaps are still future work:
-  - retries, backoff, and dead-letter semantics are still missing
-  - a dedicated `TaskTransitionService` does not exist yet
-  - export still runs on the `processing-worker`
-  - durable-storage-first execution and broker-backed queue semantics are still future work
+  - durable-storage-first execution and signed-URL delivery are still pending
+  - quotas, fairness controls, and broker-backed queue semantics are still future work
 - `TASK-059` health, readiness, and worker diagnostics are now present in source.
 - `TASK-061` operator recovery controls are now present in source.
 - `TASK-062` metrics and alertable observability are now present in source.
@@ -148,16 +146,13 @@ Current release-track snapshot:
 - `v1.0.0` is released on `main` and back-merged into `develop`
 - the release point is explicit and reproducible through git tag `v1.0.0`
 - `develop` already carries small post-release runtime and UI fixes on top of the release baseline
-- the next tracked work starts at `TASK-068`
+- the next tracked work starts at `TASK-071`
 
 ### Closed In `v1.0.0`
 - `TASK-067` Run Backup Restore And Rollback Drill
 - `TASK-066` Prepare And Execute `v1.0.0` Release
 
 ### Planned Post-`v1.0.0`
-- `TASK-068` Expand Task Model With Retry, Backoff, And Dead-Letter Semantics
-- `TASK-069` Extract Task Transition Service And Task-Centric Claim Flow
-- `TASK-070` Introduce Dedicated `export-worker` Pool
 - `TASK-071` Move Artifact Delivery To Signed URLs And Reduce Backend Media Proxying
 - `TASK-072` Make Object Storage The Durable Artifact Contract
 - `TASK-073` Add Product Quotas And Runtime Limits
@@ -353,9 +348,9 @@ Status: completed locally on 2026-04-06
 - completed: `TASK-066` Prepare And Execute `v1.0.0` Release
 
 ### Post-`v1.0.0` Target Architecture Track
-- `TASK-068` Expand Task Model With Retry, Backoff, And Dead-Letter Semantics
-- `TASK-069` Extract Task Transition Service And Task-Centric Claim Flow
-- `TASK-070` Introduce Dedicated `export-worker` Pool
+- completed: `TASK-068` Expand Task Model With Retry, Backoff, And Dead-Letter Semantics
+- completed: `TASK-069` Extract Task Transition Service And Task-Centric Claim Flow
+- completed: `TASK-070` Introduce Dedicated `export-worker` Pool
 - `TASK-071` Move Artifact Delivery To Signed URLs And Reduce Backend Media Proxying
 - `TASK-072` Make Object Storage The Durable Artifact Contract
 - `TASK-073` Add Product Quotas And Runtime Limits
@@ -377,21 +372,16 @@ Status: completed locally on 2026-04-06
 - `TASK-055` through `TASK-065` are now part of the current `develop` baseline.
 - `TASK-067` consumed the concrete procedures written in `TASK-065` instead of inventing ad hoc recovery steps.
 - `TASK-066` executed only after `TASK-067` evidence was recorded and the accepted drill fix was captured in source.
-- `TASK-068` should now expand the already-implemented task model with retry budgets, backoff, and dead-letter handling instead of introducing task persistence from scratch.
-- `TASK-069` should extract a dedicated transition/orchestration layer from the current `VodJobService` and projection code now that the task model exists.
-- `TASK-070` depends on `TASK-069`, because export routing should sit on explicit task ownership rather than the current mixed processing role.
+- `TASK-068`, `TASK-069`, and `TASK-070` are now the checked-in post-release baseline for retry semantics, orchestration extraction, and export-worker routing.
 - `TASK-071` and `TASK-072` can overlap after the durable artifact contract is clear, but `TASK-072` owns the long-term storage contract.
 - `TASK-073` should start only after the execution model is explicit enough to enforce concurrency and cost controls coherently.
-- `TASK-074` should happen after `TASK-068` and `TASK-069`; broker migration without a clear task contract would just move the current ambiguity into another component.
+- `TASK-074` should happen after the current task-centric baseline; broker migration without a clear task contract would just move the current ambiguity into another component.
 
 ## LATER
 
 ### Product Gaps Still Open
 - Error handling and observability are still MVP-level, not hardened operations-grade.
 - The current pipeline still stops short of the target architecture described for larger-scale operation:
-  - no dedicated `export-worker`
-  - no task-level retry budget with dead-letter semantics
-  - no explicit `TaskTransitionService`
   - no quotas or fairness controls
   - no durable-storage-first contract for all critical artifacts
 
@@ -407,14 +397,10 @@ Status: completed locally on 2026-04-06
 - `TASK-046` also showed that restart recovery is not very observable: file-backed work and exports can continue, but the API may sit on `DOWNLOADING` or `IN_PROGRESS` without an explicit progress signal.
 - Worker cold start depends on external model download and is slower without a configured `HF_TOKEN`.
 - Very large URL ingests still create long-running `DOWNLOADING` occupancy; this is the direct reason for moving toward a dedicated `download-worker`.
-- The dedicated `download-worker` / `processing-worker` split is now validated for backup, restore, and export recovery, but it still lacks automatic retry, backoff, and dead-letter semantics.
+- The dedicated `download-worker` / `processing-worker` / `export-worker` split is now validated in source, but it still lacks signed-URL delivery and a durable-storage-first artifact contract.
 - Recovery behavior is now documented and exercised for the runbook paths, but not every failure permutation has a dedicated drill.
 - `TASK-045` QA found that export retries are allowed, export failure correctly marks the job `FAILED`, and the stale-artifact behavior was addressed in `TASK-054`.
-- The current task model is still too thin for scale-out work:
-  - no persisted `attempt`
-  - no `available_at` / retry backoff control
-  - no dead-letter state
-  - no task priority or fairness input
+- The current task model is now explicit enough for role-aware pools, but it still has no task priority or fairness input.
 - Backend media streaming endpoints still exist for source and export delivery, which is acceptable for the MVP but not the desired long-term contract.
 
 ## Recommended Next Sequence

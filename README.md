@@ -23,7 +23,7 @@ Release status: `v1.0.0`
 4. The backend queues processing work.
 5. The `processing-worker` extracts audio, transcribes speech, detects silence, analyzes windows, and generates non-overlapping clip candidates.
 6. The operator reviews candidates in the UI and approves, rejects, or exports clips.
-7. Exported clips are uploaded to S3-compatible artifact storage and exposed back through the backend.
+7. The `export-worker` renders approved clips and uploads them to S3-compatible artifact storage.
 
 ## Architecture At A Glance
 
@@ -39,9 +39,12 @@ download-worker
   -> writes source video to shared storage
 
 processing-worker
-  -> claims ANALYZE and EXPORT work from backend
+  -> claims ANALYZE work from backend
   -> runs ffmpeg + faster-whisper pipeline
-  -> uploads exported clips to artifact storage
+
+export-worker
+  -> claims EXPORT work from backend
+  -> renders approved clips and uploads them to artifact storage
 ```
 
 ## Main Components
@@ -51,7 +54,9 @@ processing-worker
 - `download-worker`
   Python worker that materializes source videos from submitted URLs.
 - `processing-worker`
-  Python worker that runs transcription, silence detection, candidate analysis, and clip export.
+  Python worker that runs transcription, silence detection, and candidate analysis.
+- `export-worker`
+  Python worker that renders approved clips without loading the Whisper model cache.
 - `postgres`
   Primary relational store for runtime state.
 - `minio`
@@ -94,6 +99,7 @@ This starts:
 - `backend`
 - `download-worker`
 - `processing-worker`
+- `export-worker`
 
 ### Open The Application
 
@@ -185,7 +191,7 @@ For local browser debugging:
 Important:
 
 - Run browser E2E tests against the backend only.
-- Do not start `download-worker` or `processing-worker` while running local E2E tests, otherwise queued fixture jobs can be claimed before assertions run.
+- Do not start `download-worker`, `processing-worker`, or `export-worker` while running local E2E tests, otherwise queued fixture jobs can be claimed before assertions run.
 
 ### Worker Tests
 
@@ -230,6 +236,7 @@ It includes:
 - `backend`
 - `download-worker`
 - `processing-worker`
+- `export-worker`
 
 It expects these dependencies to be provided externally:
 
@@ -283,7 +290,7 @@ By default the public entrypoint is the `edge` container on port `80`.
 
 - Upload size policy is `512 MB` max file size and `520 MB` max request size.
 - Local runtime uses MinIO as the S3-compatible artifact store.
-- The first processing run on a cold host may take longer because the transcription model has to be downloaded into the worker cache.
+- The first processing run on a cold host may take longer because the transcription model has to be downloaded into the processing worker cache.
 - Retention cleanup is enabled by default:
   - source files: 7 days after terminal state
   - artifacts: 30 days after completion
@@ -294,7 +301,6 @@ By default the public entrypoint is the `edge` container on port `80`.
 - Zero-downtime upgrades are not supported.
 - Source videos under `APP_STORAGE_LOCAL_ROOT` are not backed up by default.
 - Automatic retry, backoff, and dead-letter handling are not implemented yet.
-- Export still shares the processing worker pool instead of using a dedicated export worker.
 
 ## Documentation Map
 

@@ -1060,7 +1060,7 @@ class VodJobServiceTest {
     }
 
     @Test
-    void claimNextProcessingJobMarksJobExtractingAudioAndWritesClaimEvent() {
+    void claimNextAnalyzeJobMarksJobExtractingAudioAndWritesClaimEvent() {
         storageProperties.setLocalRoot(tempDir);
         VodJob job = buildJob(1L, "https://example.com/video", Instant.parse("2026-04-05T10:00:00Z"));
         job.setStatus(JobStatus.QUEUED_FOR_PROCESSING);
@@ -1073,10 +1073,6 @@ class VodJobServiceTest {
         } catch (java.io.IOException ex) {
             throw new IllegalStateException("Failed to create analyze source video fixture", ex);
         }
-        when(workerTaskRepository.findAllByTaskTypeAndStatusOrderByAvailableAtAscIdAsc(
-                WorkerTaskType.EXPORT,
-                WorkerTaskStatus.QUEUED
-        )).thenReturn(List.of());
         when(workerTaskRepository.findAllByTaskTypeAndStatusOrderByAvailableAtAscIdAsc(
                 WorkerTaskType.ANALYZE,
                 WorkerTaskStatus.QUEUED
@@ -1109,7 +1105,7 @@ class VodJobServiceTest {
     }
 
     @Test
-    void claimNextProcessingJobSkipsMissingAnalyzeSourceAndClaimsNextReadyTask() {
+    void claimNextAnalyzeJobSkipsMissingAnalyzeSourceAndClaimsNextReadyTask() {
         storageProperties.setLocalRoot(tempDir);
         VodJob missingJob = buildJob(1L, "https://example.com/missing", Instant.parse("2026-04-05T10:00:00Z"));
         missingJob.setStatus(JobStatus.QUEUED_FOR_PROCESSING);
@@ -1130,10 +1126,6 @@ class VodJobServiceTest {
             throw new IllegalStateException("Failed to create ready analyze source video fixture", ex);
         }
 
-        when(workerTaskRepository.findAllByTaskTypeAndStatusOrderByAvailableAtAscIdAsc(
-                WorkerTaskType.EXPORT,
-                WorkerTaskStatus.QUEUED
-        )).thenReturn(List.of());
         when(workerTaskRepository.findAllByTaskTypeAndStatusOrderByAvailableAtAscIdAsc(
                 WorkerTaskType.ANALYZE,
                 WorkerTaskStatus.QUEUED
@@ -1164,7 +1156,21 @@ class VodJobServiceTest {
     }
 
     @Test
-    void claimNextProcessingJobPrefersQueuedExportTask() {
+    void claimNextProcessingJobDoesNotClaimQueuedExportTask() {
+        when(workerTaskRepository.findAllByTaskTypeAndStatusOrderByAvailableAtAscIdAsc(
+                WorkerTaskType.ANALYZE,
+                WorkerTaskStatus.QUEUED
+        )).thenReturn(List.of());
+
+        var result = vodJobService.claimNextQueuedJob("processing-worker-1", "processing", "cuda");
+
+        assertThat(result).isEmpty();
+        verify(workerTaskRepository, Mockito.never()).save(any(WorkerTask.class));
+        verify(workerExecutionRepository, Mockito.never()).save(any(WorkerExecution.class));
+    }
+
+    @Test
+    void claimNextExportJobClaimsQueuedExportTask() {
         VodJob job = buildJob(1L, "https://example.com/video", Instant.parse("2026-04-05T10:00:00Z"));
         job.setStatus(JobStatus.EXPORTING_CLIP);
         ClipCandidate candidate = ClipCandidate.create(job, 5.0, 12.0, 0.91, "first");
@@ -1192,13 +1198,16 @@ class VodJobServiceTest {
         when(clipCandidateRepository.findById(7L)).thenReturn(java.util.Optional.of(candidate));
         when(workerDispatchPayloadFactory.fromExportCandidate(Mockito.eq(candidate), anyLong())).thenReturn(payload);
 
-        var result = vodJobService.claimNextQueuedJob("processing-worker-1", "processing", "cuda");
+        var result = vodJobService.claimNextQueuedJob("export-worker-1", "export", "cuda");
 
         assertThat(result).contains(payload);
-        assertThat(job.getCurrentWorkerId()).isEqualTo("processing-worker-1");
+        assertThat(job.getCurrentWorkerId()).isEqualTo("export-worker-1");
         assertThat(job.getProgressPercent()).isEqualTo(92);
+        ArgumentCaptor<WorkerExecution> executionCaptor = ArgumentCaptor.forClass(WorkerExecution.class);
         verify(vodJobRepository).save(job);
-        verify(workerExecutionRepository).save(any(WorkerExecution.class));
+        verify(workerExecutionRepository).save(executionCaptor.capture());
+        assertThat(executionCaptor.getValue().getWorkerRole()).isEqualTo("export");
+        assertThat(executionCaptor.getValue().getWhisperDevice()).isNull();
         verify(jobEventRepository).save(any(JobEvent.class));
     }
 
@@ -1219,7 +1228,7 @@ class VodJobServiceTest {
                 .thenReturn(List.of(task));
         when(workerExecutionRepository.findFirstByWorkerTaskIdOrderByIdDesc(task.getId()))
                 .thenReturn(java.util.Optional.of(execution));
-        var result = vodJobService.claimNextQueuedJob("processing-worker-2", "processing", "cuda");
+        var result = vodJobService.claimNextQueuedJob("export-worker-2", "export", "cuda");
 
         assertThat(result).isEmpty();
         assertThat(execution.getStatus()).isEqualTo(WorkerExecutionStatus.FAILED);
@@ -1923,12 +1932,17 @@ class VodJobServiceTest {
             Long executionId,
             Long candidateId
     ) {
+        String workerRole = switch (taskType) {
+            case DOWNLOAD -> "download";
+            case ANALYZE -> "processing";
+            case EXPORT -> "export";
+        };
         WorkerExecution execution = WorkerExecution.create(
                 job,
                 task,
                 job.getProcessingVersion(),
                 workerId,
-                "processing",
+                workerRole,
                 taskType,
                 candidateId,
                 Instant.parse("2026-04-05T10:00:30Z"),

@@ -90,6 +90,23 @@ class WorkerClaimControllerTest {
     }
 
     @Test
+    void acceptsExportWorkerRole() throws Exception {
+        when(vodJobService.claimNextQueuedJob(anyString(), anyString(), isNull())).thenReturn(Optional.empty());
+
+        mockMvc.perform(post("/api/internal/worker/claims/next")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "workerId": "export-worker-1",
+                                  "workerRole": "export"
+                                }
+                                """))
+                .andExpect(status().isNoContent());
+
+        verify(vodJobService).claimNextQueuedJob("export-worker-1", "export", null);
+    }
+
+    @Test
     void rejectsBlankWorkerId() throws Exception {
         mockMvc.perform(post("/api/internal/worker/claims/next")
                         .contentType(MediaType.APPLICATION_JSON)

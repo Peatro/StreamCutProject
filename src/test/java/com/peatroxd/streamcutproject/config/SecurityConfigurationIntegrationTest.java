@@ -117,7 +117,8 @@ class SecurityConfigurationIntegrationTest {
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
                 .andExpect(jsonPath("$.status").value("UP"))
                 .andExpect(jsonPath("$.roles.download.role").value("download"))
-                .andExpect(jsonPath("$.roles.processing.role").value("processing"));
+                .andExpect(jsonPath("$.roles.processing.role").value("processing"))
+                .andExpect(jsonPath("$.roles.export.role").value("export"));
     }
 
     @Test
