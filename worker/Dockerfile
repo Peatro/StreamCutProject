@@ -16,6 +16,9 @@ COPY pyproject.toml ./
 COPY src ./src
 
 RUN python -m venv "${VIRTUAL_ENV}" \
-    && pip install --no-cache-dir .
+    && pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir yt-dlp \
+    && pip install --no-cache-dir . \
+    && yt-dlp --version
 
 CMD ["python", "-m", "streamcut_worker"]
