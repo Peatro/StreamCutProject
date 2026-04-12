@@ -43,19 +43,19 @@
 4. Start the production package from the repository root:
 
 ```bash
-docker compose -f docker-compose.production.yml --env-file env.production up -d --build
+docker compose -f compose.streamcut.yml --env-file env.production up -d --build
 ```
 
 5. If the same variables are already exported in the shell or provided through `.env`, the shorter start command is equivalent:
 
 ```bash
-docker compose -f docker-compose.production.yml up -d
+docker compose -f compose.streamcut.yml up -d
 ```
 
 6. Verify startup. Replace port `80` if `EDGE_PORT` was changed:
 
 ```bash
-docker compose -f docker-compose.production.yml ps
+docker compose -f compose.streamcut.yml ps
 curl http://localhost:80/health
 curl http://localhost:80/health/ready
 curl http://localhost:80/health/workers
@@ -152,7 +152,7 @@ curl http://localhost:80/health/workers
 2. Stop the application stack before restore work:
 
 ```bash
-docker compose -f docker-compose.production.yml --env-file env.production down
+docker compose -f compose.streamcut.yml --env-file env.production down
 ```
 
 3. Restore PostgreSQL when it is container-managed:
@@ -169,7 +169,7 @@ docker compose -f docker-compose.production.yml --env-file env.production down
 7. Start the application stack after data restore:
 
 ```bash
-docker compose -f docker-compose.production.yml --env-file env.production up -d --build
+docker compose -f compose.streamcut.yml --env-file env.production up -d --build
 ```
 
 8. Liquibase schema migration runs automatically on backend startup. No separate database migration command is required after restore.
@@ -189,7 +189,7 @@ docker compose -f docker-compose.production.yml --env-file env.production up -d 
 3. Rebuild and restart the production package:
 
 ```bash
-docker compose -f docker-compose.production.yml --env-file env.production up -d --build
+docker compose -f compose.streamcut.yml --env-file env.production up -d --build
 ```
 
 4. Liquibase migrations run automatically when the new backend starts. There is no manual upgrade migration step in the runbook.
