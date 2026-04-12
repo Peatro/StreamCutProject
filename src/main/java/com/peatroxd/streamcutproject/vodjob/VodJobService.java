@@ -50,6 +50,7 @@ import com.peatroxd.streamcutproject.workerexecution.WorkerTaskType;
 import com.peatroxd.streamcutproject.workertask.WorkerTask;
 import com.peatroxd.streamcutproject.workertask.WorkerTaskRepository;
 import com.peatroxd.streamcutproject.workertask.WorkerTaskStatus;
+import com.peatroxd.streamcutproject.workertask.WorkerTaskRetryProperties;
 import io.micrometer.core.instrument.MeterRegistry;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
@@ -149,6 +150,7 @@ public class VodJobService {
     private final ArtifactStorageService artifactStorageService;
     private final StorageProperties storageProperties;
     private final WorkerExecutionProperties workerExecutionProperties;
+    private final WorkerTaskRetryProperties workerTaskRetryProperties;
     private final WorkerTaskRepository workerTaskRepository;
     private final WorkerExecutionRepository workerExecutionRepository;
     private final WorkerDispatchPort workerDispatchPort;
@@ -584,9 +586,13 @@ public class VodJobService {
 
     private Optional<WorkerDispatchPayload> claimNextDownloadJob(String workerId) {
         // Download workers do not use whisper; whisperDevice is not recorded for this role.
-        Optional<WorkerTask> queuedTask = workerTaskRepository.findFirstByTaskTypeAndStatusOrderByIdAsc(
-                WorkerTaskType.DOWNLOAD,
-                WorkerTaskStatus.QUEUED
+        Instant now = Instant.now();
+        Optional<WorkerTask> queuedTask = claimableTask(
+                workerTaskRepository.findAllByTaskTypeAndStatusOrderByAvailableAtAscIdAsc(
+                        WorkerTaskType.DOWNLOAD,
+                        WorkerTaskStatus.QUEUED
+                ),
+                now
         );
         if (queuedTask.isEmpty()) {
             return Optional.empty();
@@ -594,7 +600,6 @@ public class VodJobService {
 
         WorkerTask task = queuedTask.get();
         VodJob job = task.getVodJob();
-        Instant now = Instant.now();
         JobProjection.applyClaimedTask(job, WorkerTaskType.DOWNLOAD, workerId, now);
         if (job.getStartedAt() == null) {
             job.setStartedAt(now);
@@ -626,9 +631,13 @@ public class VodJobService {
     }
 
     private Optional<WorkerDispatchPayload> claimNextProcessingJob(String workerId, String whisperDevice) {
-        Optional<WorkerTask> queuedExportTask = workerTaskRepository.findFirstByTaskTypeAndStatusOrderByIdAsc(
-                WorkerTaskType.EXPORT,
-                WorkerTaskStatus.QUEUED
+        Instant now = Instant.now();
+        Optional<WorkerTask> queuedExportTask = claimableTask(
+                workerTaskRepository.findAllByTaskTypeAndStatusOrderByAvailableAtAscIdAsc(
+                        WorkerTaskType.EXPORT,
+                        WorkerTaskStatus.QUEUED
+                ),
+                now
         );
         if (queuedExportTask.isPresent()) {
             WorkerTask task = queuedExportTask.get();
@@ -637,7 +646,6 @@ public class VodJobService {
                             HttpStatus.CONFLICT,
                             "Export candidate is missing for worker task: " + task.getId()
                     ));
-            Instant now = Instant.now();
             JobProjection.applyClaimedTask(candidate.getVodJob(), WorkerTaskType.EXPORT, workerId, now);
             task.markClaimed(now);
             workerTaskRepository.save(task);
@@ -669,10 +677,11 @@ public class VodJobService {
             return Optional.of(workerDispatchPayloadFactory.fromExportCandidate(candidate, execution.getId()));
         }
 
-        Optional<WorkerTask> queuedAnalyzeTask = workerTaskRepository.findAllByTaskTypeAndStatusOrderByIdAsc(
+        Optional<WorkerTask> queuedAnalyzeTask = workerTaskRepository.findAllByTaskTypeAndStatusOrderByAvailableAtAscIdAsc(
                         WorkerTaskType.ANALYZE,
                         WorkerTaskStatus.QUEUED
                 ).stream()
+                .filter(task -> isTaskClaimable(task, now))
                 .filter(task -> isAnalyzeSourceVideoReady(task.getVodJob(), task.getId()))
                 .findFirst();
         if (queuedAnalyzeTask.isEmpty()) {
@@ -681,7 +690,6 @@ public class VodJobService {
 
         WorkerTask task = queuedAnalyzeTask.get();
         VodJob job = task.getVodJob();
-        Instant now = Instant.now();
         JobProjection.applyClaimedTask(job, WorkerTaskType.ANALYZE, workerId, now);
         if (job.getStartedAt() == null) {
             job.setStartedAt(now);
@@ -710,6 +718,17 @@ public class VodJobService {
         log.info("analysis_claimed jobId={} workerId={} status={}", job.getId(), workerId, job.getStatus());
 
         return Optional.of(payload);
+    }
+
+    private Optional<WorkerTask> claimableTask(List<WorkerTask> tasks, Instant now) {
+        return tasks.stream()
+                .filter(task -> isTaskClaimable(task, now))
+                .findFirst();
+    }
+
+    private boolean isTaskClaimable(WorkerTask task, Instant now) {
+        Instant availableAt = task.getAvailableAt();
+        return availableAt == null || !availableAt.isAfter(now);
     }
 
     private String normalizeWhisperDevice(String whisperDevice) {
@@ -996,8 +1015,37 @@ public class VodJobService {
         );
         Instant now = Instant.now();
         String failureSummary = payload.failedState() + ": " + payload.message();
+        WorkerTask task = Objects.requireNonNull(
+                execution.getWorkerTask(),
+                "Worker callback execution is missing task linkage"
+        );
 
-        if ("EXPORTING_CLIP".equals(payload.failedState())) {
+        execution.setStatus(WorkerExecutionStatus.FAILED);
+        execution.setLastHeartbeatAt(now);
+        execution.setFinishedAt(now);
+        execution.setFailureMessage(failureSummary);
+        workerExecutionRepository.save(execution);
+
+        applyTaskFailurePolicy(task, now, failureSummary);
+        workerTaskRepository.save(task);
+        clearWorkerProgressEvents(job.getId());
+
+        if (task.getStatus() == WorkerTaskStatus.QUEUED) {
+            queueJobForTaskRetry(job, task.getTaskType(), now, retryScheduledProgressMessage(task));
+            vodJobRepository.save(job);
+            log.warn(
+                    "job_retry_scheduled jobId={} taskId={} taskType={} availableAt={} attempts={}/{}",
+                    job.getId(),
+                    task.getId(),
+                    task.getTaskType(),
+                    task.getAvailableAt(),
+                    task.getAttemptCountOrZero(),
+                    effectiveMaxAttempts(task)
+            );
+            return new WorkerTransportAck(job.getId(), job.getStatus().name());
+        }
+
+        if (task.getTaskType() == WorkerTaskType.EXPORT) {
             clipCandidateRepository.findAllByVodJobIdAndExportStatus(job.getId(), ExportStatus.IN_PROGRESS)
                     .forEach(candidate -> {
                         candidate.setExportStatus(ExportStatus.FAILED);
@@ -1005,31 +1053,63 @@ public class VodJobService {
                     });
         }
 
-        JobProjection.applyFailure(job, now, failureSummary);
-        execution.setStatus(WorkerExecutionStatus.FAILED);
-        execution.setLastHeartbeatAt(now);
-        execution.setFinishedAt(now);
-        execution.setFailureMessage(failureSummary);
-        failExecutionTask(execution, now, failureSummary);
-        workerExecutionRepository.save(execution);
-        clearWorkerProgressEvents(job.getId());
+        String deadLetterMessage = deadLetterMessage(task, failureSummary);
+        JobProjection.applyFailure(job, now, deadLetterMessage);
+        job.setErrorMessage(deadLetterMessage);
         vodJobRepository.save(job);
         jobEventRepository.save(JobEvent.create(
                 job,
                 EVENT_JOB_FAILED,
-                "Worker reported failure in state " + payload.failedState() + ": " + payload.message(),
+                "Worker reported failure in state " + payload.failedState() + ": " + deadLetterMessage,
                 now
         ));
         incrementCounterAfterCommit(METRIC_JOBS_FAILED, "reason", FAILED_REASON_WORKER_FAILURE);
         log.warn(
-                "job_failed jobId={} failedState={} status={} message={}",
+                "job_failed jobId={} failedState={} status={} message={} deadLettered=true",
                 job.getId(),
                 payload.failedState(),
                 job.getStatus(),
-                payload.message()
+                deadLetterMessage
         );
 
         return new WorkerTransportAck(job.getId(), JobStatus.FAILED.name());
+    }
+
+    private void applyTaskFailurePolicy(WorkerTask task, Instant now, String failureSummary) {
+        if (isRetryBudgetExhausted(task)) {
+            task.markDeadLettered(now, failureSummary, deadLetterMessage(task, failureSummary));
+            return;
+        }
+
+        Instant availableAt = now.plus(workerTaskRetryProperties.resolveRetryBackoff(
+                task.getTaskType(),
+                task.getAttemptCountOrZero()
+        ));
+        task.markQueuedForRetry(now, availableAt, failureSummary);
+    }
+
+    private boolean isRetryBudgetExhausted(WorkerTask task) {
+        return task.getAttemptCountOrZero() >= effectiveMaxAttempts(task);
+    }
+
+    private int effectiveMaxAttempts(WorkerTask task) {
+        Integer configuredMaxAttempts = task.getMaxAttempts();
+        return configuredMaxAttempts == null || configuredMaxAttempts < 1
+                ? workerTaskRetryProperties.resolveMaxAttempts(task.getTaskType())
+                : configuredMaxAttempts;
+    }
+
+    private String retryScheduledProgressMessage(WorkerTask task) {
+        int nextAttemptNumber = task.getAttemptCountOrZero() + 1;
+        return switch (task.getTaskType()) {
+            case DOWNLOAD -> "Download worker retry attempt " + nextAttemptNumber + " is queued";
+            case ANALYZE -> "Processing worker retry attempt " + nextAttemptNumber + " is queued";
+            case EXPORT -> "Export worker retry attempt " + nextAttemptNumber + " is queued";
+        };
+    }
+
+    private String deadLetterMessage(WorkerTask task, String failureSummary) {
+        return failureSummary + " (retry budget exhausted after " + task.getAttemptCountOrZero() + " attempts)";
     }
 
     private WorkerExecution requireActiveExecution(
@@ -1231,69 +1311,63 @@ public class VodJobService {
             execution.setFailureMessage(recoveryMessage);
             workerExecutionRepository.save(execution);
         });
-        task.markQueued(now);
-        task.setFailureMessage(recoveryMessage);
+        applyTaskFailurePolicy(task, now, recoveryMessage);
         workerTaskRepository.save(task);
         clearWorkerProgressEvents(job.getId());
 
-        switch (task.getTaskType()) {
-            case DOWNLOAD -> requeueRecoveredDownload(job, now, recoveryMessage);
-            case ANALYZE -> requeueRecoveredAnalyze(job, now, recoveryMessage);
-            case EXPORT -> requeueRecoveredExport(job, now, recoveryMessage);
+        if (task.getStatus() == WorkerTaskStatus.QUEUED) {
+            queueJobForTaskRetry(job, task.getTaskType(), now, retryScheduledProgressMessage(task));
+            vodJobRepository.save(job);
+            jobEventRepository.save(JobEvent.create(
+                    job,
+                    EVENT_WORKER_EXECUTION_STALE,
+                    recoveryMessage,
+                    now
+            ));
+            log.warn(
+                    "worker_execution_retry_scheduled taskId={} executionId={} jobId={} taskType={} availableAt={} attempts={}/{}",
+                    task.getId(),
+                    latestExecution.map(WorkerExecution::getId).orElse(null),
+                    job.getId(),
+                    task.getTaskType(),
+                    task.getAvailableAt(),
+                    task.getAttemptCountOrZero(),
+                    effectiveMaxAttempts(task)
+            );
+            return;
         }
 
+        if (task.getTaskType() == WorkerTaskType.EXPORT) {
+            clipCandidateRepository.findAllByVodJobIdAndExportStatus(job.getId(), ExportStatus.IN_PROGRESS)
+                    .forEach(candidate -> {
+                        candidate.setExportStatus(ExportStatus.FAILED);
+                        clipCandidateRepository.save(candidate);
+                    });
+        }
+
+        String deadLetterMessage = deadLetterMessage(task, recoveryMessage);
+        JobProjection.applyFailure(job, now, deadLetterMessage);
+        job.setErrorMessage(deadLetterMessage);
+        vodJobRepository.save(job);
         jobEventRepository.save(JobEvent.create(
                 job,
                 EVENT_WORKER_EXECUTION_STALE,
                 recoveryMessage,
                 now
         ));
+        jobEventRepository.save(JobEvent.create(
+                job,
+                EVENT_JOB_FAILED,
+                "Stale worker execution exhausted retry budget: " + deadLetterMessage,
+                now
+        ));
         log.warn(
-                "worker_execution_stale taskId={} executionId={} jobId={} taskType={}",
+                "worker_execution_stale taskId={} executionId={} jobId={} taskType={} deadLettered=true",
                 task.getId(),
                 latestExecution.map(WorkerExecution::getId).orElse(null),
                 job.getId(),
                 task.getTaskType()
         );
-    }
-
-    private void requeueRecoveredDownload(VodJob job, Instant now, String recoveryMessage) {
-        String progressMessage = "Download worker lease expired and job was requeued";
-        JobProjection.applyQueuedTask(job, WorkerTaskType.DOWNLOAD, now, progressMessage);
-        job.setErrorMessage(recoveryMessage);
-        recomputeAndPersistJob(job);
-        job.setProgressMessage(progressMessage);
-        vodJobRepository.save(job);
-        jobEventRepository.save(JobEvent.create(
-                job,
-                EVENT_JOB_QUEUED_FOR_DOWNLOAD,
-                "Job requeued after stale download execution",
-                now
-        ));
-    }
-
-    private void requeueRecoveredAnalyze(VodJob job, Instant now, String recoveryMessage) {
-        String progressMessage = "Processing worker lease expired and job was requeued";
-        JobProjection.applyQueuedTask(job, WorkerTaskType.ANALYZE, now, progressMessage);
-        job.setErrorMessage(recoveryMessage);
-        recomputeAndPersistJob(job);
-        job.setProgressMessage(progressMessage);
-        vodJobRepository.save(job);
-        jobEventRepository.save(JobEvent.create(
-                job,
-                EVENT_JOB_QUEUED_FOR_PROCESSING,
-                "Job requeued after stale processing execution",
-                now
-        ));
-    }
-
-    private void requeueRecoveredExport(VodJob job, Instant now, String recoveryMessage) {
-        String progressMessage = "Export worker lease expired and export was requeued";
-        JobProjection.applyQueuedTask(job, WorkerTaskType.EXPORT, now, progressMessage);
-        job.setErrorMessage(recoveryMessage);
-        recomputeAndPersistJob(job);
-        job.setProgressMessage(progressMessage);
-        vodJobRepository.save(job);
     }
 
     private boolean isTaskStale(WorkerTask task, Instant now) {
@@ -1551,6 +1625,12 @@ public class VodJobService {
         job.setErrorMessage(null);
     }
 
+    private void queueJobForTaskRetry(VodJob job, WorkerTaskType taskType, Instant now, String progressMessage) {
+        JobProjection.applyQueuedTask(job, taskType, now, progressMessage);
+        job.setFinishedAt(null);
+        job.setErrorMessage(null);
+    }
+
     private WorkerTask queueWorkerTask(
             VodJob job,
             Long processingVersion,
@@ -1573,10 +1653,25 @@ public class VodJobService {
                         List.of(WorkerTaskStatus.QUEUED, WorkerTaskStatus.CLAIMED, WorkerTaskStatus.RUNNING)
                 );
         if (existingTask.isPresent()) {
-            return existingTask.get();
+            WorkerTask task = existingTask.get();
+            applyRetryPolicy(task, taskType, now);
+            return workerTaskRepository.save(task);
         }
         WorkerTask task = WorkerTask.createQueued(job, processingVersion, taskType, candidateId, now);
+        applyRetryPolicy(task, taskType, now);
         return workerTaskRepository.save(task);
+    }
+
+    private void applyRetryPolicy(WorkerTask task, WorkerTaskType taskType, Instant now) {
+        if (task.getAttemptCount() == null) {
+            task.setAttemptCount(0);
+        }
+        if (task.getMaxAttempts() == null || task.getMaxAttempts() < 1) {
+            task.setMaxAttempts(workerTaskRetryProperties.resolveMaxAttempts(taskType));
+        }
+        if (task.getStatus() == WorkerTaskStatus.QUEUED && task.getAvailableAt() == null) {
+            task.setAvailableAt(now);
+        }
     }
 
     private WorkerTask requireQueuedTask(

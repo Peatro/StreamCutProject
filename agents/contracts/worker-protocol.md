@@ -17,6 +17,8 @@ Defines the backend <-> worker transport and payload contract for the current ta
 - `processingVersion` is the lease/version guard and must be echoed back unchanged
 - `taskType` identifies the concrete work unit: `DOWNLOAD`, `ANALYZE`, or `EXPORT`
 - backend remains the source of truth for orchestration, ownership, and acceptance of callbacks
+- backend may defer claims for retrying tasks until their `availableAt` time; workers never schedule retries themselves
+- backend may return a terminal dead-lettered task state when the retry budget is exhausted; payload shapes stay unchanged
 
 ## Flow
 1. Worker sends a claim request with `workerId`, `workerRole`, and optional `whisperDevice`.
@@ -192,3 +194,4 @@ Returned by worker callback endpoints.
 - worker must execute exactly one claimed task payload at a time
 - worker must not invent follow-up tasks; backend owns orchestration and queue transitions
 - worker should remain idempotent across retries whenever practical
+- delayed availability and retry exhaustion are backend concerns, not transport concerns

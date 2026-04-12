@@ -55,13 +55,16 @@ States:
 - SUCCEEDED
 - FAILED
 - CANCELED
+- DEAD_LETTERED
 
 Rules:
 - only one active execution should own a claimed task at a time
 - `CLAIMED` means lease acquired but not yet advanced to active processing
 - `RUNNING` means progress/heartbeat has been observed for the active execution
-- terminal states are `SUCCEEDED`, `FAILED`, and `CANCELED`
-- recovery may move a stale task back to `QUEUED` if the active lease is no longer valid
+- terminal states are `SUCCEEDED`, `FAILED`, `CANCELED`, and `DEAD_LETTERED`
+- retryable failures may move a task back to `QUEUED` with a delayed `available_at`
+- recovery may move a stale task back to `QUEUED` if the active lease is no longer valid and the retry budget is not exhausted
+- exhausted tasks must enter `DEAD_LETTERED` instead of silently looping
 
 Typical flow:
 QUEUED
@@ -70,12 +73,15 @@ QUEUED
 -> SUCCEEDED
 
 Failure branches:
+- CLAIMED -> QUEUED
+- RUNNING -> QUEUED
 - CLAIMED -> FAILED
 - RUNNING -> FAILED
 - CLAIMED -> CANCELED
 - RUNNING -> CANCELED
-- CLAIMED -> QUEUED
-- RUNNING -> QUEUED
+- CLAIMED -> DEAD_LETTERED
+- RUNNING -> DEAD_LETTERED
+- QUEUED -> DEAD_LETTERED
 
 ## WorkerExecutionStatus
 `worker_execution` tracks one concrete attempt/lease instance for a task.

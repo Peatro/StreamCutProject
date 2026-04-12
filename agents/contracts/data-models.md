@@ -46,12 +46,17 @@ Fields:
 - task_type
 - status
 - candidate_id
+- attempt_count
+- max_attempts
+- available_at
 - created_at
 - updated_at
 - claimed_at
 - last_heartbeat_at
 - finished_at
 - failure_message
+- dead_lettered_at
+- dead_letter_reason
 
 Current task types:
 - DOWNLOAD
@@ -65,11 +70,17 @@ Current task statuses:
 - SUCCEEDED
 - FAILED
 - CANCELED
+- DEAD_LETTERED
 
 Notes:
 - one `vod_job` may produce multiple `worker_task` rows across its lifecycle
 - `EXPORT` tasks may target one `clip_candidate` through `candidate_id`
 - the active queue contract is task-centric even if some API names still include `job`
+- `attempt_count` tracks how many times the task has been claimed
+- `max_attempts` stores the retry budget for the task type as persisted metadata
+- `available_at` delays retry eligibility until the backoff window elapses
+- `dead_lettered_at` and `dead_letter_reason` capture exhausted retry termination
+- `DEAD_LETTERED` is terminal and should not be requeued automatically
 
 ## worker_execution
 Represents one concrete worker claim/attempt for a task.

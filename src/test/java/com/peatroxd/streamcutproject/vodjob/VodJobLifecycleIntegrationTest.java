@@ -171,9 +171,18 @@ class VodJobLifecycleIntegrationTest {
         job.setStatus(JobStatus.TRANSCRIBING);
         job.setCurrentWorkerId("worker-1");
         vodJobRepository.save(job);
+        WorkerTask processingTask = createRunningTask(
+                job,
+                WorkerTaskType.ANALYZE,
+                null,
+                Instant.parse("2026-04-05T10:00:00Z"),
+                Instant.parse("2026-04-05T10:00:30Z")
+        );
+        processingTask.setAttemptCount(3);
+        processingTask.setMaxAttempts(3);
         WorkerExecution processingExecution = workerExecutionRepository.save(WorkerExecution.create(
                 job,
-                null,
+                processingTask,
                 job.getProcessingVersion(),
                 "worker-1",
                 "processing",
@@ -189,7 +198,7 @@ class VodJobLifecycleIntegrationTest {
 
         VodJob failedJob = vodJobRepository.findById(job.getId()).orElseThrow();
         assertThat(failedJob.getStatus()).isEqualTo(JobStatus.FAILED);
-        assertThat(failedJob.getErrorMessage()).isEqualTo("TRANSCRIBING: transcription failed");
+        assertThat(failedJob.getErrorMessage()).contains("retry budget exhausted");
         assertThat(jobEventRepository.findAllByJobIdOrderByCreatedAtAscIdAsc(job.getId()))
                 .extracting(event -> event.getEventType())
                 .contains("JOB_FAILED");
