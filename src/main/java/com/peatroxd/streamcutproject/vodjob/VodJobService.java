@@ -253,10 +253,7 @@ public class VodJobService {
         requireJob(jobId);
         return clipCandidateRepository.findAllByJobIdOrderByScoreDescStartSecAscIdAsc(jobId)
                 .stream()
-                .map(candidate -> ClipCandidateMapper.toResponse(
-                        candidate,
-                        exportReady(candidate)
-                ))
+                .map(this::toCandidateResponse)
                 .toList();
     }
 
@@ -267,7 +264,7 @@ public class VodJobService {
         Page<ClipCandidate> candidatePage = findCandidatePage(jobId, pageNumber, pageSize);
         return new ClipCandidatePageResponse(
                 candidatePage.getContent().stream()
-                        .map(candidate -> ClipCandidateMapper.toResponse(candidate, exportReady(candidate)))
+                        .map(this::toCandidateResponse)
                         .toList(),
                 candidatePage.getNumber() + 1,
                 candidatePage.getSize(),
@@ -1411,10 +1408,7 @@ public class VodJobService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Candidate not found: " + candidateId));
         candidate.setModerationStatus(moderationStatus);
         ClipCandidate savedCandidate = clipCandidateRepository.save(candidate);
-        return ClipCandidateMapper.toResponse(
-                savedCandidate,
-                exportReady(savedCandidate)
-        );
+        return toCandidateResponse(savedCandidate);
     }
 
     private ClipCandidate requireCandidate(Long candidateId) {
@@ -1502,8 +1496,28 @@ public class VodJobService {
                 candidate.getExportStatus().name(),
                 artifactPath,
                 candidate.getModerationStatus().name(),
-                exportReady
+                exportReady,
+                resolvePreferredExportDownloadUrl(candidate.getId(), artifactPath, exportReady)
         );
+    }
+
+    private ClipCandidateResponse toCandidateResponse(ClipCandidate candidate) {
+        String artifactReference = resolveCurrentExportArtifactReference(candidate);
+        boolean exportReady = exportReady(candidate);
+        return ClipCandidateMapper.toResponse(
+                candidate,
+                exportReady,
+                resolvePreferredExportDownloadUrl(candidate.getId(), artifactReference, exportReady)
+        );
+    }
+
+    private String resolvePreferredExportDownloadUrl(Long candidateId, String artifactReference, boolean exportReady) {
+        if (!exportReady || artifactReference == null || artifactReference.isBlank()) {
+            return null;
+        }
+        return artifactStorageService.createSignedGetUri(artifactReference)
+                .map(java.net.URI::toString)
+                .orElseGet(() -> "/api/exports/" + candidateId + "/file");
     }
 
     private boolean exportReady(ClipCandidate candidate) {

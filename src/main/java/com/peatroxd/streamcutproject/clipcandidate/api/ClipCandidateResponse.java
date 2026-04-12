@@ -10,6 +10,7 @@ public record ClipCandidateResponse(
         String moderatorNote,
         String exportedClipPath,
         String exportStatus,
-        boolean exportReady
+        boolean exportReady,
+        String downloadUrl
 ) {
 }

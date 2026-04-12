@@ -157,7 +157,8 @@ public class S3ArtifactStorageService implements ArtifactStorageService {
                         .getObjectRequest(builder -> builder
                                 .bucket(parsed.bucket())
                                 .key(parsed.key())
-                                .responseContentType("video/mp4"))
+                                .responseContentType("video/mp4")
+                                .responseContentDisposition("attachment; filename=\"" + fileName(parsed.key()) + "\""))
                         .build()
         );
         return Optional.of(URI.create(request.url().toString()));

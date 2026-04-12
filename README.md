@@ -14,6 +14,7 @@ Release status: `v1.0.0`
 - Stores source material on a shared local storage root and exports in S3-compatible artifact storage.
 - Exposes health checks, worker diagnostics, and Prometheus metrics for operations.
 - Applies retention cleanup for old source files and exported artifacts.
+- Delivers completed export files through signed object-storage URLs when S3 mode is enabled, with backend file streaming kept only as a local fallback.
 
 ## End-To-End Flow
 
@@ -251,6 +252,14 @@ docker compose -f docker-compose.production.yml --env-file env.production up -d 
 ```
 
 By default the public entrypoint is the `edge` container on port `80`.
+
+## Artifact Delivery Model
+
+- Completed export artifacts use storage-backed delivery.
+- In `S3` mode, API responses expose a temporary signed `downloadUrl` and `GET /api/exports/{id}/file` redirects to that signed URL instead of proxy-streaming the clip through the backend.
+- In `LOCAL` mode, signed URLs are unavailable, so `downloadUrl` falls back to `/api/exports/{id}/file`.
+- The presigned URL TTL is controlled by `APP_ARTIFACT_STORAGE_PRESIGN_TTL` and defaults to `15m`.
+- Source video preview on the candidate-review page still uses `/api/jobs/{id}/source/stream` as an authenticated operator-only exception so clip windows can be reviewed against the original source material.
 
 ## API And UI Surface
 

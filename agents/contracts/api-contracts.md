@@ -72,6 +72,12 @@ Returns transcript segments for the job.
 ### GET /api/jobs/{id}/candidates
 Returns generated clip candidates.
 
+Candidate responses include:
+- `exportReady`: `true` only when the completed artifact exists in storage
+- `downloadUrl`: preferred operator download URL for a completed export artifact
+  - in `S3` mode this is a presigned object-storage URL
+  - in `LOCAL` mode this falls back to `/api/exports/{id}/file`
+
 ### POST /api/candidates/{id}/approve
 Approves a candidate.
 
@@ -84,6 +90,25 @@ Starts clip export.
 
 ### GET /api/exports/{id}
 Returns export status and artifact reference.
+
+Export status responses include:
+- `artifactPath`: current stored artifact reference or planned local export path
+- `downloadUrl`: preferred operator download URL when `exportReady=true`
+- `exportReady`: `true` only when the artifact exists and is retrievable
+
+### GET /api/exports/{id}/file
+Compatibility download endpoint for one completed export artifact.
+
+Behavior:
+- in `S3` mode it should redirect to a temporary presigned object-storage URL
+- in `LOCAL` mode it should stream the file from backend local storage
+
+### GET /api/jobs/{id}/source/stream
+Authenticated inline source preview endpoint for review-time operator playback.
+
+Notes:
+- this is an explicit exception to the signed-artifact delivery model
+- it exists for source preview during candidate review, not as the preferred long-term delivery path for large completed artifacts
 
 ## Internal Worker Transport
 

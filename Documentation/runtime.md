@@ -64,6 +64,7 @@ Backend:
 - `APP_ARTIFACT_STORAGE_ACCESS_KEY=minioadmin`
 - `APP_ARTIFACT_STORAGE_SECRET_KEY=minioadmin`
 - `APP_ARTIFACT_STORAGE_BUCKET=streamcut-artifacts`
+- `APP_ARTIFACT_STORAGE_PRESIGN_TTL=15m` by default for export download URLs
 
 Worker:
 - `APP_STORAGE_LOCAL_ROOT=/data/storage`
@@ -131,6 +132,18 @@ PostgreSQL:
 - `/health` stays public.
 - `/api/internal/worker/**` stays public for now so worker transport is not blocked in `TASK-055`; machine auth can be handled in `TASK-056`.
 - The static frontend sends `X-XSRF-TOKEN` on operator POST requests after bootstrapping the CSRF token from `/csrf`.
+
+## Artifact Delivery Contract
+- Completed export artifacts are delivered through storage-backed URLs, not backend media proxying, whenever artifact storage can issue signed GET URLs.
+- In `S3` mode:
+  - candidate/export API responses expose a temporary `downloadUrl`
+  - `GET /api/exports/{id}/file` acts as a compatibility endpoint and redirects to the signed object-storage URL
+  - the default signed URL lifetime is `15 minutes`, controlled by `APP_ARTIFACT_STORAGE_PRESIGN_TTL`
+- In `LOCAL` mode:
+  - signed URLs are unavailable
+  - the preferred `downloadUrl` falls back to `/api/exports/{id}/file`
+  - backend file streaming remains the expected local-runtime behavior
+- `/api/jobs/{id}/source/stream` remains an explicit authenticated exception for source preview during candidate review. It is not the preferred delivery model for completed export artifacts.
 
 ## Metrics Surface
 - Use `/actuator/metrics` to inspect the registered Micrometer names and drill into tagged series.

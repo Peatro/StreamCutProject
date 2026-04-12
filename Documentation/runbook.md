@@ -31,6 +31,7 @@
    - `processing-worker` produces transcripts, analysis windows, and clip candidates
    - operator reviews candidates in the UI and starts an export
    - `export-worker` exports the approved clip and writes the artifact to S3-compatible storage
+   - completed clip downloads are then served to the operator through temporary signed object-storage URLs when S3 mode is enabled
 
 ## 2. Starting The Service
 
@@ -235,6 +236,7 @@ docker compose -f docker-compose.production.yml --env-file env.production up -d 
 5. Change retention windows by setting `APP_RETENTION_SOURCE_RETENTION` and `APP_RETENTION_ARTIFACT_RETENTION`, then restart the backend so the new values are loaded.
 6. Change the schedule only if needed by setting `APP_RETENTION_CLEANUP_CRON` and `APP_RETENTION_CLEANUP_ZONE`, then restart the backend.
 7. Remember that export downloads stop working after artifact cleanup removes the stored artifact reference for an expired completed export.
+8. Signed download URLs are intentionally temporary. If an operator keeps a job page open beyond the presign TTL, refresh the page or request the export status again to obtain a fresh download URL.
 
 ## 9. Known Limitations And Risks
 

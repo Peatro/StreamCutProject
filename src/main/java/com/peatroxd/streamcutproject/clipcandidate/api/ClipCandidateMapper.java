@@ -7,7 +7,7 @@ public final class ClipCandidateMapper {
     private ClipCandidateMapper() {
     }
 
-    public static ClipCandidateResponse toResponse(ClipCandidate candidate, boolean exportReady) {
+    public static ClipCandidateResponse toResponse(ClipCandidate candidate, boolean exportReady, String downloadUrl) {
         String exportedClipPath = candidate.getExportedClipPath();
         return new ClipCandidateResponse(
                 candidate.getId(),
@@ -19,7 +19,8 @@ public final class ClipCandidateMapper {
                 candidate.getModeratorNote(),
                 exportedClipPath,
                 candidate.getExportStatus().name(),
-                exportReady
+                exportReady,
+                downloadUrl
         );
     }
 }

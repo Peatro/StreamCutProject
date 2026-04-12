@@ -20,6 +20,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 
+import java.net.URI;
 import java.nio.ByteBuffer;
 import java.nio.channels.SeekableByteChannel;
 import java.nio.file.Files;
@@ -61,8 +62,14 @@ public class ClipCandidateController {
     }
 
     @GetMapping("/api/exports/{id}/file")
-    public ResponseEntity<Resource> downloadExportArtifact(@PathVariable Long id) throws Exception {
+    public ResponseEntity<?> downloadExportArtifact(@PathVariable Long id) throws Exception {
         String reference = vodJobService.getExportArtifactReference(id);
+        java.util.Optional<URI> signedUri = artifactStorageService.createSignedGetUri(reference);
+        if (signedUri.isPresent()) {
+            return ResponseEntity.status(HttpStatus.FOUND)
+                    .location(signedUri.get())
+                    .build();
+        }
         ArtifactResource artifact = artifactStorageService.open(reference);
         InputStreamResource resource = new InputStreamResource(artifact.inputStream());
         return ResponseEntity.ok()

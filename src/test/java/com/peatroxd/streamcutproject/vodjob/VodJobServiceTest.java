@@ -677,6 +677,7 @@ class VodJobServiceTest {
         assertThat(candidates.get(0).id()).isEqualTo(22L);
         assertThat(candidates.get(0).moderationStatus()).isEqualTo("PENDING");
         assertThat(candidates.get(0).exportReady()).isFalse();
+        assertThat(candidates.get(0).downloadUrl()).isNull();
         assertThat(candidates.get(1).id()).isEqualTo(21L);
     }
 
@@ -702,7 +703,28 @@ class VodJobServiceTest {
 
         assertThat(candidates).hasSize(2);
         assertThat(candidates.get(0).exportReady()).isTrue();
+        assertThat(candidates.get(0).downloadUrl()).isEqualTo("/api/exports/22/file");
         assertThat(candidates.get(1).exportReady()).isFalse();
+    }
+
+    @Test
+    void listCandidatesPrefersSignedDownloadUrlWhenArtifactStorageProvidesIt() throws Exception {
+        VodJob job = buildJob(1L, "https://example.com/video", Instant.parse("2026-04-05T10:00:00Z"));
+        ClipCandidate candidate = ClipCandidate.create(job, 10.0, 20.0, 0.93, "ready");
+        candidate.setId(22L);
+        candidate.setExportedClipPath("s3://streamcut-artifacts/exports/jobs/1/candidate-22.mp4");
+        candidate.setExportStatus(ExportStatus.COMPLETED);
+
+        when(vodJobRepository.findById(1L)).thenReturn(java.util.Optional.of(job));
+        when(clipCandidateRepository.findAllByJobIdOrderByScoreDescStartSecAscIdAsc(1L)).thenReturn(List.of(candidate));
+        when(artifactStorageService.exists(candidate.getExportedClipPath())).thenReturn(true);
+        when(artifactStorageService.createSignedGetUri(candidate.getExportedClipPath()))
+                .thenReturn(java.util.Optional.of(java.net.URI.create("http://localhost:9000/signed/candidate-22.mp4")));
+
+        List<ClipCandidateResponse> candidates = vodJobService.listCandidates(1L);
+
+        assertThat(candidates).singleElement().extracting(ClipCandidateResponse::downloadUrl)
+                .isEqualTo("http://localhost:9000/signed/candidate-22.mp4");
     }
 
     @Test
@@ -838,6 +860,7 @@ class VodJobServiceTest {
         assertThat(response.status()).isEqualTo("IN_PROGRESS");
         assertThat(response.artifactPath()).isEqualTo("/var/lib/streamcut/jobs/1/exports/candidate-7.mp4");
         assertThat(response.exportReady()).isFalse();
+        assertThat(response.downloadUrl()).isNull();
         assertThat(job.getStatus()).isEqualTo(JobStatus.EXPORTING_CLIP);
         assertThat(candidate.getExportedClipPath()).isEqualTo("/var/lib/streamcut/jobs/1/exports/candidate-7.mp4");
         assertThat(candidate.getExportStatus()).isEqualTo(ExportStatus.IN_PROGRESS);
@@ -886,6 +909,28 @@ class VodJobServiceTest {
         assertThat(response.artifactPath()).isEqualTo("/var/lib/streamcut/jobs/1/exports/candidate-7.mp4");
         assertThat(response.moderationStatus()).isEqualTo("APPROVED");
         assertThat(response.exportReady()).isFalse();
+        assertThat(response.downloadUrl()).isNull();
+    }
+
+    @Test
+    void getExportStatusReturnsPreferredSignedDownloadUrlForCompletedArtifact() {
+        VodJob job = buildJob(1L, "https://example.com/video", Instant.parse("2026-04-05T10:00:00Z"));
+        ClipCandidate candidate = ClipCandidate.create(job, 5.0, 12.0, 0.91, "first");
+        candidate.setId(7L);
+        candidate.setModerationStatus(ModerationStatus.APPROVED);
+        candidate.setExportedClipPath("s3://streamcut-artifacts/exports/jobs/1/candidate-7.mp4");
+        candidate.setExportStatus(ExportStatus.COMPLETED);
+
+        when(clipCandidateRepository.findById(7L)).thenReturn(java.util.Optional.of(candidate));
+        when(artifactStorageService.exists(candidate.getExportedClipPath())).thenReturn(true);
+        when(artifactStorageService.createSignedGetUri(candidate.getExportedClipPath()))
+                .thenReturn(java.util.Optional.of(java.net.URI.create("http://localhost:9000/signed/candidate-7.mp4")));
+
+        ExportStatusResponse response = vodJobService.getExportStatus(7L);
+
+        assertThat(response.status()).isEqualTo("COMPLETED");
+        assertThat(response.exportReady()).isTrue();
+        assertThat(response.downloadUrl()).isEqualTo("http://localhost:9000/signed/candidate-7.mp4");
     }
 
     @Test

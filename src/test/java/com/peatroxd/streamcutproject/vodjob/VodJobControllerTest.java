@@ -270,7 +270,8 @@ class VodJobControllerTest {
                         null,
                         null,
                         "NOT_REQUESTED",
-                        false
+                        false,
+                        null
                 )
         ));
 
@@ -295,7 +296,8 @@ class VodJobControllerTest {
                         null,
                         null,
                         "NOT_REQUESTED",
-                        false
+                        false,
+                        null
                 )),
                 2,
                 20,
