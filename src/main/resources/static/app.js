@@ -569,8 +569,7 @@ ${renderJobFailureSummary(job)}
           }
           if (action === "download") {
             const exportReady = event.currentTarget.dataset.exportReady === "true";
-            const downloadUrl = event.currentTarget.dataset.downloadUrl || null;
-            await prepareCandidateDownload(candidateId, message, root, jobId, exportReady, downloadUrl);
+            await prepareCandidateDownload(candidateId, message, root, jobId, exportReady);
             return;
           }
           throw new Error("Unknown action.");
@@ -1308,14 +1307,14 @@ ${renderJobFailureSummary(job)}
               <div class="candidate-meta">
                 <span>${escapeHtml(candidate.moderatorNote || "No moderator note yet.")}</span>
                 <span>${candidate.exportReady
-                  ? `<a href="${escapeHtml(candidate.downloadUrl || fallbackExportDownloadUrl(candidate.id))}">Download clip</a>`
+                  ? `<a href="${escapeHtml(fallbackExportDownloadUrl(candidate.id))}">Download clip</a>`
                   : (candidate.exportStatus === "IN_PROGRESS" ? "Clip is being prepared" : "Click download to prepare the clip")}</span>
               </div>
               ${renderCandidateRuntimeState(candidate)}
               <div class="candidate-actions">
                 <button class="action-button action-button-approve" type="button" title="Approve candidate (A)" data-shortcut="A" data-candidate-action="approve" data-candidate-id="${escapeHtml(candidate.id)}" ${candidate.moderationStatus === "APPROVED" ? "disabled" : ""}>Approve</button>
                 <button class="action-button action-button-reject" type="button" title="Reject candidate (R)" data-shortcut="R" data-candidate-action="reject" data-candidate-id="${escapeHtml(candidate.id)}" ${candidate.moderationStatus === "REJECTED" ? "disabled" : ""}>Reject</button>
-                <button class="action-button action-button-export" type="button" title="${candidate.exportReady ? "Download the prepared clip" : "Prepare and download the clip"}" data-candidate-action="download" data-candidate-id="${escapeHtml(candidate.id)}" data-export-ready="${candidate.exportReady}" data-download-url="${escapeHtml(candidate.downloadUrl || "")}" ${candidate.exportStatus === "IN_PROGRESS" ? "disabled" : ""}>${candidate.exportReady ? "Download" : "Export & Download"}</button>
+                <button class="action-button action-button-export" type="button" title="${candidate.exportReady ? "Download the prepared clip" : "Prepare and download the clip"}" data-candidate-action="download" data-candidate-id="${escapeHtml(candidate.id)}" data-export-ready="${candidate.exportReady}" ${candidate.exportStatus === "IN_PROGRESS" ? "disabled" : ""}>${candidate.exportReady ? "Download" : "Export & Download"}</button>
               </div>
               <div class="candidate-message" data-candidate-message></div>
             </div>
@@ -1719,9 +1718,9 @@ ${renderJobFailureSummary(job)}
     window.location.href = downloadUrl || fallbackExportDownloadUrl(candidateId);
   }
 
-  async function prepareCandidateDownload(candidateId, message, root, jobId, exportReady, downloadUrl) {
+  async function prepareCandidateDownload(candidateId, message, root, jobId, exportReady) {
     if (exportReady) {
-      navigateToArtifact(downloadUrl, candidateId);
+      navigateToArtifact(null, candidateId);
       return;
     }
 
