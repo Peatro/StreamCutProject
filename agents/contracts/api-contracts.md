@@ -94,7 +94,7 @@ Request:
 ```json
 {
   "workerId": "string",
-  "workerRole": "DOWNLOAD_OR_PROCESSING",
+  "workerRole": "DOWNLOAD_OR_PROCESSING_OR_EXPORT",
   "whisperDevice": "cpu_or_cuda_or_null"
 }
 ```

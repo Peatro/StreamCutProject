@@ -34,14 +34,14 @@ Defines the backend <-> worker transport and payload contract for the current ta
 ```json
 {
   "workerId": "string",
-  "workerRole": "DOWNLOAD_OR_PROCESSING",
+  "workerRole": "DOWNLOAD_OR_PROCESSING_OR_EXPORT",
   "whisperDevice": "cpu_or_cuda_or_null"
 }
 ```
 
 - `whisperDevice` is optional.
 - processing workers may send it to report the transcription device used for the claimed execution.
-- download workers should omit it.
+- download and export workers should omit it.
 
 ## Claim Response Payload
 ```json
