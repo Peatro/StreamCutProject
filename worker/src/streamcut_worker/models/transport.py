@@ -14,6 +14,8 @@ class ClaimedJob:
     source_type: str
     video_path: Path | None
     source_url: str | None
+    video_reference: str | None = None
+    video_download_url: str | None = None
     candidate_id: int | None = None
     clip_start_sec: float | None = None
     clip_end_sec: float | None = None

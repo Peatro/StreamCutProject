@@ -174,6 +174,24 @@ class ClipCandidateControllerTest {
     }
 
     @Test
+    void downloadsWorkerSourceVideoThroughInternalEndpoint(@TempDir Path tempDir) throws Exception {
+        Path source = tempDir.resolve("source-video.mp4");
+        Files.writeString(source, "video");
+        when(vodJobService.getSourceVideoReference(anyLong())).thenReturn(source.toString());
+        when(artifactStorageService.createSignedGetUri(source.toString())).thenReturn(Optional.empty());
+        when(artifactStorageService.open(source.toString())).thenReturn(new ArtifactResource(
+                Files.newInputStream(source),
+                Files.size(source),
+                "video/mp4",
+                source.getFileName().toString()
+        ));
+
+        mockMvc.perform(get("/api/internal/worker/jobs/1/source/file"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Content-Disposition", "attachment; filename=\"source-video.mp4\""));
+    }
+
+    @Test
     void downloadsExportArtifact(@TempDir Path tempDir) throws Exception {
         Path artifact = tempDir.resolve("candidate-7.mp4");
         Files.writeString(artifact, "video");

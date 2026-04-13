@@ -64,6 +64,7 @@ public final class JobMapper {
                 job.getDurationSec(),
                 job.getLanguage(),
                 job.getStorageVideoPath(),
+                job.getSourceVideoReference(),
                 job.getStorageAudioPath(),
                 job.getProcessingVersion(),
                 job.getCurrentWorkerId(),

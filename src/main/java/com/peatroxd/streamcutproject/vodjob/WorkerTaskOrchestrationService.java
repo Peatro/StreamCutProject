@@ -1,5 +1,6 @@
 package com.peatroxd.streamcutproject.vodjob;
 
+import com.peatroxd.streamcutproject.storage.ArtifactStorageService;
 import com.peatroxd.streamcutproject.storage.PathSafety;
 import com.peatroxd.streamcutproject.storage.StorageProperties;
 import com.peatroxd.streamcutproject.workerexecution.WorkerExecutionProperties;
@@ -27,6 +28,7 @@ public class WorkerTaskOrchestrationService {
 
     private static final Logger log = LoggerFactory.getLogger(WorkerTaskOrchestrationService.class);
 
+    private final ArtifactStorageService artifactStorageService;
     private final StorageProperties storageProperties;
     private final WorkerExecutionProperties workerExecutionProperties;
     private final WorkerTaskRetryProperties workerTaskRetryProperties;
@@ -153,9 +155,23 @@ public class WorkerTaskOrchestrationService {
     }
 
     private boolean isAnalyzeSourceVideoReady(VodJob job, Long taskId) {
+        String sourceVideoReference = job.getSourceVideoReference();
+        if (sourceVideoReference != null && !sourceVideoReference.isBlank()) {
+            if (!artifactStorageService.exists(sourceVideoReference)) {
+                log.warn(
+                        "analysis_claim_deferred_missing_source_reference jobId={} taskId={} sourceVideoReference={}",
+                        job.getId(),
+                        taskId,
+                        sourceVideoReference
+                );
+                return false;
+            }
+            return true;
+        }
+
         String storageVideoPath = job.getStorageVideoPath();
         if (storageVideoPath == null || storageVideoPath.isBlank()) {
-            log.warn("analysis_claim_deferred_missing_video_path jobId={} taskId={}", job.getId(), taskId);
+            log.warn("analysis_claim_deferred_missing_source jobId={} taskId={}", job.getId(), taskId);
             return false;
         }
 

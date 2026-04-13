@@ -160,7 +160,7 @@ class WorkerJobRunner:
         )
 
     def _export(self, job: ClaimedJob, worker_id: str) -> WorkerExportCompletionPayload:
-        source_video_path = self._materialize_source(job)
+        source_video_path = self._materialize_existing_source(job)
         if job.candidate_id is None or job.clip_start_sec is None or job.clip_end_sec is None:
             raise WorkerJobRunnerError("EXPORTING_CLIP", f"Export job {job.job_id} is missing clip boundaries")
 
@@ -203,14 +203,18 @@ class WorkerJobRunner:
         on_yt_dlp_progress: Callable[[float], None] | None = None,
     ) -> Path:
         try:
-            return self.source_materializer.materialize(job, on_progress=on_yt_dlp_progress)
+            return self.source_materializer.materialize(job, on_progress=on_yt_dlp_progress, allow_origin_download=True)
         except SourceMaterializationError as exc:
             raise WorkerJobRunnerError(exc.failed_state, str(exc)) from exc
 
     def _resolve_analysis_source(self, job: ClaimedJob) -> Path:
-        if job.video_path is None:
-            raise WorkerJobRunnerError("EXTRACTING_AUDIO", f"Analyze job {job.job_id} is missing videoPath")
-        return job.video_path
+        return self._materialize_existing_source(job)
+
+    def _materialize_existing_source(self, job: ClaimedJob) -> Path:
+        try:
+            return self.source_materializer.materialize(job, allow_origin_download=False)
+        except SourceMaterializationError as exc:
+            raise WorkerJobRunnerError(exc.failed_state, str(exc)) from exc
 
     def _extract_audio(self, source_video_path: Path):
         try:

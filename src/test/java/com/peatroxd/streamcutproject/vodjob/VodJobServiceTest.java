@@ -129,6 +129,7 @@ class VodJobServiceTest {
         storageProperties.setLocalRoot(Path.of("/var/lib/streamcut"));
         workerExecutionProperties.setStaleTimeout(Duration.ofMinutes(2));
         workerTaskOrchestrationService = new WorkerTaskOrchestrationService(
+                artifactStorageService,
                 storageProperties,
                 workerExecutionProperties,
                 workerTaskRetryProperties,
@@ -231,6 +232,11 @@ class VodJobServiceTest {
         });
         when(storageService.storeSourceVideo(Mockito.eq(2L), Mockito.eq("video.mp4"), any()))
                 .thenReturn(Path.of("/var/lib/streamcut/jobs/2/source/video.mp4"));
+        when(artifactStorageService.storeSourceVideo(
+                Mockito.eq(2L),
+                Mockito.eq("video.mp4"),
+                Mockito.eq(Path.of("/var/lib/streamcut/jobs/2/source/video.mp4"))
+        )).thenReturn("s3://streamcut-artifacts/sources/jobs/2/source-video.mp4");
 
         MockMultipartFile file = new MockMultipartFile(
                 "file",
@@ -945,6 +951,8 @@ class VodJobServiceTest {
                 1L,
                 "ANALYZE",
                 "/var/lib/streamcut/jobs/1/source/video.mp4",
+                null,
+                null,
                 "URL",
                 "https://example.com/video",
                 null,
@@ -982,6 +990,8 @@ class VodJobServiceTest {
                 1L,
                 "ANALYZE",
                 "/var/lib/streamcut/jobs/1/source/video.mp4",
+                null,
+                null,
                 "URL",
                 "https://example.com/video",
                 null,
@@ -1037,6 +1047,8 @@ class VodJobServiceTest {
                 1L,
                 "ANALYZE",
                 "/var/lib/streamcut/jobs/1/source/video.mp4",
+                null,
+                null,
                 "URL",
                 "https://example.com/video",
                 null,
@@ -1086,6 +1098,8 @@ class VodJobServiceTest {
                 1L,
                 "ANALYZE",
                 "/var/lib/streamcut/jobs/2/source/ready.mp4",
+                null,
+                null,
                 "URL",
                 "https://example.com/ready",
                 null,
@@ -1128,6 +1142,8 @@ class VodJobServiceTest {
                 1L,
                 "ANALYZE",
                 videoPath.toString().replace('\\', '/'),
+                null,
+                null,
                 "URL",
                 "https://example.com/video",
                 null,
@@ -1181,6 +1197,8 @@ class VodJobServiceTest {
                 1L,
                 "ANALYZE",
                 readyVideoPath.toString().replace('\\', '/'),
+                null,
+                null,
                 "URL",
                 "https://example.com/ready",
                 null,
@@ -1228,6 +1246,8 @@ class VodJobServiceTest {
                 1L,
                 1L,
                 "EXPORT",
+                null,
+                null,
                 null,
                 "URL",
                 "https://example.com/video",
@@ -1408,7 +1428,7 @@ class VodJobServiceTest {
     }
 
     @Test
-    void ingestWorkerDownloadResultQueuesJobForProcessing() {
+    void ingestWorkerDownloadResultQueuesJobForProcessing() throws Exception {
         VodJob job = buildJob(1L, "https://example.com/video", Instant.parse("2026-04-05T10:00:00Z"));
         job.setStatus(JobStatus.DOWNLOADING);
         job.setCurrentWorkerId("download-worker-1");
@@ -1418,6 +1438,11 @@ class VodJobServiceTest {
         when(vodJobRepository.findById(1L)).thenReturn(java.util.Optional.of(job));
         when(workerExecutionRepository.findById(52L))
                 .thenReturn(java.util.Optional.of(buildExecution(job, task, "download-worker-1", WorkerTaskType.DOWNLOAD, 52L)));
+        when(artifactStorageService.storeSourceVideo(
+                Mockito.eq(1L),
+                Mockito.isNull(),
+                Mockito.eq(Path.of("/var/lib/streamcut/jobs/1/source/video.mp4"))
+        )).thenReturn("s3://streamcut-artifacts/sources/jobs/1/source-video.mp4");
         WorkerTransportAck ack = vodJobService.ingestWorkerDownloadResult(
                 new WorkerDownloadResultPayload(
                         52L,
@@ -1432,6 +1457,7 @@ class VodJobServiceTest {
         assertThat(ack.status()).isEqualTo("QUEUED_FOR_PROCESSING");
         assertThat(job.getStatus()).isEqualTo(JobStatus.QUEUED_FOR_PROCESSING);
         assertThat(job.getStorageVideoPath()).isEqualTo("/var/lib/streamcut/jobs/1/source/video.mp4");
+        assertThat(job.getSourceVideoReference()).isEqualTo("s3://streamcut-artifacts/sources/jobs/1/source-video.mp4");
         assertThat(job.getCurrentWorkerId()).isNull();
         verify(jobEventRepository).deleteAllByVodJobIdAndEventType(1L, "WORKER_PROGRESS");
         verify(workerExecutionRepository, Mockito.atLeastOnce()).save(any(WorkerExecution.class));

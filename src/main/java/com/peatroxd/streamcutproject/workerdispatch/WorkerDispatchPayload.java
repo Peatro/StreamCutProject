@@ -6,6 +6,8 @@ public record WorkerDispatchPayload(
         Long processingVersion,
         String taskType,
         String videoPath,
+        String videoReference,
+        String videoDownloadUrl,
         String sourceType,
         String sourceUrl,
         Long candidateId,

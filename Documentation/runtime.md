@@ -135,14 +135,20 @@ PostgreSQL:
 
 ## Artifact Delivery Contract
 - Completed export artifacts are delivered through storage-backed URLs, not backend media proxying, whenever artifact storage can issue signed GET URLs.
+- Source-video processing now also has an explicit durable contract:
+  - `vod_job.source_video_reference` is the backend-known durable source identifier
+  - workers may still reuse a local `storageVideoPath` scratch file when available
+  - workers can fall back to `GET /api/internal/worker/jobs/{id}/source/file` when local scratch is missing
 - In `S3` mode:
   - candidate/export API responses expose a temporary `downloadUrl`
   - `GET /api/exports/{id}/file` acts as a compatibility endpoint and redirects to the signed object-storage URL
+  - source-video references remain durable even after local scratch cleanup
   - the default signed URL lifetime is `15 minutes`, controlled by `APP_ARTIFACT_STORAGE_PRESIGN_TTL`
 - In `LOCAL` mode:
   - signed URLs are unavailable
   - the preferred `downloadUrl` falls back to `/api/exports/{id}/file`
   - backend file streaming remains the expected local-runtime behavior
+- Extracted audio and in-progress export files remain scratch-only runtime artifacts.
 - `/api/jobs/{id}/source/stream` remains an explicit authenticated exception for source preview during candidate review. It is not the preferred delivery model for completed export artifacts.
 
 ## Metrics Surface

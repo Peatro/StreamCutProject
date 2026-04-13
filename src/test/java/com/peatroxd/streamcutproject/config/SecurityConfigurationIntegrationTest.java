@@ -217,6 +217,8 @@ class SecurityConfigurationIntegrationTest {
                         2L,
                         "ANALYZE",
                         "/data/storage/jobs/7/source/video.mp4",
+                        "s3://streamcut-artifacts/sources/jobs/7/source-video.mp4",
+                        "/api/internal/worker/jobs/7/source/file",
                         "FILE",
                         null,
                         null,

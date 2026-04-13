@@ -51,6 +51,8 @@ Defines the backend <-> worker transport and payload contract for the current ta
   "processingVersion": 1,
   "taskType": "DOWNLOAD_OR_ANALYZE_OR_EXPORT",
   "videoPath": "string or null",
+  "videoReference": "string or null",
+  "videoDownloadUrl": "string or null",
   "sourceType": "URL_OR_FILE",
   "sourceUrl": "string or null",
   "candidateId": "number or null",
@@ -187,6 +189,9 @@ Returned by worker callback endpoints.
 - `executionId` must be echoed back unchanged from the claim payload
 - `processingVersion` must be echoed back unchanged from the claim payload so stale callbacks can be rejected safely
 - empty collections must be returned as empty arrays, not `null`
+- `videoReference` is the durable source identifier for re-materialization
+- `videoDownloadUrl` is the worker-safe fetch URL derived from the durable source identifier
+- `videoPath` is a scratch/local-path hint only and must not be treated as the durable contract
 - paths must reference artifacts visible to both backend and worker through the shared storage or object-storage contract
 - `taskType` must be `DOWNLOAD`, `ANALYZE`, or `EXPORT`
 - `videoPath` may be `null` before source materialization is complete

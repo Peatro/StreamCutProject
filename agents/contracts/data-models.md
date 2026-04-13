@@ -29,6 +29,7 @@ Fields:
 - duration_sec
 - language
 - storage_video_path
+- source_video_reference
 - storage_audio_path
 
 Notes:
@@ -36,6 +37,8 @@ Notes:
 - `vod_job.status` is a projection of task/execution progress for UI and operators.
 - claim/retry/recovery decisions are owned by the backend orchestration service, not by `vod_job` itself.
 - operator retry increments `processing_version` so stale worker callbacks can be rejected cleanly.
+- `source_video_reference` is the durable source-video identifier used by backend and workers.
+- `storage_video_path` and `storage_audio_path` are scratch/runtime details and may point to node-local files.
 
 ## worker_task
 Represents one backend-managed task in the execution queue.
@@ -199,7 +202,8 @@ Typical fields:
 
 Notes:
 - the current codebase still stores some artifact paths directly on aggregate entities
-- future work should converge on durable artifact references rather than path-only coupling
+- the current durable contract is explicit for source video and completed exports
+- extracted audio remains scratch-only and recreatable by design
 
 ## job_event
 Represents an audit/event log entry for a job lifecycle change.

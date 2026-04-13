@@ -20,6 +20,7 @@ class WorkerDispatchPayloadFactoryTest {
         job.setSourceType("URL");
         job.setSourceUrl("https://example.com/video");
         job.setStorageVideoPath("/var/lib/streamcut/jobs/42/source/video.mp4");
+        job.setSourceVideoReference("s3://streamcut-artifacts/sources/jobs/42/source-video.mp4");
         job.setStatus(JobStatus.NEW);
         job.setCreatedAt(Instant.parse("2026-04-05T10:00:00Z"));
         job.setUpdatedAt(Instant.parse("2026-04-05T10:00:00Z"));
@@ -30,19 +31,21 @@ class WorkerDispatchPayloadFactoryTest {
         assertThat(payload.jobId()).isEqualTo(42L);
         assertThat(payload.taskType()).isEqualTo("ANALYZE");
         assertThat(payload.videoPath()).isEqualTo("/var/lib/streamcut/jobs/42/source/video.mp4");
+        assertThat(payload.videoReference()).isEqualTo("s3://streamcut-artifacts/sources/jobs/42/source-video.mp4");
+        assertThat(payload.videoDownloadUrl()).isEqualTo("/api/internal/worker/jobs/42/source/file");
         assertThat(payload.sourceType()).isEqualTo("URL");
         assertThat(payload.sourceUrl()).isEqualTo("https://example.com/video");
     }
 
     @Test
-    void rejectsJobsWithoutStorageVideoPath() {
+    void rejectsJobsWithoutDurableSourceVideoReference() {
         VodJob job = new VodJob();
         job.setId(42L);
         job.setSourceType("FILE");
 
         assertThatThrownBy(() -> factory.fromAnalyzeJob(job, 100L))
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("has no storage video path");
+                .hasMessageContaining("has no durable source video reference");
     }
 
     @Test
@@ -58,6 +61,8 @@ class WorkerDispatchPayloadFactoryTest {
         assertThat(payload.jobId()).isEqualTo(42L);
         assertThat(payload.taskType()).isEqualTo("DOWNLOAD");
         assertThat(payload.videoPath()).isNull();
+        assertThat(payload.videoReference()).isNull();
+        assertThat(payload.videoDownloadUrl()).isNull();
         assertThat(payload.sourceUrl()).isEqualTo("https://example.com/video");
     }
 }

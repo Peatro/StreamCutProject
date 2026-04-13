@@ -95,17 +95,24 @@ class SourceMaterializer:
         self,
         job: ClaimedJob,
         on_progress: Callable[[float], None] | None = None,
+        *,
+        allow_origin_download: bool = True,
     ) -> Path:
+        if not allow_origin_download:
+            return self._materialize_durable_source(job)
+
         if job.source_type == "FILE":
+            if job.video_path is not None and job.video_path.exists():
+                return job.video_path
+            if job.video_download_url:
+                return self._download_from_durable_reference(job)
             if job.video_path is None:
                 raise SourceMaterializationError(
                     f"FILE job {job.job_id} is missing videoPath",
                 )
-            if not job.video_path.exists():
-                raise SourceMaterializationError(
-                    f"Input video does not exist: {job.video_path}",
-                )
-            return job.video_path
+            raise SourceMaterializationError(
+                f"Input video does not exist: {job.video_path}",
+            )
 
         if job.source_type == "URL":
             if not job.source_url:
@@ -116,6 +123,16 @@ class SourceMaterializer:
 
         raise SourceMaterializationError(
             f"Unsupported source type for job {job.job_id}: {job.source_type}",
+        )
+
+    def _materialize_durable_source(self, job: ClaimedJob) -> Path:
+        if job.video_path is not None and job.video_path.exists():
+            return job.video_path
+        if job.video_download_url:
+            return self._download_from_durable_reference(job)
+        raise SourceMaterializationError(
+            f"Job {job.job_id} is missing a durable source download URL",
+            failed_state="EXTRACTING_AUDIO",
         )
 
     def _materialize_url(
@@ -144,10 +161,42 @@ class SourceMaterializer:
 
         return target_path
 
+    def _download_from_durable_reference(self, job: ClaimedJob) -> Path:
+        assert job.video_download_url is not None
+        target_path = self._resolve_durable_download_path(job)
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+
+        if target_path.exists():
+            return target_path
+
+        try:
+            with request.urlopen(job.video_download_url) as response, target_path.open("wb") as output:
+                output.write(response.read())
+        except Exception as exc:
+            raise SourceMaterializationError(
+                f"source download failed for {job.video_download_url}: {exc}",
+                failed_state="EXTRACTING_AUDIO",
+            ) from exc
+
+        return target_path
+
     def _resolve_download_path(self, job: ClaimedJob) -> Path:
         parsed = parse.urlparse(job.source_url or "")
         suffix = Path(parsed.path).suffix or ".mp4"
         return self.storage_root / "jobs" / str(job.job_id) / "source" / f"source-video{suffix}"
+
+    def _resolve_durable_download_path(self, job: ClaimedJob) -> Path:
+        suffix = self._resolve_durable_suffix(job)
+        return self.storage_root / "jobs" / str(job.job_id) / "source" / f"source-video{suffix}"
+
+    def _resolve_durable_suffix(self, job: ClaimedJob) -> str:
+        for candidate in (job.video_reference, str(job.video_path) if job.video_path is not None else None):
+            if not candidate:
+                continue
+            suffix = Path(parse.urlparse(candidate).path).suffix
+            if suffix:
+                return suffix
+        return ".mp4"
 
     def _requires_platform_downloader(self, source_url: str) -> bool:
         hostname = (parse.urlparse(source_url).hostname or "").lower()

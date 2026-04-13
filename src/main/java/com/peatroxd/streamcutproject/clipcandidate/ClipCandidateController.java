@@ -61,9 +61,19 @@ public class ClipCandidateController {
         return buildInlineStreamResponse(sourceVideo, mediaType, sourceVideo.getFileName().toString(), headers);
     }
 
+    @GetMapping("/api/internal/worker/jobs/{id}/source/file")
+    public ResponseEntity<?> downloadWorkerSourceVideo(@PathVariable Long id) throws Exception {
+        String reference = vodJobService.getSourceVideoReference(id);
+        return buildArtifactDownloadResponse(reference, true);
+    }
+
     @GetMapping("/api/exports/{id}/file")
     public ResponseEntity<?> downloadExportArtifact(@PathVariable Long id) throws Exception {
         String reference = vodJobService.getExportArtifactReference(id);
+        return buildArtifactDownloadResponse(reference, true);
+    }
+
+    private ResponseEntity<?> buildArtifactDownloadResponse(String reference, boolean attachment) throws Exception {
         java.util.Optional<URI> signedUri = artifactStorageService.createSignedGetUri(reference);
         if (signedUri.isPresent()) {
             return ResponseEntity.status(HttpStatus.FOUND)
@@ -75,7 +85,10 @@ public class ClipCandidateController {
         return ResponseEntity.ok()
                 .contentType(MediaType.APPLICATION_OCTET_STREAM)
                 .contentLength(artifact.contentLength())
-                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + artifact.filename() + "\"")
+                .header(
+                        HttpHeaders.CONTENT_DISPOSITION,
+                        (attachment ? "attachment" : "inline") + "; filename=\"" + artifact.filename() + "\""
+                )
                 .body(resource);
     }
 

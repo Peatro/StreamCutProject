@@ -176,8 +176,9 @@ ${renderJobFailureSummary(job)}
               ${infoItem("Language", job.language || "n/a")}
               ${infoItem("Started", formatRelativeDateTime(job.startedAt))}
               ${infoItem("Finished", formatRelativeDateTime(job.finishedAt))}
-              ${infoItem("Storage Video Path", job.storageVideoPath || "n/a")}
-              ${infoItem("Storage Audio Path", job.storageAudioPath || "n/a")}
+              ${infoItem("Source Video Reference", job.sourceVideoReference || "n/a")}
+              ${infoItem("Local Source Path", job.storageVideoPath || "n/a")}
+              ${infoItem("Local Audio Path", job.storageAudioPath || "n/a")}
               ${infoItem("Error", job.errorMessage || "none")}
             </div>
           </section>

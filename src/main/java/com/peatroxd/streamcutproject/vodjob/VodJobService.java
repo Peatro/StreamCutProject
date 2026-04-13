@@ -182,6 +182,7 @@ public class VodJobService {
                     storageService.storeSourceVideo(savedJob.getId(), file.getOriginalFilename(), inputStream).toString()
             );
             savedJob.setStorageVideoPath(storageVideoPath);
+            persistSourceVideoReference(savedJob, Path.of(storageVideoPath), file.getOriginalFilename());
         } catch (IOException ex) {
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Failed to store uploaded file", ex);
         }
@@ -435,6 +436,7 @@ public class VodJobService {
 
         deleteLocalFileIfPresent(jobId, job.getStorageVideoPath(), "source video");
         deleteLocalFileIfPresent(jobId, job.getStorageAudioPath(), "audio");
+        deleteArtifactReferenceIfDistinct(jobId, job.getSourceVideoReference(), job.getStorageVideoPath(), "source video");
 
         workerExecutionRepository.deleteAllByVodJobId(jobId);
         workerTaskRepository.deleteAllByVodJobId(jobId);
@@ -528,6 +530,19 @@ public class VodJobService {
             throw new ResponseStatusException(
                     HttpStatus.NOT_FOUND,
                     "Export artifact not found for candidate: " + exportId
+            );
+        }
+        return reference;
+    }
+
+    @Transactional(readOnly = true)
+    public String getSourceVideoReference(Long jobId) {
+        VodJob job = requireJob(jobId);
+        String reference = resolveSourceVideoReference(job);
+        if (reference == null || reference.isBlank()) {
+            throw new ResponseStatusException(
+                    HttpStatus.NOT_FOUND,
+                    "Source video is not ready for job: " + jobId
             );
         }
         return reference;
@@ -861,6 +876,7 @@ public class VodJobService {
 
         Instant now = Instant.now();
         job.setStorageVideoPath(normalizeWorkerPath(payload.videoPath(), "worker download video path"));
+        persistSourceVideoReference(job, Path.of(job.getStorageVideoPath()), job.getOriginalFilename());
         workerTaskOrchestrationService.queueTaskForRetry(job, WorkerTaskType.ANALYZE, now, "Source video is ready and queued for processing");
         job.setErrorMessage(null);
         execution.setStatus(WorkerExecutionStatus.SUCCEEDED);
@@ -1435,8 +1451,31 @@ public class VodJobService {
         return normalizeArtifactPath(candidate.getExportedClipPath());
     }
 
+    private String resolveSourceVideoReference(VodJob job) {
+        if (job.getSourceVideoReference() != null && !job.getSourceVideoReference().isBlank()) {
+            return normalizeArtifactPath(job.getSourceVideoReference());
+        }
+        if (job.getStorageVideoPath() != null && !job.getStorageVideoPath().isBlank()) {
+            return normalizeArtifactPath(job.getStorageVideoPath());
+        }
+        return null;
+    }
+
     private static String normalizeArtifactPath(String path) {
         return path.replace('\\', '/');
+    }
+
+    private void persistSourceVideoReference(VodJob job, Path localSourceVideoPath, String originalFilename) {
+        try {
+            String storedReference = artifactStorageService.storeSourceVideo(job.getId(), originalFilename, localSourceVideoPath);
+            job.setSourceVideoReference(normalizeArtifactPath(storedReference));
+        } catch (IOException ex) {
+            throw new ResponseStatusException(
+                    HttpStatus.INTERNAL_SERVER_ERROR,
+                    "Failed to persist source video artifact",
+                    ex
+            );
+        }
     }
 
     private void deleteLocalFileIfPresent(Long jobId, String storedPath, String description) {
@@ -1452,6 +1491,30 @@ public class VodJobService {
             Files.deleteIfExists(resolved);
         } catch (InvalidPathException | IOException ex) {
             log.warn("job_delete_{}_failed jobId={} path={} message={}", description.replace(' ', '_'), jobId, storedPath, ex.getMessage());
+        }
+    }
+
+    private void deleteArtifactReferenceIfDistinct(Long jobId, String reference, String localPath, String description) {
+        if (reference == null || reference.isBlank()) {
+            return;
+        }
+        String normalizedReference = normalizeArtifactPath(reference);
+        String normalizedLocalPath = localPath == null || localPath.isBlank()
+                ? null
+                : normalizeArtifactPath(localPath);
+        if (normalizedReference.equals(normalizedLocalPath)) {
+            return;
+        }
+        try {
+            artifactStorageService.delete(reference);
+        } catch (IOException ex) {
+            log.warn(
+                    "job_delete_{}_reference_failed jobId={} reference={} message={}",
+                    description.replace(' ', '_'),
+                    jobId,
+                    reference,
+                    ex.getMessage()
+            );
         }
     }
 

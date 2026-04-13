@@ -11,7 +11,7 @@ Release status: `v1.0.0`
 - Provides a browser UI for job submission, job monitoring, candidate review, and export management.
 - Runs download and processing work asynchronously through dedicated workers.
 - Stores job state, task state, events, transcripts, silence segments, analysis windows, and clip candidates in PostgreSQL.
-- Stores source material on a shared local storage root and exports in S3-compatible artifact storage.
+- Stores durable source/export references in artifact storage while keeping local disk as scratch/cache for media processing.
 - Exposes health checks, worker diagnostics, and Prometheus metrics for operations.
 - Applies retention cleanup for old source files and exported artifacts.
 - Delivers completed export files through signed object-storage URLs when S3 mode is enabled, with backend file streaming kept only as a local fallback.
@@ -20,7 +20,7 @@ Release status: `v1.0.0`
 
 1. An operator signs in and submits a VOD URL or uploads a local video.
 2. The backend creates a job and queues a download task.
-3. The `download-worker` fetches the source video into the shared storage root.
+3. The `download-worker` materializes the source video and the backend persists a durable source reference.
 4. The backend queues processing work.
 5. The `processing-worker` extracts audio, transcribes speech, detects silence, analyzes windows, and generates non-overlapping clip candidates.
 6. The operator reviews candidates in the UI and approves, rejects, or exports clips.
@@ -32,12 +32,12 @@ Release status: `v1.0.0`
 Operator Browser
   -> Spring Boot backend
      -> PostgreSQL (jobs, tasks, events, candidates, transcripts)
-     -> shared local storage root (source video, audio, working files)
-     -> S3-compatible artifact storage (exported clips)
+     -> shared local storage root (scratch source, audio, working files)
+     -> S3-compatible artifact storage (durable source references, exported clips)
 
 download-worker
   -> claims DOWNLOAD work from backend
-  -> writes source video to shared storage
+  -> materializes origin media into local scratch
 
 processing-worker
   -> claims ANALYZE work from backend
@@ -53,7 +53,7 @@ export-worker
 - `backend`
   Spring Boot 4 application that serves the UI, API, authentication, Liquibase migrations, health endpoints, metrics, retention cleanup, and worker coordination.
 - `download-worker`
-  Python worker that materializes source videos from submitted URLs.
+  Python worker that materializes source videos from submitted URLs or uploaded-file references.
 - `processing-worker`
   Python worker that runs transcription, silence detection, and candidate analysis.
 - `export-worker`

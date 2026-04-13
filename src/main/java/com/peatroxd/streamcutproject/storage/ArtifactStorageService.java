@@ -7,6 +7,8 @@ import java.util.Optional;
 
 public interface ArtifactStorageService {
 
+    String storeSourceVideo(long jobId, String originalFilename, Path localArtifactPath) throws IOException;
+
     String storeCompletedExport(long jobId, long candidateId, Path localArtifactPath) throws IOException;
 
     boolean exists(String reference);

@@ -42,6 +42,8 @@ class WorkerClaimControllerTest {
                         3L,
                         "ANALYZE",
                         "/data/storage/jobs/7/source/video.mp4",
+                        "s3://streamcut-artifacts/sources/jobs/7/source-video.mp4",
+                        "/api/internal/worker/jobs/7/source/file",
                         "FILE",
                         null,
                         null,
@@ -67,6 +69,8 @@ class WorkerClaimControllerTest {
                 .andExpect(jsonPath("$.processingVersion").value(3))
                 .andExpect(jsonPath("$.taskType").value("ANALYZE"))
                 .andExpect(jsonPath("$.videoPath").value("/data/storage/jobs/7/source/video.mp4"))
+                .andExpect(jsonPath("$.videoReference").value("s3://streamcut-artifacts/sources/jobs/7/source-video.mp4"))
+                .andExpect(jsonPath("$.videoDownloadUrl").value("/api/internal/worker/jobs/7/source/file"))
                 .andExpect(jsonPath("$.sourceType").value("FILE"));
 
         verify(vodJobService).claimNextQueuedJob("worker-1", "processing", "cuda");

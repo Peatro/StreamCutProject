@@ -164,6 +164,9 @@ public class RetentionCleanupService {
             boolean existed = Files.exists(resolvedPath);
             Files.deleteIfExists(resolvedPath);
             currentJob.setStorageVideoPath(null);
+            if (sourceReferenceBackedByLocalPath(currentJob.getSourceVideoReference(), resolvedPath)) {
+                currentJob.setSourceVideoReference(null);
+            }
             vodJobRepository.save(currentJob);
             jobEventRepository.save(JobEvent.create(
                     currentJob,
@@ -287,5 +290,14 @@ public class RetentionCleanupService {
         }
         return "Retention cleanup found the export artifact already missing for candidate " + candidateId
                 + " and cleared the stored reference";
+    }
+
+    private boolean sourceReferenceBackedByLocalPath(String reference, Path resolvedPath) {
+        if (reference == null || reference.isBlank()) {
+            return false;
+        }
+        return artifactStorageService.resolveLocalPath(reference)
+                .map(path -> path.normalize().equals(resolvedPath.normalize()))
+                .orElse(false);
     }
 }
