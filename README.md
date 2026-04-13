@@ -248,7 +248,7 @@ It expects these dependencies to be provided externally:
 
 ```bash
 cp env.production.example env.production
-docker compose -f docker-compose.production.yml --env-file env.production up -d --build
+docker compose -f compose.streamcut.yml --env-file env.production up -d --build
 ```
 
 By default the public entrypoint is the `edge` container on port `80`.

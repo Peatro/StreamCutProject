@@ -12,7 +12,7 @@ docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build
 
 ## Production Package
 ```bash
-docker compose -f docker-compose.production.yml --env-file env.production up --build -d
+docker compose -f compose.streamcut.yml --env-file env.production up --build -d
 ```
 
 ## Services
