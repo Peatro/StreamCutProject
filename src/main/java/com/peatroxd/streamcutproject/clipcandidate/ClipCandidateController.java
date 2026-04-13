@@ -20,6 +20,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 
+import java.net.URI;
 import java.nio.ByteBuffer;
 import java.nio.channels.SeekableByteChannel;
 import java.nio.file.Files;
@@ -60,15 +61,34 @@ public class ClipCandidateController {
         return buildInlineStreamResponse(sourceVideo, mediaType, sourceVideo.getFileName().toString(), headers);
     }
 
+    @GetMapping("/api/internal/worker/jobs/{id}/source/file")
+    public ResponseEntity<?> downloadWorkerSourceVideo(@PathVariable Long id) throws Exception {
+        String reference = vodJobService.getSourceVideoReference(id);
+        return buildArtifactDownloadResponse(reference, true);
+    }
+
     @GetMapping("/api/exports/{id}/file")
-    public ResponseEntity<Resource> downloadExportArtifact(@PathVariable Long id) throws Exception {
+    public ResponseEntity<?> downloadExportArtifact(@PathVariable Long id) throws Exception {
         String reference = vodJobService.getExportArtifactReference(id);
+        return buildArtifactDownloadResponse(reference, true);
+    }
+
+    private ResponseEntity<?> buildArtifactDownloadResponse(String reference, boolean attachment) throws Exception {
+        java.util.Optional<URI> signedUri = artifactStorageService.createSignedGetUri(reference);
+        if (signedUri.isPresent()) {
+            return ResponseEntity.status(HttpStatus.FOUND)
+                    .location(signedUri.get())
+                    .build();
+        }
         ArtifactResource artifact = artifactStorageService.open(reference);
         InputStreamResource resource = new InputStreamResource(artifact.inputStream());
         return ResponseEntity.ok()
                 .contentType(MediaType.APPLICATION_OCTET_STREAM)
                 .contentLength(artifact.contentLength())
-                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + artifact.filename() + "\"")
+                .header(
+                        HttpHeaders.CONTENT_DISPOSITION,
+                        (attachment ? "attachment" : "inline") + "; filename=\"" + artifact.filename() + "\""
+                )
                 .body(resource);
     }
 

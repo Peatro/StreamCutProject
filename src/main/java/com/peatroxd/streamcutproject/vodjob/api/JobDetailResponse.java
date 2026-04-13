@@ -16,6 +16,7 @@ public record JobDetailResponse(
         Long durationSec,
         String language,
         String storageVideoPath,
+        String sourceVideoReference,
         String storageAudioPath,
         Long processingVersion,
         String currentWorkerId,

@@ -14,6 +14,11 @@ import java.util.Optional;
 public class LocalArtifactStorageService implements ArtifactStorageService {
 
     @Override
+    public String storeSourceVideo(long jobId, String originalFilename, Path localArtifactPath) {
+        return normalizeReference(localArtifactPath);
+    }
+
+    @Override
     public String storeCompletedExport(long jobId, long candidateId, Path localArtifactPath) {
         return normalizeReference(localArtifactPath);
     }

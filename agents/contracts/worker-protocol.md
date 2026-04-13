@@ -17,6 +17,8 @@ Defines the backend <-> worker transport and payload contract for the current ta
 - `processingVersion` is the lease/version guard and must be echoed back unchanged
 - `taskType` identifies the concrete work unit: `DOWNLOAD`, `ANALYZE`, or `EXPORT`
 - backend remains the source of truth for orchestration, ownership, and acceptance of callbacks
+- backend may defer claims for retrying tasks until their `availableAt` time; workers never schedule retries themselves
+- backend may return a terminal dead-lettered task state when the retry budget is exhausted; payload shapes stay unchanged
 
 ## Flow
 1. Worker sends a claim request with `workerId`, `workerRole`, and optional `whisperDevice`.
@@ -32,14 +34,14 @@ Defines the backend <-> worker transport and payload contract for the current ta
 ```json
 {
   "workerId": "string",
-  "workerRole": "DOWNLOAD_OR_PROCESSING",
+  "workerRole": "DOWNLOAD_OR_PROCESSING_OR_EXPORT",
   "whisperDevice": "cpu_or_cuda_or_null"
 }
 ```
 
 - `whisperDevice` is optional.
 - processing workers may send it to report the transcription device used for the claimed execution.
-- download workers should omit it.
+- download and export workers should omit it.
 
 ## Claim Response Payload
 ```json
@@ -49,6 +51,8 @@ Defines the backend <-> worker transport and payload contract for the current ta
   "processingVersion": 1,
   "taskType": "DOWNLOAD_OR_ANALYZE_OR_EXPORT",
   "videoPath": "string or null",
+  "videoReference": "string or null",
+  "videoDownloadUrl": "string or null",
   "sourceType": "URL_OR_FILE",
   "sourceUrl": "string or null",
   "candidateId": "number or null",
@@ -185,6 +189,9 @@ Returned by worker callback endpoints.
 - `executionId` must be echoed back unchanged from the claim payload
 - `processingVersion` must be echoed back unchanged from the claim payload so stale callbacks can be rejected safely
 - empty collections must be returned as empty arrays, not `null`
+- `videoReference` is the durable source identifier for re-materialization
+- `videoDownloadUrl` is the worker-safe fetch URL derived from the durable source identifier
+- `videoPath` is a scratch/local-path hint only and must not be treated as the durable contract
 - paths must reference artifacts visible to both backend and worker through the shared storage or object-storage contract
 - `taskType` must be `DOWNLOAD`, `ANALYZE`, or `EXPORT`
 - `videoPath` may be `null` before source materialization is complete
@@ -192,3 +199,4 @@ Returned by worker callback endpoints.
 - worker must execute exactly one claimed task payload at a time
 - worker must not invent follow-up tasks; backend owns orchestration and queue transitions
 - worker should remain idempotent across retries whenever practical
+- delayed availability and retry exhaustion are backend concerns, not transport concerns

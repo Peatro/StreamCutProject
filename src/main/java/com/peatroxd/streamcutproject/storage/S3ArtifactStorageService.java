@@ -67,6 +67,24 @@ public class S3ArtifactStorageService implements ArtifactStorageService {
     }
 
     @Override
+    public String storeSourceVideo(long jobId, String originalFilename, Path localArtifactPath) throws IOException {
+        if (!Files.exists(localArtifactPath)) {
+            throw new IOException("Local source video does not exist: " + localArtifactPath);
+        }
+
+        String key = "sources/jobs/" + jobId + "/source-video" + extension(localArtifactPath);
+        s3Client.putObject(
+                PutObjectRequest.builder()
+                        .bucket(properties.getBucket())
+                        .key(key)
+                        .contentType("video/mp4")
+                        .build(),
+                RequestBody.fromFile(localArtifactPath)
+        );
+        return SCHEME + "://" + properties.getBucket() + "/" + key;
+    }
+
+    @Override
     public String storeCompletedExport(long jobId, long candidateId, Path localArtifactPath) throws IOException {
         if (!Files.exists(localArtifactPath)) {
             throw new IOException("Local artifact does not exist: " + localArtifactPath);
@@ -157,7 +175,8 @@ public class S3ArtifactStorageService implements ArtifactStorageService {
                         .getObjectRequest(builder -> builder
                                 .bucket(parsed.bucket())
                                 .key(parsed.key())
-                                .responseContentType("video/mp4"))
+                                .responseContentType("video/mp4")
+                                .responseContentDisposition("attachment; filename=\"" + fileName(parsed.key()) + "\""))
                         .build()
         );
         return Optional.of(URI.create(request.url().toString()));

@@ -100,6 +100,22 @@ services:
       - streamcut-data:/data
       - streamcut-hf-cache:/model-cache
 
+  export-worker:
+    build:
+      context: ./worker
+      dockerfile: Dockerfile
+    environment:
+      BACKEND_BASE_URL: http://backend:8080
+      APP_STORAGE_LOCAL_ROOT: /data/storage
+      WORKER_ID: export-worker-1
+      WORKER_ROLE: export
+      PYTHONUNBUFFERED: "1"
+    depends_on:
+      backend:
+        condition: service_healthy
+    volumes:
+      - streamcut-data:/data
+
 volumes:
   streamcut-postgres:
   streamcut-data:

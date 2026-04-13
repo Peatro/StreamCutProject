@@ -1,0 +1,36 @@
+databaseChangeLog:
+  - changeSet:
+      id: 013-add-worker-task-retry-metadata
+      author: codex
+      comment: Add retry and dead-letter metadata to worker_task and index task availability for queue polling.
+      changes:
+        - addColumn:
+            tableName: worker_task
+            columns:
+              - column:
+                  name: attempt_count
+                  type: INT
+              - column:
+                  name: max_attempts
+                  type: INT
+              - column:
+                  name: available_at
+                  type: TIMESTAMP
+              - column:
+                  name: dead_lettered_at
+                  type: TIMESTAMP
+              - column:
+                  name: dead_letter_reason
+                  type: VARCHAR(1000)
+        - createIndex:
+            tableName: worker_task
+            indexName: idx_worker_task_claim_lookup
+            columns:
+              - column:
+                  name: task_type
+              - column:
+                  name: status
+              - column:
+                  name: available_at
+              - column:
+                  name: id

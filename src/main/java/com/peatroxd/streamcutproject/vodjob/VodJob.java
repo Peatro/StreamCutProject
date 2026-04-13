@@ -63,6 +63,9 @@ public class VodJob {
     @Column(name = "storage_video_path", length = 512)
     private String storageVideoPath;
 
+    @Column(name = "source_video_reference", length = 1024)
+    private String sourceVideoReference;
+
     @Column(name = "storage_audio_path", length = 512)
     private String storageAudioPath;
 

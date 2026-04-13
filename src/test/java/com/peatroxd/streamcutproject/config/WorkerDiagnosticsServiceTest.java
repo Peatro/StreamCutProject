@@ -64,9 +64,11 @@ class WorkerDiagnosticsServiceTest {
         assertThat(snapshot.staleTimeoutsSec()).containsEntry(WorkerTaskType.ANALYZE, 1200L);
         assertThat(snapshot.staleTimeoutsSec()).containsEntry(WorkerTaskType.EXPORT, 120L);
         assertThat(snapshot.roles().get("download").queued()).isEqualTo(1);
-        assertThat(snapshot.roles().get("processing").running()).isEqualTo(2);
-        assertThat(snapshot.roles().get("processing").stale()).isEqualTo(1);
+        assertThat(snapshot.roles().get("processing").running()).isEqualTo(1);
+        assertThat(snapshot.roles().get("processing").stale()).isEqualTo(0);
         assertThat(snapshot.roles().get("processing").activeByTaskType()).containsEntry(WorkerTaskType.ANALYZE, 1);
-        assertThat(snapshot.roles().get("processing").activeByTaskType()).containsEntry(WorkerTaskType.EXPORT, 1);
+        assertThat(snapshot.roles().get("export").running()).isEqualTo(1);
+        assertThat(snapshot.roles().get("export").stale()).isEqualTo(1);
+        assertThat(snapshot.roles().get("export").activeByTaskType()).containsEntry(WorkerTaskType.EXPORT, 1);
     }
 }

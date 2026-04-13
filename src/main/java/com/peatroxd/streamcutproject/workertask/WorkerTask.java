@@ -49,6 +49,15 @@ public class WorkerTask {
     @Column(name = "candidate_id")
     private Long candidateId;
 
+    @Column(name = "attempt_count")
+    private Integer attemptCount;
+
+    @Column(name = "max_attempts")
+    private Integer maxAttempts;
+
+    @Column(name = "available_at")
+    private Instant availableAt;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -67,6 +76,12 @@ public class WorkerTask {
     @Column(name = "failure_message", length = 1000)
     private String failureMessage;
 
+    @Column(name = "dead_lettered_at")
+    private Instant deadLetteredAt;
+
+    @Column(name = "dead_letter_reason", length = 1000)
+    private String deadLetterReason;
+
     public static WorkerTask createQueued(
             VodJob vodJob,
             Long processingVersion,
@@ -80,6 +95,8 @@ public class WorkerTask {
         task.setTaskType(taskType);
         task.setCandidateId(candidateId);
         task.setStatus(WorkerTaskStatus.QUEUED);
+        task.setAttemptCount(0);
+        task.setAvailableAt(now);
         task.setCreatedAt(now);
         task.setUpdatedAt(now);
         return task;
@@ -87,11 +104,15 @@ public class WorkerTask {
 
     public void markClaimed(Instant now) {
         this.status = WorkerTaskStatus.CLAIMED;
+        this.attemptCount = getAttemptCountOrZero() + 1;
         this.claimedAt = now;
         this.lastHeartbeatAt = now;
         this.updatedAt = now;
         this.finishedAt = null;
         this.failureMessage = null;
+        this.availableAt = null;
+        this.deadLetteredAt = null;
+        this.deadLetterReason = null;
     }
 
     public void markRunning(Instant now) {
@@ -106,6 +127,22 @@ public class WorkerTask {
         this.claimedAt = null;
         this.lastHeartbeatAt = null;
         this.finishedAt = null;
+        this.availableAt = now;
+        this.failureMessage = null;
+        this.deadLetteredAt = null;
+        this.deadLetterReason = null;
+    }
+
+    public void markQueuedForRetry(Instant now, Instant availableAt, String failureMessage) {
+        this.status = WorkerTaskStatus.QUEUED;
+        this.updatedAt = now;
+        this.claimedAt = null;
+        this.lastHeartbeatAt = null;
+        this.finishedAt = null;
+        this.availableAt = availableAt;
+        this.failureMessage = failureMessage;
+        this.deadLetteredAt = null;
+        this.deadLetterReason = null;
     }
 
     public void markSucceeded(Instant now) {
@@ -114,6 +151,9 @@ public class WorkerTask {
         this.lastHeartbeatAt = now;
         this.finishedAt = now;
         this.failureMessage = null;
+        this.availableAt = null;
+        this.deadLetteredAt = null;
+        this.deadLetterReason = null;
     }
 
     public void markFailed(Instant now, String failureMessage) {
@@ -122,6 +162,9 @@ public class WorkerTask {
         this.lastHeartbeatAt = now;
         this.finishedAt = now;
         this.failureMessage = failureMessage;
+        this.availableAt = null;
+        this.deadLetteredAt = null;
+        this.deadLetterReason = null;
     }
 
     public void markCanceled(Instant now, String failureMessage) {
@@ -130,5 +173,23 @@ public class WorkerTask {
         this.lastHeartbeatAt = now;
         this.finishedAt = now;
         this.failureMessage = failureMessage;
+        this.availableAt = null;
+        this.deadLetteredAt = null;
+        this.deadLetterReason = null;
+    }
+
+    public void markDeadLettered(Instant now, String failureMessage, String deadLetterReason) {
+        this.status = WorkerTaskStatus.DEAD_LETTERED;
+        this.updatedAt = now;
+        this.lastHeartbeatAt = now;
+        this.finishedAt = now;
+        this.failureMessage = failureMessage;
+        this.availableAt = null;
+        this.deadLetteredAt = now;
+        this.deadLetterReason = deadLetterReason;
+    }
+
+    public int getAttemptCountOrZero() {
+        return attemptCount == null ? 0 : attemptCount;
     }
 }

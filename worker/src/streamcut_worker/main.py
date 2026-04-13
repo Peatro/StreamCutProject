@@ -7,6 +7,8 @@ from streamcut_worker.pipeline import WorkerPollingLoop, create_default_job_runn
 from streamcut_worker.services import BackendClient
 
 _running = True
+MODEL_LOADING_ROLES = {"processing"}
+SUPPORTED_WORKER_ROLES = {"download", "processing", "export"}
 
 
 def _request_shutdown(signum: int, _frame: object) -> None:
@@ -34,10 +36,12 @@ def main() -> None:
     whisper_device = os.getenv("WHISPER_DEVICE", "cpu").strip().lower() or "cpu"
     whisper_compute_type = os.getenv("WHISPER_COMPUTE_TYPE", "int8").strip() or "int8"
 
-    if worker_role not in {"download", "processing"}:
-        raise ValueError("WORKER_ROLE must be 'download' or 'processing'")
+    if worker_role not in SUPPORTED_WORKER_ROLES:
+        raise ValueError("WORKER_ROLE must be 'download', 'processing', or 'export'")
 
-    if worker_role == "processing":
+    loads_transcription_model = worker_role in MODEL_LOADING_ROLES
+
+    if loads_transcription_model:
         logging.info(
             "Processing worker is preparing the transcription model cache at %s",
             os.getenv("HF_HOME", "/app/model-cache"),
@@ -46,12 +50,12 @@ def main() -> None:
     job_runner = create_default_job_runner(
         storage_root=storage_root,
         emotion_keywords=emotion_keywords,
-        load_transcription_model=(worker_role == "processing"),
+        load_transcription_model=loads_transcription_model,
         whisper_device=whisper_device,
         whisper_compute_type=whisper_compute_type,
     )
 
-    if worker_role == "processing":
+    if loads_transcription_model:
         logging.info("Processing worker transcription model is ready")
 
     polling_loop = WorkerPollingLoop(
@@ -60,7 +64,7 @@ def main() -> None:
         worker_id=worker_id,
         worker_role=worker_role,
         poll_interval_sec=poll_interval_sec,
-        whisper_device=whisper_device if worker_role == "processing" else None,
+        whisper_device=whisper_device if loads_transcription_model else None,
     )
 
     polling_loop.run_forever(lambda: _running)

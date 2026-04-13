@@ -35,11 +35,14 @@ public class WorkerDiagnosticsService {
 
         RoleDiagnosticsAccumulator download = new RoleDiagnosticsAccumulator("download");
         RoleDiagnosticsAccumulator processing = new RoleDiagnosticsAccumulator("processing");
+        RoleDiagnosticsAccumulator export = new RoleDiagnosticsAccumulator("export");
 
         for (WorkerTask task : relevantTasks) {
-            RoleDiagnosticsAccumulator accumulator = roleFor(task.getTaskType()) == WorkerRole.DOWNLOAD
-                    ? download
-                    : processing;
+            RoleDiagnosticsAccumulator accumulator = switch (roleFor(task.getTaskType())) {
+                case DOWNLOAD -> download;
+                case PROCESSING -> processing;
+                case EXPORT -> export;
+            };
             accumulator.accept(task, now, staleTimeouts.get(task.getTaskType()));
         }
 
@@ -50,18 +53,24 @@ public class WorkerDiagnosticsService {
                 reconcileInterval.getSeconds(),
                 Map.of(
                         "download", download.build(),
-                        "processing", processing.build()
+                        "processing", processing.build(),
+                        "export", export.build()
                 )
         );
     }
 
     private static WorkerRole roleFor(WorkerTaskType taskType) {
-        return taskType == WorkerTaskType.DOWNLOAD ? WorkerRole.DOWNLOAD : WorkerRole.PROCESSING;
+        return switch (taskType) {
+            case DOWNLOAD -> WorkerRole.DOWNLOAD;
+            case ANALYZE -> WorkerRole.PROCESSING;
+            case EXPORT -> WorkerRole.EXPORT;
+        };
     }
 
     private enum WorkerRole {
         DOWNLOAD,
-        PROCESSING
+        PROCESSING,
+        EXPORT
     }
 
     private static final class RoleDiagnosticsAccumulator {

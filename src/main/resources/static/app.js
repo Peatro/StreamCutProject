@@ -176,8 +176,9 @@ ${renderJobFailureSummary(job)}
               ${infoItem("Language", job.language || "n/a")}
               ${infoItem("Started", formatRelativeDateTime(job.startedAt))}
               ${infoItem("Finished", formatRelativeDateTime(job.finishedAt))}
-              ${infoItem("Storage Video Path", job.storageVideoPath || "n/a")}
-              ${infoItem("Storage Audio Path", job.storageAudioPath || "n/a")}
+              ${infoItem("Source Video Reference", job.sourceVideoReference || "n/a")}
+              ${infoItem("Local Source Path", job.storageVideoPath || "n/a")}
+              ${infoItem("Local Audio Path", job.storageAudioPath || "n/a")}
               ${infoItem("Error", job.errorMessage || "none")}
             </div>
           </section>
@@ -1307,7 +1308,7 @@ ${renderJobFailureSummary(job)}
               <div class="candidate-meta">
                 <span>${escapeHtml(candidate.moderatorNote || "No moderator note yet.")}</span>
                 <span>${candidate.exportReady
-                  ? `<a href="/api/exports/${encodeURIComponent(candidate.id)}/file">Download clip</a>`
+                  ? `<a href="${escapeHtml(fallbackExportDownloadUrl(candidate.id))}">Download clip</a>`
                   : (candidate.exportStatus === "IN_PROGRESS" ? "Clip is being prepared" : "Click download to prepare the clip")}</span>
               </div>
               ${renderCandidateRuntimeState(candidate)}
@@ -1710,9 +1711,17 @@ ${renderJobFailureSummary(job)}
     });
   }
 
+  function fallbackExportDownloadUrl(candidateId) {
+    return `/api/exports/${encodeURIComponent(candidateId)}/file`;
+  }
+
+  function navigateToArtifact(downloadUrl, candidateId) {
+    window.location.href = downloadUrl || fallbackExportDownloadUrl(candidateId);
+  }
+
   async function prepareCandidateDownload(candidateId, message, root, jobId, exportReady) {
     if (exportReady) {
-      window.location.href = `/api/exports/${encodeURIComponent(candidateId)}/file`;
+      navigateToArtifact(null, candidateId);
       return;
     }
 
@@ -1720,7 +1729,7 @@ ${renderJobFailureSummary(job)}
 
     let exportState = await api.exportCandidate(candidateId);
     if (exportState.exportReady) {
-      window.location.href = `/api/exports/${encodeURIComponent(candidateId)}/file`;
+      navigateToArtifact(exportState.downloadUrl, candidateId);
       await renderJobPage(root, jobId, `Clip for candidate #${candidateId} downloaded.`, "success");
       return;
     }
@@ -1729,7 +1738,7 @@ ${renderJobFailureSummary(job)}
       await wait(1500);
       exportState = await fetchJson(`/api/exports/${encodeURIComponent(candidateId)}`);
       if (exportState.exportReady) {
-        window.location.href = `/api/exports/${encodeURIComponent(candidateId)}/file`;
+        navigateToArtifact(exportState.downloadUrl, candidateId);
         await renderJobPage(root, jobId, `Clip for candidate #${candidateId} is ready.`, "success");
         return;
       }

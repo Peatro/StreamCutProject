@@ -6,5 +6,6 @@ public enum WorkerTaskStatus {
     RUNNING,
     SUCCEEDED,
     FAILED,
-    CANCELED
+    CANCELED,
+    DEAD_LETTERED
 }

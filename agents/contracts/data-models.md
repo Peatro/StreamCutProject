@@ -29,12 +29,16 @@ Fields:
 - duration_sec
 - language
 - storage_video_path
+- source_video_reference
 - storage_audio_path
 
 Notes:
 - `vod_job` is not the primary runtime execution record.
 - `vod_job.status` is a projection of task/execution progress for UI and operators.
+- claim/retry/recovery decisions are owned by the backend orchestration service, not by `vod_job` itself.
 - operator retry increments `processing_version` so stale worker callbacks can be rejected cleanly.
+- `source_video_reference` is the durable source-video identifier used by backend and workers.
+- `storage_video_path` and `storage_audio_path` are scratch/runtime details and may point to node-local files.
 
 ## worker_task
 Represents one backend-managed task in the execution queue.
@@ -46,12 +50,17 @@ Fields:
 - task_type
 - status
 - candidate_id
+- attempt_count
+- max_attempts
+- available_at
 - created_at
 - updated_at
 - claimed_at
 - last_heartbeat_at
 - finished_at
 - failure_message
+- dead_lettered_at
+- dead_letter_reason
 
 Current task types:
 - DOWNLOAD
@@ -65,11 +74,18 @@ Current task statuses:
 - SUCCEEDED
 - FAILED
 - CANCELED
+- DEAD_LETTERED
 
 Notes:
 - one `vod_job` may produce multiple `worker_task` rows across its lifecycle
 - `EXPORT` tasks may target one `clip_candidate` through `candidate_id`
 - the active queue contract is task-centric even if some API names still include `job`
+- task selection is explicit and based on `status` plus `available_at`; aggregate job status is only a projection signal.
+- `attempt_count` tracks how many times the task has been claimed
+- `max_attempts` stores the retry budget for the task type as persisted metadata
+- `available_at` delays retry eligibility until the backoff window elapses
+- `dead_lettered_at` and `dead_letter_reason` capture exhausted retry termination
+- `DEAD_LETTERED` is terminal and should not be requeued automatically
 
 ## worker_execution
 Represents one concrete worker claim/attempt for a task.
@@ -186,7 +202,8 @@ Typical fields:
 
 Notes:
 - the current codebase still stores some artifact paths directly on aggregate entities
-- future work should converge on durable artifact references rather than path-only coupling
+- the current durable contract is explicit for source video and completed exports
+- extracted audio remains scratch-only and recreatable by design
 
 ## job_event
 Represents an audit/event log entry for a job lifecycle change.

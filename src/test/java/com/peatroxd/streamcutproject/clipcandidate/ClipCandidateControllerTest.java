@@ -18,8 +18,10 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 
 import java.io.ByteArrayOutputStream;
+import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -58,7 +60,8 @@ class ClipCandidateControllerTest {
                 null,
                 null,
                 "NOT_REQUESTED",
-                false
+                false,
+                null
         ));
 
         mockMvc.perform(post("/api/candidates/7/approve"))
@@ -80,7 +83,8 @@ class ClipCandidateControllerTest {
                 null,
                 null,
                 "NOT_REQUESTED",
-                false
+                false,
+                null
         ));
 
         mockMvc.perform(post("/api/candidates/7/reject"))
@@ -98,7 +102,8 @@ class ClipCandidateControllerTest {
                 "IN_PROGRESS",
                 "/var/lib/streamcut/jobs/1/exports/candidate-7.mp4",
                 "PENDING",
-                false
+                false,
+                null
         ));
 
         mockMvc.perform(post("/api/candidates/7/export"))
@@ -117,7 +122,8 @@ class ClipCandidateControllerTest {
                 "IN_PROGRESS",
                 "/var/lib/streamcut/jobs/1/exports/candidate-7.mp4",
                 "PENDING",
-                false
+                false,
+                null
         ));
 
         mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/api/exports/7"))
@@ -168,10 +174,29 @@ class ClipCandidateControllerTest {
     }
 
     @Test
+    void downloadsWorkerSourceVideoThroughInternalEndpoint(@TempDir Path tempDir) throws Exception {
+        Path source = tempDir.resolve("source-video.mp4");
+        Files.writeString(source, "video");
+        when(vodJobService.getSourceVideoReference(anyLong())).thenReturn(source.toString());
+        when(artifactStorageService.createSignedGetUri(source.toString())).thenReturn(Optional.empty());
+        when(artifactStorageService.open(source.toString())).thenReturn(new ArtifactResource(
+                Files.newInputStream(source),
+                Files.size(source),
+                "video/mp4",
+                source.getFileName().toString()
+        ));
+
+        mockMvc.perform(get("/api/internal/worker/jobs/1/source/file"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Content-Disposition", "attachment; filename=\"source-video.mp4\""));
+    }
+
+    @Test
     void downloadsExportArtifact(@TempDir Path tempDir) throws Exception {
         Path artifact = tempDir.resolve("candidate-7.mp4");
         Files.writeString(artifact, "video");
         when(vodJobService.getExportArtifactReference(anyLong())).thenReturn(artifact.toString());
+        when(artifactStorageService.createSignedGetUri(artifact.toString())).thenReturn(Optional.empty());
         when(artifactStorageService.open(artifact.toString())).thenReturn(new ArtifactResource(
                 Files.newInputStream(artifact),
                 Files.size(artifact),
@@ -182,6 +207,18 @@ class ClipCandidateControllerTest {
         mockMvc.perform(get("/api/exports/7/file"))
                 .andExpect(status().isOk())
                 .andExpect(header().string("Content-Disposition", "attachment; filename=\"candidate-7.mp4\""));
+    }
+
+    @Test
+    void redirectsExportDownloadToSignedUrlWhenAvailable() throws Exception {
+        String reference = "s3://streamcut-artifacts/exports/jobs/1/candidate-7.mp4";
+        URI signedUri = URI.create("http://localhost:9000/streamcut-artifacts/exports/jobs/1/candidate-7.mp4?X-Amz-Signature=test");
+        when(vodJobService.getExportArtifactReference(anyLong())).thenReturn(reference);
+        when(artifactStorageService.createSignedGetUri(reference)).thenReturn(Optional.of(signedUri));
+
+        mockMvc.perform(get("/api/exports/7/file"))
+                .andExpect(status().isFound())
+                .andExpect(header().string(HttpHeaders.LOCATION, signedUri.toString()));
     }
 
     @Test
@@ -205,6 +242,7 @@ class ClipCandidateControllerTest {
     void downloadsArtifactStoredInObjectStorageWithoutRedirect() throws Exception {
         String reference = "s3://streamcut-artifacts/exports/jobs/1/candidate-7.mp4";
         when(vodJobService.getExportArtifactReference(anyLong())).thenReturn(reference);
+        when(artifactStorageService.createSignedGetUri(reference)).thenReturn(Optional.empty());
         when(artifactStorageService.open(reference)).thenReturn(new ArtifactResource(
                 new java.io.ByteArrayInputStream("video".getBytes(java.nio.charset.StandardCharsets.UTF_8)),
                 5L,

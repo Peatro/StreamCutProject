@@ -36,6 +36,7 @@ Current detail responses also expose runtime projection fields such as:
 - `lastWorkerHeartbeatAt`
 - `progressPercent`
 - `progressMessage`
+- `sourceVideoReference`
 
 These are aggregate-facing projections, not a replacement for task/execution inspection models.
 
@@ -72,6 +73,12 @@ Returns transcript segments for the job.
 ### GET /api/jobs/{id}/candidates
 Returns generated clip candidates.
 
+Candidate responses include:
+- `exportReady`: `true` only when the completed artifact exists in storage
+- `downloadUrl`: preferred operator download URL for a completed export artifact
+  - in `S3` mode this is a presigned object-storage URL
+  - in `LOCAL` mode this falls back to `/api/exports/{id}/file`
+
 ### POST /api/candidates/{id}/approve
 Approves a candidate.
 
@@ -85,6 +92,33 @@ Starts clip export.
 ### GET /api/exports/{id}
 Returns export status and artifact reference.
 
+Export status responses include:
+- `artifactPath`: current stored artifact reference or planned local export path
+- `downloadUrl`: preferred operator download URL when `exportReady=true`
+- `exportReady`: `true` only when the artifact exists and is retrievable
+
+### GET /api/exports/{id}/file
+Compatibility download endpoint for one completed export artifact.
+
+Behavior:
+- in `S3` mode it should redirect to a temporary presigned object-storage URL
+- in `LOCAL` mode it should stream the file from backend local storage
+
+### GET /api/jobs/{id}/source/stream
+Authenticated inline source preview endpoint for review-time operator playback.
+
+Notes:
+- this is an explicit exception to the signed-artifact delivery model
+- it exists for source preview during candidate review, not as the preferred long-term delivery path for large completed artifacts
+
+### GET /api/internal/worker/jobs/{id}/source/file
+Internal worker-only source download endpoint.
+
+Behavior:
+- returns a redirect to a signed object-storage URL when possible
+- otherwise streams the current durable source artifact from backend storage
+- exists so analyze/export workers can re-materialize source media without assuming host-local continuity
+
 ## Internal Worker Transport
 
 ### POST /api/internal/worker/claims/next
@@ -94,7 +128,7 @@ Request:
 ```json
 {
   "workerId": "string",
-  "workerRole": "DOWNLOAD_OR_PROCESSING",
+  "workerRole": "DOWNLOAD_OR_PROCESSING_OR_EXPORT",
   "whisperDevice": "cpu_or_cuda_or_null"
 }
 ```
@@ -109,6 +143,8 @@ Response `200`:
   "processingVersion": 1,
   "taskType": "DOWNLOAD_OR_ANALYZE_OR_EXPORT",
   "videoPath": "string or null",
+  "videoReference": "string or null",
+  "videoDownloadUrl": "string or null",
   "sourceType": "URL_OR_FILE",
   "sourceUrl": "string or null",
   "candidateId": "number or null",
@@ -120,6 +156,11 @@ Response `200`:
 
 Response `204`:
 No compatible queued task is currently available.
+
+Notes:
+- `videoReference` is the durable source identifier when one exists
+- `videoDownloadUrl` is the worker re-materialization endpoint derived from that durable source identifier
+- `videoPath` remains a scratch/local-path hint only
 
 ### POST /api/internal/worker/downloads/results
 Accepts one successful download task result.

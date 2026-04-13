@@ -13,13 +13,14 @@
 
 ## 1. Service Overview
 
-1. Preconditions: This runbook covers the checked-in Docker runtime. `docker-compose.yml` is the local full-stack path with `postgres` and `minio`. `docker-compose.production.yml` is the production-oriented package with `edge`, `backend`, `download-worker`, and `processing-worker`, and it expects PostgreSQL and S3-compatible artifact storage to be provided separately through environment variables.
+1. Preconditions: This runbook covers the checked-in Docker runtime. `docker-compose.yml` is the local full-stack path with `postgres` and `minio`. `docker-compose.production.yml` is the production-oriented package with `edge`, `backend`, `download-worker`, `processing-worker`, and `export-worker`, and it expects PostgreSQL and S3-compatible artifact storage to be provided separately through environment variables.
 2. Service purpose: StreamCut accepts a VOD URL or uploaded video, runs download and analysis work through background workers, lets a single operator review the generated clip candidates, and exports approved clips to S3-compatible artifact storage for download.
 3. Components and roles:
    - `edge`: Caddy reverse proxy that publishes the production package on `EDGE_PORT` and forwards traffic to `backend`.
    - `backend`: Spring Boot application that serves the UI and API, applies Liquibase migrations on startup, stores job metadata in PostgreSQL, exposes `/health`, `/health/ready`, `/health/workers`, and `/actuator/prometheus`, and owns retention cleanup.
    - `download-worker`: pulls queued download work and writes source videos under `APP_STORAGE_LOCAL_ROOT`.
-   - `processing-worker`: runs analysis and export work, uses `/model-cache` for the transcription model cache, and uploads finished export artifacts to S3-compatible storage.
+   - `processing-worker`: runs analysis work and uses `/model-cache` for the transcription model cache.
+   - `export-worker`: renders approved clips and uploads finished export artifacts to S3-compatible storage.
    - `postgres`: present in the local full-stack compose file only; stores jobs, candidates, events, executions, and retention state.
    - `minio`: present in the local full-stack compose file only; acts as the S3-compatible artifact store for exported clips.
 4. Data flow summary:
@@ -29,7 +30,8 @@
    - backend queues processing work
    - `processing-worker` produces transcripts, analysis windows, and clip candidates
    - operator reviews candidates in the UI and starts an export
-   - `processing-worker` exports the approved clip and writes the artifact to S3-compatible storage
+   - `export-worker` exports the approved clip and writes the artifact to S3-compatible storage
+   - completed clip downloads are then served to the operator through temporary signed object-storage URLs when S3 mode is enabled
 
 ## 2. Starting The Service
 
@@ -37,7 +39,7 @@
 2. First-time setup:
    - copy `env.production.example` to `env.production`
    - set `SPRING_DATASOURCE_URL`, `SPRING_DATASOURCE_USERNAME`, `SPRING_DATASOURCE_PASSWORD`, `APP_OPERATOR_USERNAME`, `APP_OPERATOR_PASSWORD`, `APP_ARTIFACT_STORAGE_*`, and `APP_STORAGE_LOCAL_ROOT=/data/storage`
-   - keep the same `APP_STORAGE_LOCAL_ROOT` value for `backend`, `download-worker`, and `processing-worker`
+   - keep the same `APP_STORAGE_LOCAL_ROOT` value for `backend`, `download-worker`, `processing-worker`, and `export-worker`
    - if you need source videos to survive container replacement, back the chosen storage root with durable host storage before first start
 3. Volume setup: no manual volume creation is required. Compose creates the declared named volumes on first start. In the production package these are `streamcut-data` and `streamcut-hf-cache`. In the local full-stack file they also include `streamcut-postgres` and `streamcut-minio`.
 4. Start the production package from the repository root:
@@ -64,8 +66,8 @@ curl http://localhost:80/health/workers
 7. Expected startup results:
    - `/health` returns `{"status":"UP"}`
    - `/health/ready` returns `{"status":"READY"}`
-   - `/health/workers` returns JSON with top-level `"status":"UP"` and `download` and `processing` entries under `roles`
-   - the `backend`, `download-worker`, and `processing-worker` containers stay running instead of restarting
+   - `/health/workers` returns JSON with top-level `"status":"UP"` and `download`, `processing`, and `export` entries under `roles`
+   - the `backend`, `download-worker`, `processing-worker`, and `export-worker` containers stay running instead of restarting
 8. Common startup failures and fixes:
    - backend exits on boot with missing configuration: re-check `env.production`, especially `SPRING_DATASOURCE_*`, `APP_OPERATOR_*`, and `APP_ARTIFACT_STORAGE_*`
    - backend never becomes healthy: verify PostgreSQL reachability, credentials, and network routing for `SPRING_DATASOURCE_URL`
@@ -112,7 +114,7 @@ curl http://localhost:80/health/workers
    - `staleTimeoutSec`: default heartbeat timeout in seconds for task types without an override
    - `staleTimeoutsSec`: per-task heartbeat timeout map; by default `ANALYZE` is longer than the default timeout
    - `reconcileIntervalSec`: how often stale execution recovery runs
-   - `roles.download` and `roles.processing`: per-role snapshots
+   - `roles.download`, `roles.processing`, and `roles.export`: per-role snapshots
    - `queued`: tasks waiting for a worker in that role
    - `claimed`: tasks a worker has claimed but not yet moved to `RUNNING`
    - `running`: tasks currently executing in that role
@@ -234,6 +236,7 @@ docker compose -f docker-compose.production.yml --env-file env.production up -d 
 5. Change retention windows by setting `APP_RETENTION_SOURCE_RETENTION` and `APP_RETENTION_ARTIFACT_RETENTION`, then restart the backend so the new values are loaded.
 6. Change the schedule only if needed by setting `APP_RETENTION_CLEANUP_CRON` and `APP_RETENTION_CLEANUP_ZONE`, then restart the backend.
 7. Remember that export downloads stop working after artifact cleanup removes the stored artifact reference for an expired completed export.
+8. Signed download URLs are intentionally temporary. If an operator keeps a job page open beyond the presign TTL, refresh the page or request the export status again to obtain a fresh download URL.
 
 ## 9. Known Limitations And Risks
 

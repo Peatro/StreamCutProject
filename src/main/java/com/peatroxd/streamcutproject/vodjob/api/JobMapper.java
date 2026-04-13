@@ -64,6 +64,7 @@ public final class JobMapper {
                 job.getDurationSec(),
                 job.getLanguage(),
                 job.getStorageVideoPath(),
+                job.getSourceVideoReference(),
                 job.getStorageAudioPath(),
                 job.getProcessingVersion(),
                 job.getCurrentWorkerId(),
@@ -99,11 +100,16 @@ public final class JobMapper {
                 task.getStatus().name(),
                 task.getProcessingVersion(),
                 task.getCandidateId(),
+                task.getAttemptCount(),
+                task.getMaxAttempts(),
+                task.getAvailableAt(),
                 task.getCreatedAt(),
                 task.getClaimedAt(),
                 task.getLastHeartbeatAt(),
                 task.getFinishedAt(),
-                task.getFailureMessage()
+                task.getFailureMessage(),
+                task.getDeadLetteredAt(),
+                task.getDeadLetterReason()
         );
     }
 }

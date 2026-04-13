@@ -39,7 +39,7 @@ This is the explicit MVP upload policy for `POST /api/jobs/upload`.
 2. If the host has an NVIDIA GPU and Docker GPU support configured, use `docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build` to switch only the processing worker to the GPU image.
 3. Wait for PostgreSQL health checks to pass.
 4. Open the backend on `http://localhost:8080`.
-5. Use `docker compose logs -f backend download-worker processing-worker postgres` to follow startup and runtime output.
+5. Use `docker compose logs -f backend download-worker processing-worker export-worker postgres` to follow startup and runtime output.
 6. This path is explicitly local-only and uses `docker-compose.yml`, optionally layered with `docker-compose.gpu.yml`.
 
 ## Runtime Profiles
@@ -64,13 +64,15 @@ Backend:
 - `APP_ARTIFACT_STORAGE_ACCESS_KEY=minioadmin`
 - `APP_ARTIFACT_STORAGE_SECRET_KEY=minioadmin`
 - `APP_ARTIFACT_STORAGE_BUCKET=streamcut-artifacts`
+- `APP_ARTIFACT_STORAGE_PRESIGN_TTL=15m` by default for export download URLs
 
 Worker:
 - `APP_STORAGE_LOCAL_ROOT=/data/storage`
 - `PYTHONUNBUFFERED=1`
 - `HF_HOME=/model-cache` for `processing-worker` so the transcription model cache persists outside image builds
-- `WHISPER_DEVICE=cpu` by default, or `cuda` through `docker-compose.gpu.yml`
-- `WHISPER_COMPUTE_TYPE=int8` by default, or `float16` through `docker-compose.gpu.yml`
+- `WORKER_ROLE=download|processing|export`
+- `WHISPER_DEVICE=cpu` by default, or `cuda` through `docker-compose.gpu.yml` for `processing-worker` only
+- `WHISPER_COMPUTE_TYPE=int8` by default, or `float16` through `docker-compose.gpu.yml` for `processing-worker` only
 
 PostgreSQL:
 - `POSTGRES_DB=streamcut`
@@ -130,6 +132,24 @@ PostgreSQL:
 - `/health` stays public.
 - `/api/internal/worker/**` stays public for now so worker transport is not blocked in `TASK-055`; machine auth can be handled in `TASK-056`.
 - The static frontend sends `X-XSRF-TOKEN` on operator POST requests after bootstrapping the CSRF token from `/csrf`.
+
+## Artifact Delivery Contract
+- Completed export artifacts are delivered through storage-backed URLs, not backend media proxying, whenever artifact storage can issue signed GET URLs.
+- Source-video processing now also has an explicit durable contract:
+  - `vod_job.source_video_reference` is the backend-known durable source identifier
+  - workers may still reuse a local `storageVideoPath` scratch file when available
+  - workers can fall back to `GET /api/internal/worker/jobs/{id}/source/file` when local scratch is missing
+- In `S3` mode:
+  - candidate/export API responses expose a temporary `downloadUrl`
+  - `GET /api/exports/{id}/file` acts as a compatibility endpoint and redirects to the signed object-storage URL
+  - source-video references remain durable even after local scratch cleanup
+  - the default signed URL lifetime is `15 minutes`, controlled by `APP_ARTIFACT_STORAGE_PRESIGN_TTL`
+- In `LOCAL` mode:
+  - signed URLs are unavailable
+  - the preferred `downloadUrl` falls back to `/api/exports/{id}/file`
+  - backend file streaming remains the expected local-runtime behavior
+- Extracted audio and in-progress export files remain scratch-only runtime artifacts.
+- `/api/jobs/{id}/source/stream` remains an explicit authenticated exception for source preview during candidate review. It is not the preferred delivery model for completed export artifacts.
 
 ## Metrics Surface
 - Use `/actuator/metrics` to inspect the registered Micrometer names and drill into tagged series.

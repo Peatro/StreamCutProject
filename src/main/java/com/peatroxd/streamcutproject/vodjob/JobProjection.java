@@ -100,7 +100,7 @@ public final class JobProjection {
 
         Instant projectionTime = latestMeaningfulTime(job, projectedTask);
         switch (projectedTask.getStatus()) {
-            case QUEUED -> applyQueuedTask(job, projectedTask.getTaskType(), projectionTime, queuedMessageFor(projectedTask.getTaskType()));
+            case QUEUED -> applyQueuedTask(job, projectedTask.getTaskType(), projectionTime, queuedMessageFor(projectedTask));
             case CLAIMED -> applyClaimedTask(job, projectedTask.getTaskType(), job.getCurrentWorkerId(), projectionTime);
             case RUNNING -> {
                 if (projectedTask.getTaskType() == WorkerTaskType.ANALYZE && isAnalyzeStage(job.getStatus())) {
@@ -114,7 +114,7 @@ public final class JobProjection {
                 }
             }
             case SUCCEEDED -> applySucceededTask(job, projectedTask, projectionTime);
-            case FAILED, CANCELED -> {
+            case FAILED, CANCELED, DEAD_LETTERED -> {
                 // Terminal task state does not override explicit aggregate job state on read.
             }
         }
@@ -198,7 +198,7 @@ public final class JobProjection {
             case RUNNING -> 3;
             case CLAIMED -> 2;
             case QUEUED -> 1;
-            case SUCCEEDED, FAILED, CANCELED -> 0;
+            case SUCCEEDED, FAILED, CANCELED, DEAD_LETTERED -> 0;
         };
     }
 
@@ -231,6 +231,19 @@ public final class JobProjection {
             case DOWNLOAD -> "Queued for download worker";
             case ANALYZE -> "Source video is ready and queued for processing";
             case EXPORT -> "Queued for clip export";
+        };
+    }
+
+    private static String queuedMessageFor(WorkerTask task) {
+        if (task.getAttemptCountOrZero() <= 0 || task.getFailureMessage() == null) {
+            return queuedMessageFor(task.getTaskType());
+        }
+
+        int nextAttemptNumber = task.getAttemptCountOrZero() + 1;
+        return switch (task.getTaskType()) {
+            case DOWNLOAD -> "Download worker retry attempt " + nextAttemptNumber + " is queued";
+            case ANALYZE -> "Processing worker retry attempt " + nextAttemptNumber + " is queued";
+            case EXPORT -> "Export worker retry attempt " + nextAttemptNumber + " is queued";
         };
     }
 

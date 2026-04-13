@@ -20,7 +20,7 @@ class FakeSourceMaterializer:
         self.resolved_path = resolved_path
         self.error = error
 
-    def materialize(self, job: ClaimedJob) -> Path:
+    def materialize(self, job: ClaimedJob, on_progress=None, *, allow_origin_download: bool = True) -> Path:
         if self.error is not None:
             raise self.error
         assert self.resolved_path is not None
@@ -309,11 +309,16 @@ class WorkerJobRunnerTests(unittest.TestCase):
         self.assertEqual(ctx.exception.failed_state, "DOWNLOADING")
         self.assertIn("download failed", str(ctx.exception))
 
-    def test_runner_rejects_analyze_jobs_without_video_path(self) -> None:
+    def test_runner_rejects_analyze_jobs_without_durable_source_access(self) -> None:
         with TemporaryDirectory() as temp_dir:
             runner = WorkerJobRunner(
                 storage_root=Path(temp_dir),
-                source_materializer=FakeSourceMaterializer(error=AssertionError("should not materialize")),
+                source_materializer=FakeSourceMaterializer(
+                    error=SourceMaterializationError(
+                        "Job 8 is missing a durable source download URL",
+                        failed_state="EXTRACTING_AUDIO",
+                    )
+                ),
                 audio_service=FakeAudioService(None),  # type: ignore[arg-type]
                 transcription_service=FakeTranscriptionService(None),  # type: ignore[arg-type]
                 silence_service=FakeSilenceService(None),  # type: ignore[arg-type]

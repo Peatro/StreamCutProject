@@ -6,6 +6,7 @@ public record ExportStatusResponse(
         String status,
         String artifactPath,
         String moderationStatus,
-        boolean exportReady
+        boolean exportReady,
+        String downloadUrl
 ) {
 }

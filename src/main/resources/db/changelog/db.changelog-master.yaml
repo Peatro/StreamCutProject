@@ -35,3 +35,9 @@ databaseChangeLog:
   - include:
       file: changes/012-add-whisper-device-to-worker-execution.yaml
       relativeToChangelogFile: true
+  - include:
+      file: changes/013-add-worker-task-retry-metadata.yaml
+      relativeToChangelogFile: true
+  - include:
+      file: changes/014-add-source-video-reference-to-vod-job.yaml
+      relativeToChangelogFile: true

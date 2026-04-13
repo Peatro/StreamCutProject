@@ -4,6 +4,7 @@ import json
 from dataclasses import dataclass
 from typing import Any
 from urllib import error, request
+from urllib.parse import urljoin
 
 from streamcut_worker.models import (
     ClaimedJob,
@@ -51,6 +52,8 @@ class BackendClient:
             source_type=str(response["sourceType"]),
             video_path=None if response.get("videoPath") in (None, "") else _path(response["videoPath"]),
             source_url=None if response.get("sourceUrl") in (None, "") else str(response["sourceUrl"]),
+            video_reference=None if response.get("videoReference") in (None, "") else str(response["videoReference"]),
+            video_download_url=None if response.get("videoDownloadUrl") in (None, "") else _absolute_url(self.base_url, response["videoDownloadUrl"]),
             candidate_id=None if response.get("candidateId") is None else int(response["candidateId"]),
             clip_start_sec=None if response.get("clipStartSec") is None else float(response["clipStartSec"]),
             clip_end_sec=None if response.get("clipEndSec") is None else float(response["clipEndSec"]),
@@ -118,3 +121,10 @@ def _path(value: Any):
     from pathlib import Path
 
     return Path(str(value))
+
+
+def _absolute_url(base_url: str, value: Any) -> str:
+    raw_value = str(value)
+    if raw_value.startswith("http://") or raw_value.startswith("https://"):
+        return raw_value
+    return urljoin(f"{base_url.rstrip('/')}/", raw_value.lstrip("/"))

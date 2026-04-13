@@ -19,7 +19,7 @@ class FakePlatformDownloader:
         self.downloaded_name = downloaded_name
         self.calls: list[str] = []
 
-    def download(self, source_url: str, target_dir: Path, filename_stem: str) -> Path:
+    def download(self, source_url: str, target_dir: Path, filename_stem: str, on_progress=None) -> Path:
         self.calls.append(source_url)
         target_dir.mkdir(parents=True, exist_ok=True)
         output_path = target_dir / self.downloaded_name
@@ -162,6 +162,67 @@ class SourceMaterializerTests(unittest.TestCase):
         self.assertEqual(ctx.exception.failed_state, "DOWNLOADING")
         self.assertIn("source download failed", str(ctx.exception))
         self.assertIn("connection refused", str(ctx.exception))
+
+    def test_file_job_falls_back_to_durable_source_download_when_local_path_is_missing(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            storage_root = Path(temp_dir)
+
+            @contextmanager
+            def fake_urlopen(url: str):
+                yield FakeResponse(b"video-data")
+
+            materializer = SourceMaterializer(storage_root=storage_root)
+            original_urlopen = source_materializer_module.request.urlopen
+            source_materializer_module.request.urlopen = fake_urlopen
+            try:
+                result = materializer.materialize(
+                    ClaimedJob(
+                        execution_id=305,
+                        job_id=15,
+                        processing_version=1,
+                        task_type="DOWNLOAD",
+                        source_type="FILE",
+                        video_path=storage_root / "missing.mp4",
+                        source_url=None,
+                        video_reference="s3://streamcut-artifacts/sources/jobs/15/source-video.mp4",
+                        video_download_url="http://backend:8080/api/internal/worker/jobs/15/source/file",
+                    )
+                )
+                self.assertTrue(result.exists())
+                self.assertEqual(result.read_bytes(), b"video-data")
+            finally:
+                source_materializer_module.request.urlopen = original_urlopen
+
+    def test_durable_source_download_is_used_for_analyze_jobs_when_local_path_is_missing(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            storage_root = Path(temp_dir)
+
+            @contextmanager
+            def fake_urlopen(url: str):
+                yield FakeResponse(b"video-data")
+
+            materializer = SourceMaterializer(storage_root=storage_root)
+            original_urlopen = source_materializer_module.request.urlopen
+            source_materializer_module.request.urlopen = fake_urlopen
+            try:
+                result = materializer.materialize(
+                    ClaimedJob(
+                        execution_id=306,
+                        job_id=16,
+                        processing_version=1,
+                        task_type="ANALYZE",
+                        source_type="URL",
+                        video_path=storage_root / "missing.mp4",
+                        source_url="https://example.com/origin.mp4",
+                        video_reference="s3://streamcut-artifacts/sources/jobs/16/source-video.mp4",
+                        video_download_url="http://backend:8080/api/internal/worker/jobs/16/source/file",
+                    ),
+                    allow_origin_download=False,
+                )
+                self.assertTrue(result.exists())
+                self.assertEqual(result.read_bytes(), b"video-data")
+            finally:
+                source_materializer_module.request.urlopen = original_urlopen
 
 
 if __name__ == "__main__":

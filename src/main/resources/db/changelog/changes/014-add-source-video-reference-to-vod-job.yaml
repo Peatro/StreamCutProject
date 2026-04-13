@@ -1,0 +1,12 @@
+databaseChangeLog:
+  - changeSet:
+      id: 014-add-source-video-reference-to-vod-job
+      author: codex
+      comment: Persist a durable source-video reference separately from scratch local paths.
+      changes:
+        - addColumn:
+            tableName: vod_job
+            columns:
+              - column:
+                  name: source_video_reference
+                  type: VARCHAR(1024)
