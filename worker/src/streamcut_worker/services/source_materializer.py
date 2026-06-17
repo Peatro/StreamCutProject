@@ -56,7 +56,7 @@ class YtDlpPlatformDownloader:
             "no_warnings": True,
             "format": "bestvideo[height<=1080]*+bestaudio/best[height<=1080]",
             "merge_output_format": "mp4",
-            "concurrent_fragment_downloads": 4,
+            "concurrent_fragment_downloads": 8,
             "restrictfilenames": True,
             "noplaylist": True,
             "progress_hooks": [_yt_dlp_hook],
