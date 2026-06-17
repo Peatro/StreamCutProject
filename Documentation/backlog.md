@@ -8,8 +8,8 @@ It tracks:
 - remaining work required to stabilize the MVP and finish the service through `v1.0.0`
 - the next architecture track after `v1.0.0`
 
-Last updated: 2026-04-12
-Branch snapshot: `develop` carries post-`v1.0.0` follow-up fixes and documentation updates ahead of `main`
+Last updated: 2026-04-13
+Branch snapshot: `develop` carries post-`v1.0.0` architecture work through `TASK-072` plus follow-up runtime and UI fixes ahead of `main`
 Synced note: Obsidian backlog mirror in `StreamCutProject`
 
 ## Sync Policy
@@ -61,7 +61,7 @@ Synced note: Obsidian backlog mirror in `StreamCutProject`
   - `env.production.example` documents the production env contract without checked-in secrets
 - The container/runtime package is now split between:
   - `docker-compose.yml` for the local full stack
-  - `docker-compose.production.yml` for the production-oriented package behind the `edge` reverse proxy
+  - `compose.streamcut.yml` for the production-oriented package behind the `edge` reverse proxy
   - purpose-fit backend and worker images that no longer inherit from `postgres:15`
   - verified alternative registries for image builds outside Docker Hub-only pull paths
 - MinIO is the export artifact store in Docker, and the named volumes `streamcut-postgres`, `streamcut-data`, and `streamcut-minio` are part of the runtime contract.
@@ -103,9 +103,12 @@ Synced note: Obsidian backlog mirror in `StreamCutProject`
   - `.github/workflows/ci.yml` runs `./gradlew e2eTest` after backend tests
   - local execution is documented in `src/e2eTest/README.md`
 - `TASK-065` operator runbook, backup/restore, and upgrade guidance are now present in source through `Documentation/runbook.md`.
+- Signed export delivery and the durable object-storage contract are now present in source:
+  - completed exports prefer temporary signed object-storage URLs over backend proxying when S3 mode is enabled
+  - durable source and export references are persisted as the long-term artifact contract
 - The remaining larger architecture gaps are still future work:
-  - durable-storage-first execution and signed-URL delivery are still pending
-  - quotas, fairness controls, and broker-backed queue semantics are still future work
+  - quotas and fairness controls are still future work
+  - broker-backed queue semantics are still future work
 - `TASK-059` health, readiness, and worker diagnostics are now present in source.
 - `TASK-061` operator recovery controls are now present in source.
 - `TASK-062` metrics and alertable observability are now present in source.
@@ -120,6 +123,11 @@ Synced note: Obsidian backlog mirror in `StreamCutProject`
 ### Completed
 - `TASK-066` Prepare And Execute `v1.0.0` Release
 - `TASK-067` Run Backup Restore And Rollback Drill
+- `TASK-068` Expand Task Model With Retry, Backoff, And Dead-Letter Semantics
+- `TASK-069` Extract Task Transition Service And Task-Centric Claim Flow
+- `TASK-070` Introduce Dedicated `export-worker` Pool
+- `TASK-071` Move Artifact Delivery To Signed URLs And Reduce Backend Media Proxying
+- `TASK-072` Make Object Storage The Durable Artifact Contract
 - `TASK-055` Add Authentication And Protected Operator Access
 - `TASK-056` Add Security Baseline And Input Hardening
 - `TASK-057` Introduce Production Runtime Profiles And Secret Handling
@@ -137,6 +145,11 @@ Synced note: Obsidian backlog mirror in `StreamCutProject`
 
 Status note:
 - this backlog pass records a real status transition:
+  - `TASK-068` -> completed / merged
+  - `TASK-069` -> completed / merged
+  - `TASK-070` -> completed / merged
+  - `TASK-071` -> completed / merged
+  - `TASK-072` -> completed / merged
   - `TASK-064` -> completed / merged
   - `TASK-065` -> completed / merged
   - `TASK-067` -> completed / passed on 2026-04-09
@@ -145,18 +158,29 @@ Status note:
 Current release-track snapshot:
 - `v1.0.0` is released on `main` and back-merged into `develop`
 - the release point is explicit and reproducible through git tag `v1.0.0`
-- `develop` already carries small post-release runtime and UI fixes on top of the release baseline
-- the next tracked work starts at `TASK-071`
+- `develop` now carries the checked-in post-release architecture baseline through `TASK-072`
+- the next tracked work starts at `TASK-073`
 
 ### Closed In `v1.0.0`
 - `TASK-067` Run Backup Restore And Rollback Drill
 - `TASK-066` Prepare And Execute `v1.0.0` Release
 
+### Active (Product Quality Track)
+- `TASK-076` Add Audio Loudness Signal And Re-Weight Clip Candidate Scoring
+  - direction shift: primary goal is a fully working clip-selection tool for the operator's own Twitch VODs; clip-selection quality leads, multi-tenant work follows
+  - current analyzer scores only transcript density + silence ("talks a lot" detector); adds an ffmpeg loudness signal so laughter/hype outranks monologue
+- `TASK-077` Make Download Stall Detectable By Gating Heartbeat On Real Progress
+  - automatic retry/backoff already exists (TASK-068); the gap is the trigger — heartbeat refreshes on every yt-dlp tick incl. frozen-byte stalls, so a stalled download never looks stale and needs manual restart
+  - worker-only fix: only heartbeat when downloaded_bytes actually advance, so the existing DOWNLOAD stale timeout + recovery fires
+
+Operator real-use problems (from Obsidian `Problems.md`, 2026-06-17) -> tasks:
+- `TASK-079` Job Lifecycle On Moderation (backend): auto-complete (all moderated + all approved exported), manual `POST /api/jobs/{id}/complete`, allow delete from `READY_FOR_REVIEW`. Fixes problem #3; unblocks #2/#4. Land first.
+- `TASK-078` Job List/Detail UI (frontend): static progress bar at rest (#1), delete button (#4), bulk/selective clear (#2), manual complete button. Consumes TASK-079.
+- `TASK-080` Fix Clip Export (worker): both defects diagnosed + fixed empirically on a live 3h Twitch VOD. (a) audio desync — download format merged a separate audio HLS onto Twitch's already-muxed stream → ~12s drift; fix = prefer single muxed format. (b) export CPU hog/hang — `-ss` after `-i` decoded the whole source + no thread cap; fix = two-stage seek + bounded `-threads`. Verified: muxed A/V match 0.04s/2min; export 16s vs minutes at 945% CPU.
+
 ### Planned Post-`v1.0.0`
-- `TASK-071` Move Artifact Delivery To Signed URLs And Reduce Backend Media Proxying
-- `TASK-072` Make Object Storage The Durable Artifact Contract
-- `TASK-073` Add Product Quotas And Runtime Limits
-- `TASK-074` Prepare Queue Delivery Abstraction For Broker Migration
+- `TASK-073` Add Product Quotas And Runtime Limits (deprioritized: not justified for single-operator/self use; revisit when going public)
+- `TASK-074` Prepare Queue Delivery Abstraction For Broker Migration (deprioritized: DB polling is fine at n=1; evidence-gated)
 
 ## DONE
 
@@ -282,14 +306,14 @@ Current release-track snapshot:
 ## IN_PROGRESS
 - No repository task is currently marked `in progress`.
 - The `v1.0.0` release track is closed.
-- Export remains on the `processing-worker` for now.
+- The post-release architecture slice through `TASK-072` is merged into `develop`.
 
 ## NEXT
 
 ### Immediate
-- `TASK-068` Expand Task Model With Retry, Backoff, And Dead-Letter Semantics
-- `TASK-069` Extract Task Transition Service And Task-Centric Claim Flow
-- keep post-release work on top of the tagged `v1.0.0` baseline
+- `TASK-073` Add Product Quotas And Runtime Limits
+- `TASK-074` Prepare Queue Delivery Abstraction For Broker Migration
+- keep post-release work on top of the checked-in `TASK-072` baseline
 
 ### Validation
 - `TASK-064` browser E2E suite and CI gate are now present in source.
@@ -297,8 +321,8 @@ Current release-track snapshot:
 - `TASK-067` backup, restore, export recovery, and post-restore health checks passed on 2026-04-09.
 
 ### Post-release
-- `TASK-068` should introduce bounded retries, backoff, and dead-letter semantics on top of the released task model.
-- `TASK-069` should extract orchestration out of `VodJobService` without undoing the tagged release baseline.
+- `TASK-073` should add bounded product-level limits only after the task contract and storage contract stay explicit.
+- `TASK-074` should prepare broker migration only after the current task-centric delivery contract is stable.
 
 ### Architectural Follow-Up After `v1.0.0`
 - the current `v1.0.0` track hardens the service for a small authenticated operator team
@@ -351,8 +375,8 @@ Status: completed locally on 2026-04-06
 - completed: `TASK-068` Expand Task Model With Retry, Backoff, And Dead-Letter Semantics
 - completed: `TASK-069` Extract Task Transition Service And Task-Centric Claim Flow
 - completed: `TASK-070` Introduce Dedicated `export-worker` Pool
-- `TASK-071` Move Artifact Delivery To Signed URLs And Reduce Backend Media Proxying
-- `TASK-072` Make Object Storage The Durable Artifact Contract
+- completed: `TASK-071` Move Artifact Delivery To Signed URLs And Reduce Backend Media Proxying
+- completed: `TASK-072` Make Object Storage The Durable Artifact Contract
 - `TASK-073` Add Product Quotas And Runtime Limits
 - `TASK-074` Prepare Queue Delivery Abstraction For Broker Migration
 
@@ -373,7 +397,7 @@ Status: completed locally on 2026-04-06
 - `TASK-067` consumed the concrete procedures written in `TASK-065` instead of inventing ad hoc recovery steps.
 - `TASK-066` executed only after `TASK-067` evidence was recorded and the accepted drill fix was captured in source.
 - `TASK-068`, `TASK-069`, and `TASK-070` are now the checked-in post-release baseline for retry semantics, orchestration extraction, and export-worker routing.
-- `TASK-071` and `TASK-072` can overlap after the durable artifact contract is clear, but `TASK-072` owns the long-term storage contract.
+- `TASK-071` and `TASK-072` are now checked in, so the next sequencing decision starts at quotas and broker preparation.
 - `TASK-073` should start only after the execution model is explicit enough to enforce concurrency and cost controls coherently.
 - `TASK-074` should happen after the current task-centric baseline; broker migration without a clear task contract would just move the current ambiguity into another component.
 
@@ -383,7 +407,7 @@ Status: completed locally on 2026-04-06
 - Error handling and observability are still MVP-level, not hardened operations-grade.
 - The current pipeline still stops short of the target architecture described for larger-scale operation:
   - no quotas or fairness controls
-  - no durable-storage-first contract for all critical artifacts
+  - no broker-backed queue delivery yet
 
 ### Engineering Follow-Up
 - Add a single progress/status document under `agents/` if team workflow needs per-task lifecycle tracking.
@@ -397,17 +421,16 @@ Status: completed locally on 2026-04-06
 - `TASK-046` also showed that restart recovery is not very observable: file-backed work and exports can continue, but the API may sit on `DOWNLOADING` or `IN_PROGRESS` without an explicit progress signal.
 - Worker cold start depends on external model download and is slower without a configured `HF_TOKEN`.
 - Very large URL ingests still create long-running `DOWNLOADING` occupancy; this is the direct reason for moving toward a dedicated `download-worker`.
-- The dedicated `download-worker` / `processing-worker` / `export-worker` split is now validated in source, but it still lacks signed-URL delivery and a durable-storage-first artifact contract.
+- The dedicated `download-worker` / `processing-worker` / `export-worker` split is now validated in source, but it still lacks quotas, fairness controls, and broker-backed queue delivery.
 - Recovery behavior is now documented and exercised for the runbook paths, but not every failure permutation has a dedicated drill.
 - `TASK-045` QA found that export retries are allowed, export failure correctly marks the job `FAILED`, and the stale-artifact behavior was addressed in `TASK-054`.
 - The current task model is now explicit enough for role-aware pools, but it still has no task priority or fairness input.
-- Backend media streaming endpoints still exist for source and export delivery, which is acceptable for the MVP but not the desired long-term contract.
+- Backend media streaming endpoints still exist for source preview and local-mode export fallback, which is acceptable for the current contract but not the desired long-term general delivery path.
 
 ## Recommended Next Sequence
-1. `TASK-068` Expand Task Model With Retry, Backoff, And Dead-Letter Semantics.
-2. `TASK-069` Extract Task Transition Service And Task-Centric Claim Flow.
-3. `TASK-070` Introduce Dedicated `export-worker` Pool.
-4. Continue post-`v1.0.0` architecture work on top of the tagged `worker_task` / `worker_execution` baseline instead of reopening release-scope work.
+1. `TASK-073` Add Product Quotas And Runtime Limits.
+2. `TASK-074` Prepare Queue Delivery Abstraction For Broker Migration.
+3. Keep post-`v1.0.0` work on top of the checked-in `worker_task` / `worker_execution` and durable object-storage baseline.
 
 ## Path To Service v1.0.0
 
@@ -467,11 +490,11 @@ Status: completed on 2026-04-09 through `TASK-066`
 6. migrate operator UI to React when candidate review or multi-developer frontend work makes local component state unavoidable (`TASK-075`)
 
 ### Post-`v1.0.0` Architecture Task Queue
-- `TASK-068` Expand Task Model With Retry, Backoff, And Dead-Letter Semantics
-- `TASK-069` Extract Task Transition Service And Task-Centric Claim Flow
-- `TASK-070` Introduce Dedicated `export-worker` Pool
-- `TASK-071` Move Artifact Delivery To Signed URLs And Reduce Backend Media Proxying
-- `TASK-072` Make Object Storage The Durable Artifact Contract
+- completed: `TASK-068` Expand Task Model With Retry, Backoff, And Dead-Letter Semantics
+- completed: `TASK-069` Extract Task Transition Service And Task-Centric Claim Flow
+- completed: `TASK-070` Introduce Dedicated `export-worker` Pool
+- completed: `TASK-071` Move Artifact Delivery To Signed URLs And Reduce Backend Media Proxying
+- completed: `TASK-072` Make Object Storage The Durable Artifact Contract
 - `TASK-073` Add Product Quotas And Runtime Limits
 - `TASK-074` Prepare Queue Delivery Abstraction For Broker Migration
 - `TASK-075` Migrate Operator UI To React

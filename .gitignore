@@ -55,3 +55,6 @@ graphify-out
 /CLAUDE.md
 /AGENTS.md
 /tools/
+
+# Manual export validation clips (throwaway)
+export_test/
