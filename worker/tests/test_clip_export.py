@@ -12,6 +12,7 @@ from streamcut_worker.export import (
     FfmpegClipExportService,
     ProcessExecutionResult,
 )
+from streamcut_worker.export.service import _SEEK_PREROLL_SEC, _FFMPEG_THREAD_CAP
 
 
 class FakeRunner:
@@ -51,6 +52,117 @@ class ClipExportServiceTests(unittest.TestCase):
             self.assertIn("-t", runner.commands[0])
             self.assertIn(str(expected_path), runner.commands[0])
             self.assertTrue(expected_path.parent.exists())
+
+    def test_two_stage_seek_normal_start(self):
+        """When start_sec >= PREROLL, coarse = start - PREROLL, fine = PREROLL."""
+        with TemporaryDirectory() as temp_dir, NamedTemporaryFile(delete=False, suffix=".mp4") as tmp:
+            tmp.write(b"dummy")
+            source_path = Path(tmp.name)
+            runner = FakeRunner(ProcessExecutionResult(0, "ok", ""))
+            service = FfmpegClipExportService(Path(temp_dir) / "artifacts", runner)
+
+            start_sec = 30.0
+            end_sec = 45.0
+            service.export(
+                ClipExportRequest(
+                    job_id="job-2",
+                    candidate_id="1",
+                    source_video_path=source_path,
+                    start_sec=start_sec,
+                    end_sec=end_sec,
+                )
+            )
+
+            cmd = runner.commands[0]
+            # Expected coarse = 30 - 10 = 20, fine = 10
+            coarse_expected = start_sec - _SEEK_PREROLL_SEC
+            fine_expected = _SEEK_PREROLL_SEC
+
+            # Verify arg order: ffmpeg -y -ss <coarse> -i <src> -ss <fine> -t <dur> ...
+            self.assertEqual(cmd[0], "ffmpeg")
+            self.assertEqual(cmd[1], "-y")
+            self.assertEqual(cmd[2], "-ss")
+            self.assertEqual(cmd[3], f"{coarse_expected:.6f}")
+            self.assertEqual(cmd[4], "-i")
+            self.assertEqual(cmd[5], str(source_path))
+            self.assertEqual(cmd[6], "-ss")
+            self.assertEqual(cmd[7], f"{fine_expected:.6f}")
+            self.assertEqual(cmd[8], "-t")
+            self.assertEqual(cmd[9], f"{end_sec - start_sec:.6f}")
+
+    def test_two_stage_seek_small_start(self):
+        """When start_sec < PREROLL, coarse = 0, fine = start_sec."""
+        with TemporaryDirectory() as temp_dir, NamedTemporaryFile(delete=False, suffix=".mp4") as tmp:
+            tmp.write(b"dummy")
+            source_path = Path(tmp.name)
+            runner = FakeRunner(ProcessExecutionResult(0, "ok", ""))
+            service = FfmpegClipExportService(Path(temp_dir) / "artifacts", runner)
+
+            start_sec = 3.5
+            end_sec = 8.0
+            service.export(
+                ClipExportRequest(
+                    job_id="job-3",
+                    candidate_id="2",
+                    source_video_path=source_path,
+                    start_sec=start_sec,
+                    end_sec=end_sec,
+                )
+            )
+
+            cmd = runner.commands[0]
+            # coarse should be 0 since start < PREROLL
+            self.assertEqual(cmd[2], "-ss")
+            self.assertEqual(cmd[3], f"{0.0:.6f}")
+            self.assertEqual(cmd[4], "-i")
+            self.assertEqual(cmd[6], "-ss")
+            self.assertEqual(cmd[7], f"{start_sec:.6f}")
+            self.assertEqual(cmd[8], "-t")
+            self.assertEqual(cmd[9], f"{end_sec - start_sec:.6f}")
+
+    def test_bounded_threads_in_command(self):
+        """Command must include -threads with the configured cap."""
+        with TemporaryDirectory() as temp_dir, NamedTemporaryFile(delete=False, suffix=".mp4") as tmp:
+            tmp.write(b"dummy")
+            source_path = Path(tmp.name)
+            runner = FakeRunner(ProcessExecutionResult(0, "ok", ""))
+            service = FfmpegClipExportService(Path(temp_dir) / "artifacts", runner)
+
+            service.export(
+                ClipExportRequest(
+                    job_id="job-4",
+                    candidate_id="3",
+                    source_video_path=source_path,
+                    start_sec=20.0,
+                    end_sec=30.0,
+                )
+            )
+
+            cmd = runner.commands[0]
+            threads_idx = cmd.index("-threads")
+            self.assertEqual(cmd[threads_idx + 1], str(_FFMPEG_THREAD_CAP))
+
+    def test_avoid_negative_ts_in_command(self):
+        """Command must include -avoid_negative_ts make_zero."""
+        with TemporaryDirectory() as temp_dir, NamedTemporaryFile(delete=False, suffix=".mp4") as tmp:
+            tmp.write(b"dummy")
+            source_path = Path(tmp.name)
+            runner = FakeRunner(ProcessExecutionResult(0, "ok", ""))
+            service = FfmpegClipExportService(Path(temp_dir) / "artifacts", runner)
+
+            service.export(
+                ClipExportRequest(
+                    job_id="job-5",
+                    candidate_id="4",
+                    source_video_path=source_path,
+                    start_sec=15.0,
+                    end_sec=25.0,
+                )
+            )
+
+            cmd = runner.commands[0]
+            neg_ts_idx = cmd.index("-avoid_negative_ts")
+            self.assertEqual(cmd[neg_ts_idx + 1], "make_zero")
 
     def test_export_raises_useful_error_on_failure(self):
         with TemporaryDirectory() as temp_dir, NamedTemporaryFile(delete=False, suffix=".mkv") as tmp:

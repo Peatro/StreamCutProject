@@ -54,7 +54,7 @@ class YtDlpPlatformDownloader:
             "outtmpl": output_template,
             "quiet": True,
             "no_warnings": True,
-            "format": "bestvideo[height<=1080]*+bestaudio/best[height<=1080]",
+            "format": "best[height<=1080]/bestvideo[height<=1080]*+bestaudio",
             "merge_output_format": "mp4",
             "concurrent_fragment_downloads": 8,
             "restrictfilenames": True,

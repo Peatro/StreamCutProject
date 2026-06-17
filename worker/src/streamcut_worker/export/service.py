@@ -9,6 +9,9 @@ from .process import ProcessRunner, SubprocessProcessRunner
 
 _SAFE_COMPONENT_RE = re.compile(r"[^a-zA-Z0-9._-]+")
 
+_SEEK_PREROLL_SEC: float = 10.0
+_FFMPEG_THREAD_CAP: int = 4
+
 
 class FfmpegClipExportService:
     def __init__(self, artifact_root: Path, runner: ProcessRunner | None = None) -> None:
@@ -22,13 +25,17 @@ class FfmpegClipExportService:
         artifact_path.parent.mkdir(parents=True, exist_ok=True)
 
         duration_sec = request.end_sec - request.start_sec
+        coarse_sec = max(0.0, request.start_sec - _SEEK_PREROLL_SEC)
+        fine_sec = request.start_sec - coarse_sec
         command = [
             "ffmpeg",
             "-y",
+            "-ss",
+            _format_time(coarse_sec),
             "-i",
             str(request.source_video_path),
             "-ss",
-            _format_time(request.start_sec),
+            _format_time(fine_sec),
             "-t",
             _format_time(duration_sec),
             "-c:v",
@@ -39,6 +46,10 @@ class FfmpegClipExportService:
             "18",
             "-c:a",
             "aac",
+            "-threads",
+            str(_FFMPEG_THREAD_CAP),
+            "-avoid_negative_ts",
+            "make_zero",
             "-movflags",
             "+faststart",
             str(artifact_path),

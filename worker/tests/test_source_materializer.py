@@ -11,7 +11,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from streamcut_worker.models import ClaimedJob
 from streamcut_worker.services import source_materializer as source_materializer_module
-from streamcut_worker.services.source_materializer import SourceMaterializationError, SourceMaterializer
+from streamcut_worker.services.source_materializer import (
+    SourceMaterializationError,
+    SourceMaterializer,
+    YtDlpPlatformDownloader,
+)
 
 
 class FakePlatformDownloader:
@@ -223,6 +227,45 @@ class SourceMaterializerTests(unittest.TestCase):
                 self.assertEqual(result.read_bytes(), b"video-data")
             finally:
                 source_materializer_module.request.urlopen = original_urlopen
+
+    def test_yt_dlp_format_prefers_muxed_single_stream(self) -> None:
+        """YtDlpPlatformDownloader must request a pre-muxed format first, merge as fallback."""
+        captured_options: list[dict] = []
+
+        class FakeYoutubeDL:
+            def __init__(self, options: dict) -> None:
+                captured_options.append(dict(options))
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return None
+
+            def extract_info(self, url: str, download: bool = True) -> None:
+                pass
+
+        import types
+
+        fake_module = types.ModuleType("yt_dlp")
+        fake_module.YoutubeDL = FakeYoutubeDL
+        sys.modules["yt_dlp"] = fake_module
+
+        try:
+            with TemporaryDirectory() as temp_dir:
+                target_dir = Path(temp_dir)
+                (target_dir / "source-video.mp4").write_bytes(b"fake")
+                downloader = YtDlpPlatformDownloader()
+                downloader.download("https://www.twitch.tv/videos/123", target_dir, "source-video")
+
+            self.assertEqual(len(captured_options), 1)
+            self.assertEqual(
+                captured_options[0]["format"],
+                "best[height<=1080]/bestvideo[height<=1080]*+bestaudio",
+                "Format must prefer pre-muxed (best) first, merge as fallback",
+            )
+        finally:
+            del sys.modules["yt_dlp"]
 
 
 if __name__ == "__main__":
