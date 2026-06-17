@@ -8,6 +8,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from streamcut_worker.analysis import AnalysisWindow, CandidateAnalysisResult, ClipCandidate
 from streamcut_worker.audio import AudioExtractionResult
+from streamcut_worker.loudness import LoudnessDetectionResult, LoudnessSample
 from streamcut_worker.models import ClaimedJob
 from streamcut_worker.pipeline import WorkerJobRunner, WorkerJobRunnerError
 from streamcut_worker.services.source_materializer import SourceMaterializationError
@@ -83,6 +84,20 @@ class SlowFakeAnalysisService(FakeAnalysisService):
         return self.result
 
 
+class FakeLoudnessService:
+    def __init__(self, result: LoudnessDetectionResult | None = None) -> None:
+        self.result = result or LoudnessDetectionResult(
+            audio_path=Path("/dev/null"),
+            command=["ffmpeg"],
+            returncode=0,
+            stderr="",
+            samples=[],
+        )
+
+    def detect(self, request):
+        return self.result
+
+
 class FakeExportResult:
     def __init__(self, artifact_path: Path) -> None:
         self.artifact_path = artifact_path
@@ -110,6 +125,7 @@ class WorkerJobRunnerTests(unittest.TestCase):
                 audio_service=FakeAudioService(None),  # type: ignore[arg-type]
                 transcription_service=FakeTranscriptionService(None),  # type: ignore[arg-type]
                 silence_service=FakeSilenceService(None),  # type: ignore[arg-type]
+                loudness_service=FakeLoudnessService(),
                 analysis_service=FakeAnalysisService(None),  # type: ignore[arg-type]
                 export_service=FakeExportService(storage_root / "jobs" / "7" / "exports" / "candidate-1.mp4"),
             )
@@ -166,6 +182,7 @@ class WorkerJobRunnerTests(unittest.TestCase):
                         silence_segments=[SilenceInterval(2.0, 3.0, 1.0)],
                     )
                 ),
+                loudness_service=FakeLoudnessService(),
                 analysis_service=FakeAnalysisService(
                     CandidateAnalysisResult(
                         job_id="7",
@@ -250,6 +267,7 @@ class WorkerJobRunnerTests(unittest.TestCase):
                     )
                 ),
                 silence_service=SlowFakeSilenceService(silence_result, delay_sec=0.05),
+                loudness_service=FakeLoudnessService(),
                 analysis_service=SlowFakeAnalysisService(analysis_result, delay_sec=0.05),
                 export_service=FakeExportService(storage_root / "jobs" / "7" / "exports" / "candidate-1.mp4"),
             )
@@ -288,6 +306,7 @@ class WorkerJobRunnerTests(unittest.TestCase):
                 audio_service=FakeAudioService(None),  # type: ignore[arg-type]
                 transcription_service=FakeTranscriptionService(None),  # type: ignore[arg-type]
                 silence_service=FakeSilenceService(None),  # type: ignore[arg-type]
+                loudness_service=FakeLoudnessService(),
                 analysis_service=FakeAnalysisService(None),  # type: ignore[arg-type]
                 export_service=FakeExportService(Path("/tmp/out.mp4")),
             )
@@ -322,6 +341,7 @@ class WorkerJobRunnerTests(unittest.TestCase):
                 audio_service=FakeAudioService(None),  # type: ignore[arg-type]
                 transcription_service=FakeTranscriptionService(None),  # type: ignore[arg-type]
                 silence_service=FakeSilenceService(None),  # type: ignore[arg-type]
+                loudness_service=FakeLoudnessService(),
                 analysis_service=FakeAnalysisService(None),  # type: ignore[arg-type]
                 export_service=FakeExportService(Path("/tmp/out.mp4")),
             )
@@ -356,6 +376,7 @@ class WorkerJobRunnerTests(unittest.TestCase):
                 audio_service=FakeAudioService(None),  # type: ignore[arg-type]
                 transcription_service=FakeTranscriptionService(None),  # type: ignore[arg-type]
                 silence_service=FakeSilenceService(None),  # type: ignore[arg-type]
+                loudness_service=FakeLoudnessService(),
                 analysis_service=FakeAnalysisService(None),  # type: ignore[arg-type]
                 export_service=FakeExportService(artifact_path),
             )

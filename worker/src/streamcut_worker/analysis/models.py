@@ -8,6 +8,14 @@ from streamcut_worker.transcription.models import TranscriptSegment
 
 
 @dataclass(frozen=True, slots=True)
+class LoudnessProfile:
+    """Per-interval RMS loudness samples covering the audio duration."""
+
+    time_sec: tuple[float, ...]
+    rms_db: tuple[float, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class AnalysisWindow:
     start_sec: float
     end_sec: float
@@ -16,6 +24,7 @@ class AnalysisWindow:
     emotion_hits: int
     continuity_score: float
     total_score: float
+    loudness: float = 0.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,6 +46,7 @@ class CandidateAnalysisRequest:
     top_n: int | None = None
     min_overlap_ratio: float = 0.0
     emotion_keywords: tuple[str, ...] = field(default_factory=tuple)
+    loudness_profile: LoudnessProfile | None = None
 
 
 @dataclass(frozen=True, slots=True)

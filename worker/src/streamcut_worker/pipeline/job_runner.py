@@ -6,9 +6,14 @@ from pathlib import Path
 import threading
 from typing import Callable, TypeVar
 
-from streamcut_worker.analysis import CandidateAnalysisRequest, SlidingWindowCandidateAnalysisService
+from streamcut_worker.analysis import CandidateAnalysisRequest, LoudnessProfile, SlidingWindowCandidateAnalysisService
 from streamcut_worker.audio import AudioExtractionRequest, FfmpegAudioExtractionService
 from streamcut_worker.export import ClipExportRequest, FfmpegClipExportService
+from streamcut_worker.loudness import (
+    FfmpegLoudnessDetectionService,
+    LoudnessDetectionException,
+    LoudnessDetectionRequest,
+)
 from streamcut_worker.models import (
     ClaimedJob,
     WorkerDownloadCompletionPayload,
@@ -48,6 +53,7 @@ class WorkerJobRunner:
     audio_service: FfmpegAudioExtractionService
     transcription_service: FasterWhisperTranscriptionService | None
     silence_service: FfmpegSilenceDetectionService
+    loudness_service: FfmpegLoudnessDetectionService
     analysis_service: SlidingWindowCandidateAnalysisService
     export_service: FfmpegClipExportService
     emotion_keywords: tuple[str, ...] = field(default_factory=tuple)
@@ -100,6 +106,8 @@ class WorkerJobRunner:
             "Worker is detecting silence spans",
         )
         silence_result = self._detect_silence(source_video_path, on_progress)
+        logger.info("stage_started jobId=%s stage=%s", job.job_id, "MEASURING_LOUDNESS")
+        loudness_profile = self._measure_loudness(audio_result.audio_path, on_progress)
         logger.info("stage_started jobId=%s stage=%s", job.job_id, "ANALYZING_WINDOWS")
         self._notify_progress(
             on_progress,
@@ -107,7 +115,7 @@ class WorkerJobRunner:
             self.ANALYZING_WINDOWS_PROGRESS,
             "Worker is scoring sliding analysis windows",
         )
-        analysis_result = self._analyze(job, transcription_result, silence_result, on_progress)
+        analysis_result = self._analyze(job, transcription_result, silence_result, loudness_profile, on_progress)
         self._notify_progress(on_progress, "GENERATING_CANDIDATES", 94, "Worker is assembling clip candidates")
 
         return WorkerProcessingPayload(
@@ -365,11 +373,36 @@ class WorkerJobRunner:
         except Exception as exc:
             raise WorkerJobRunnerError("DETECTING_SILENCE", str(exc)) from exc
 
+    def _measure_loudness(
+        self,
+        audio_path: Path,
+        on_progress: Callable[[str, int, str], None] | None,
+    ) -> LoudnessProfile | None:
+        """Run ffmpeg loudness measurement.  Returns None on any failure (graceful degradation)."""
+        try:
+            result = self.loudness_service.detect(
+                LoudnessDetectionRequest(audio_path=audio_path)
+            )
+            if not result.samples:
+                logger.warning("loudness_empty audioPath=%s — no samples parsed, falling back", audio_path)
+                return None
+            return LoudnessProfile(
+                time_sec=tuple(s.time_sec for s in result.samples),
+                rms_db=tuple(s.rms_db for s in result.samples),
+            )
+        except LoudnessDetectionException:
+            logger.warning("loudness_failed audioPath=%s — falling back to prior scoring", audio_path, exc_info=True)
+            return None
+        except Exception:
+            logger.warning("loudness_unexpected audioPath=%s — falling back to prior scoring", audio_path, exc_info=True)
+            return None
+
     def _analyze(
         self,
         job: ClaimedJob,
         transcription_result,
         silence_result,
+        loudness_profile: LoudnessProfile | None,
         on_progress: Callable[[str, int, str], None] | None,
     ):
         try:
@@ -385,6 +418,7 @@ class WorkerJobRunner:
                         silence_segments=silence_result.silence_segments,
                         duration_sec=transcription_result.duration_sec,
                         emotion_keywords=self.emotion_keywords,
+                        loudness_profile=loudness_profile,
                     )
                 )
             )
@@ -434,6 +468,7 @@ def create_default_job_runner(
             compute_type=whisper_compute_type,
         ) if load_transcription_model else None,
         silence_service=FfmpegSilenceDetectionService(),
+        loudness_service=FfmpegLoudnessDetectionService(),
         analysis_service=SlidingWindowCandidateAnalysisService(),
         export_service=FfmpegClipExportService(storage_root),
         emotion_keywords=emotion_keywords,

@@ -3,5 +3,6 @@ from .models import (
     ClipCandidate,
     CandidateAnalysisRequest,
     CandidateAnalysisResult,
+    LoudnessProfile,
 )
 from .service import SlidingWindowCandidateAnalysisService, analyze_candidates

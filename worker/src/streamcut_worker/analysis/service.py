@@ -12,9 +12,22 @@ from .models import (
     CandidateAnalysisRequest,
     CandidateAnalysisResult,
     ClipCandidate,
+    LoudnessProfile,
 )
 
 _EMPHASIS_WORD_RE = re.compile(r"\b[A-Z]{2,}\b")
+
+# --- Scoring weight constants (tunable without code surgery) ---
+WEIGHT_LOUDNESS: float = 0.45
+WEIGHT_EMOTION: float = 0.20
+WEIGHT_CONTINUITY: float = 0.20
+WEIGHT_SILENCE: float = 0.15
+
+# Fallback weights when loudness data is unavailable (preserves prior formula).
+_FALLBACK_WEIGHT_SPEECH_DENSITY: float = 0.35
+_FALLBACK_WEIGHT_SILENCE: float = 0.25
+_FALLBACK_WEIGHT_EMOTION: float = 0.20
+_FALLBACK_WEIGHT_CONTINUITY: float = 0.20
 
 
 @dataclass(slots=True)
@@ -35,6 +48,7 @@ class SlidingWindowCandidateAnalysisService:
                 start_sec=start_sec,
                 end_sec=end_sec,
                 emotion_keywords=request.emotion_keywords,
+                loudness_profile=request.loudness_profile,
             )
             for start_sec, end_sec in windows
         ]
@@ -91,6 +105,7 @@ class SlidingWindowCandidateAnalysisService:
         start_sec: float,
         end_sec: float,
         emotion_keywords: tuple[str, ...],
+        loudness_profile: LoudnessProfile | None = None,
     ) -> dict[str, float | int | str]:
         window_duration = max(end_sec - start_sec, 0.0)
         speech_words = 0.0
@@ -124,6 +139,12 @@ class SlidingWindowCandidateAnalysisService:
 
         longest_continuous_speech = _longest_interval_length(_merge_intervals(speech_intervals))
 
+        # Compute per-window loudness: peak RMS dB among samples that fall
+        # within the window.  None signals "no data available".
+        raw_loudness: float | None = _window_peak_loudness(
+            loudness_profile, start_sec, end_sec
+        )
+
         return {
             "start_sec": start_sec,
             "end_sec": end_sec,
@@ -132,6 +153,7 @@ class SlidingWindowCandidateAnalysisService:
             "emotion_hits": emotion_hits,
             "continuity_score": min(1.0, longest_continuous_speech / window_duration) if window_duration > 0.0 else 0.0,
             "excerpt": _collapse_text(excerpt_segments),
+            "raw_loudness": raw_loudness,
         }
 
     def _normalize_windows(
@@ -140,6 +162,27 @@ class SlidingWindowCandidateAnalysisService:
     ) -> list["_WindowSample"]:
         max_speech_density = max((float(window["speech_density"]) for window in raw_windows), default=0.0)
         max_emotion_hits = max((int(window["emotion_hits"]) for window in raw_windows), default=0)
+
+        # Determine whether usable loudness data exists for this job.
+        # "Usable" means at least one window has a non-None raw_loudness.
+        raw_loudness_values: list[float] = [
+            float(w["raw_loudness"])
+            for w in raw_windows
+            if w.get("raw_loudness") is not None
+        ]
+        has_loudness = len(raw_loudness_values) > 0
+
+        if has_loudness:
+            # Normalize raw dB values to [0, 1] across the job's windows.
+            # RMS dB is negative (louder = closer to 0); shift so the loudest
+            # window maps to 1.0 and the quietest to 0.0.
+            min_loudness = min(raw_loudness_values)
+            max_loudness = max(raw_loudness_values)
+            loudness_range = max_loudness - min_loudness
+        else:
+            min_loudness = 0.0
+            max_loudness = 0.0
+            loudness_range = 0.0
 
         normalized: list[_WindowSample] = []
         for window in raw_windows:
@@ -150,12 +193,34 @@ class SlidingWindowCandidateAnalysisService:
 
             normalized_speech_density = speech_density / max_speech_density if max_speech_density > 0.0 else 0.0
             normalized_emotion_hits = emotion_hits / max_emotion_hits if max_emotion_hits > 0 else 0.0
-            total_score = (
-                0.35 * normalized_speech_density
-                + 0.25 * (1.0 - silence_ratio)
-                + 0.20 * normalized_emotion_hits
-                + 0.20 * continuity_score
-            )
+
+            if has_loudness:
+                raw_loud = window.get("raw_loudness")
+                if raw_loud is not None:
+                    normalized_loudness = (
+                        (float(raw_loud) - min_loudness) / loudness_range
+                        if loudness_range > 0.0
+                        else 1.0
+                    )
+                else:
+                    normalized_loudness = 0.0
+
+                total_score = (
+                    WEIGHT_LOUDNESS * normalized_loudness
+                    + WEIGHT_EMOTION * normalized_emotion_hits
+                    + WEIGHT_CONTINUITY * continuity_score
+                    + WEIGHT_SILENCE * (1.0 - silence_ratio)
+                )
+            else:
+                # Graceful degradation: fall back to the prior formula
+                # when loudness data is entirely missing.
+                normalized_loudness = 0.0
+                total_score = (
+                    _FALLBACK_WEIGHT_SPEECH_DENSITY * normalized_speech_density
+                    + _FALLBACK_WEIGHT_SILENCE * (1.0 - silence_ratio)
+                    + _FALLBACK_WEIGHT_EMOTION * normalized_emotion_hits
+                    + _FALLBACK_WEIGHT_CONTINUITY * continuity_score
+                )
 
             normalized.append(
                 _WindowSample(
@@ -167,6 +232,7 @@ class SlidingWindowCandidateAnalysisService:
                         emotion_hits=emotion_hits,
                         continuity_score=continuity_score,
                         total_score=round(total_score, 6),
+                        loudness=round(normalized_loudness, 6),
                     ),
                     transcript_excerpt=str(window["excerpt"]),
                 )
@@ -262,6 +328,27 @@ def _merge_intervals(intervals: list[tuple[float, float]]) -> list[tuple[float, 
 
 def _longest_interval_length(intervals: list[tuple[float, float]]) -> float:
     return max((end - start for start, end in intervals), default=0.0)
+
+
+def _window_peak_loudness(
+    profile: LoudnessProfile | None,
+    start_sec: float,
+    end_sec: float,
+) -> float | None:
+    """Return the peak (max) RMS dB among profile samples within [start, end).
+
+    Returns None when no profile exists or no samples fall within the window.
+    """
+    if profile is None or not profile.time_sec:
+        return None
+
+    peak: float | None = None
+    for t, db in zip(profile.time_sec, profile.rms_db):
+        if start_sec <= t < end_sec:
+            if peak is None or db > peak:
+                peak = db
+
+    return peak
 
 
 def _window_overlap_ratio(left: AnalysisWindow, right: AnalysisWindow) -> float:
