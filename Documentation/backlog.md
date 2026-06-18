@@ -9,7 +9,7 @@ It tracks:
 - the next architecture track after `v1.0.0`
 
 Last updated: 2026-06-18
-Branch snapshot: `develop` carries post-`v1.0.0` architecture work through `TASK-072`, plus the product-quality track (`TASK-076` through `TASK-081`) and worker tuning fixes ahead of `main`
+Branch snapshot: `develop` carries post-`v1.0.0` architecture work through `TASK-072`, plus the product-quality track (`TASK-076` through `TASK-086`) and worker tuning fixes ahead of `main`
 Synced note: Obsidian backlog mirror in `StreamCutProject`
 
 ## Sync Policy
@@ -106,7 +106,7 @@ Synced note: Obsidian backlog mirror in `StreamCutProject`
 - Signed export delivery and the durable object-storage contract are now present in source:
   - completed exports prefer temporary signed object-storage URLs over backend proxying when S3 mode is enabled
   - durable source and export references are persisted as the long-term artifact contract
-- The product-quality track (`TASK-076` through `TASK-081`) is now merged into `develop`:
+- The product-quality track (`TASK-076` through `TASK-086`) is now merged into `develop`:
   - clip candidate scoring now incorporates an audio loudness signal alongside transcript density and silence (`TASK-076`, `4e722b0`)
   - download heartbeat is gated on real byte progress so stalled downloads auto-recover via the existing stale timeout (`TASK-077`, `987d710`)
   - clip export uses a single muxed Twitch format (fixing ~12s audio desync) and two-stage seek with bounded `-threads` (fixing CPU hog) (`TASK-080`, `76760e8`)
@@ -114,6 +114,11 @@ Synced note: Obsidian backlog mirror in `StreamCutProject`
   - job list UI adds delete button, bulk clear, manual complete button, and a static progress bar at rest (`TASK-078`, `b5eb976`)
   - yt-dlp concurrent fragment downloads raised from 4 to 8 (`5eaa0bd`)
   - Twitch VOD downloads now use TwitchDownloaderCLI instead of yt-dlp to fix A/V desync; other platform URLs still use yt-dlp (`TASK-081`, merged into develop)
+  - job delete confirmation replaced with a styled in-app dialog instead of `window.confirm` (`TASK-082`, `32cd5f2`)
+  - operator session lifetime extended to 7 days with token-based remember-me (`TASK-083`, `1d467ae`)
+  - processing status labels stabilized to fixed single-line heights with percent pill as primary signal (`TASK-084`, `8b80f12`)
+  - candidate moderation now patches the affected card in place instead of re-rendering all siblings (`TASK-085`, `b60d9cf`)
+  - clip-scoped review player with in-clip scrubbing, play/pause, time readout, and clamped seeking (`TASK-086`, `a250cf8`)
 - The remaining larger architecture gaps are still future work:
   - quotas and fairness controls are still future work (deprioritized: not justified for single-operator/self use; revisit when going public)
   - broker-backed queue semantics are still future work (deprioritized: DB polling is fine at n=1; evidence-gated)
@@ -143,6 +148,11 @@ Synced note: Obsidian backlog mirror in `StreamCutProject`
 - `TASK-079` Job Lifecycle On Moderation: Auto-Complete, Manual Complete, Delete From Review (`0dd3992`)
 - `TASK-080` Fix Clip Export: Single Muxed Format + Two-Stage Seek + Bounded Threads (`76760e8`)
 - `TASK-081` Use TwitchDownloaderCLI For Twitch Sources To Fix A/V Desync (merged into develop)
+- `TASK-082` Replace Native Delete Confirm With In-App Dialog (`32cd5f2`)
+- `TASK-083` Extend Operator Session Lifetime (`1d467ae`)
+- `TASK-084` Stabilize Processing Status Labels And Surface Percent (`8b80f12`)
+- `TASK-085` Update Moderated Candidate In Place Instead Of Full Re-Render (`b60d9cf`)
+- `TASK-086` Clip-Scoped Review Player With In-Clip Scrubbing (`a250cf8`)
 - `TASK-055` Add Authentication And Protected Operator Access
 - `TASK-056` Add Security Baseline And Input Hardening
 - `TASK-057` Introduce Production Runtime Profiles And Secret Handling
@@ -159,9 +169,14 @@ Synced note: Obsidian backlog mirror in `StreamCutProject`
 - none currently
 
 Status note:
-- this backlog pass records a real status transition:
-  - `TASK-081` -> completed / merged into develop (pending commit)
+- this backlog pass records real status transitions:
+  - `TASK-082` -> completed / merged (`32cd5f2`)
+  - `TASK-083` -> completed / merged (`1d467ae`)
+  - `TASK-084` -> completed / merged (`8b80f12`)
+  - `TASK-085` -> completed / merged (`b60d9cf`)
+  - `TASK-086` -> completed / merged (`a250cf8`)
 - prior status transitions recorded:
+  - `TASK-081` -> completed / merged into develop
   - `TASK-076` -> completed / merged (`4e722b0`)
   - `TASK-077` -> completed / merged (`987d710`)
   - `TASK-078` -> completed / merged (`b5eb976`)
@@ -175,8 +190,9 @@ Status note:
 Current release-track snapshot:
 - `v1.0.0` is released on `main` and back-merged into `develop`
 - the release point is explicit and reproducible through git tag `v1.0.0`
-- `develop` now carries the checked-in post-release architecture baseline through `TASK-072` plus the product-quality track through `TASK-081`
+- `develop` now carries the checked-in post-release architecture baseline through `TASK-072` plus the product-quality track through `TASK-086`
 - the product-quality track was driven by real operator-use feedback on Twitch VOD clip selection
+- `TASK-082` through `TASK-086` resolved the remaining open items from the Obsidian Problems.md operator feedback list: in-app delete confirmation, longer-lived sessions, stable processing labels, in-place candidate moderation updates, and a clip-scoped review player
 - the next tracked work starts at `TASK-073` (deprioritized) or the next operator-use issue
 
 ### Closed In `v1.0.0`
@@ -201,6 +217,18 @@ Current release-track snapshot:
 - `TASK-081` Use TwitchDownloaderCLI For Twitch Sources To Fix A/V Desync (merged into develop)
   - Twitch VOD downloads now route to TwitchDownloaderCLI v1.56.4 instead of yt-dlp, eliminating residual A/V desync on Twitch sources
   - non-Twitch platform URLs continue to use yt-dlp unchanged
+- `TASK-082` Replace Native Delete Confirm With In-App Dialog (`32cd5f2`)
+  - single, bulk, and job-detail delete now use a styled, focus-managed in-app confirmation instead of `window.confirm`
+- `TASK-083` Extend Operator Session Lifetime (`1d467ae`)
+  - explicit `server.servlet.session.timeout` of 7 days (env-overridable) plus Spring Security token-based remember-me with prod-required key
+  - login page gains a "Keep me signed in" checkbox
+- `TASK-084` Stabilize Processing Status Labels And Surface Percent (`8b80f12`)
+  - worker-runtime panel rows clamped to fixed single-line heights so labels no longer reflow between live polls
+  - percent pill made the primary progress signal
+- `TASK-085` Update Moderated Candidate In Place Instead Of Full Re-Render (`b60d9cf`)
+  - approve/reject patches only the affected card and the cached live snapshot, so sibling cards and their preview videos are no longer recreated
+- `TASK-086` Clip-Scoped Review Player With In-Clip Scrubbing (`a250cf8`)
+  - custom scrubber mapped to `[startSec, endSec]`, play/pause, time readout, clamped seeking, compact sizing
 
 ### Planned Post-`v1.0.0`
 - `TASK-073` Add Product Quotas And Runtime Limits (deprioritized: not justified for single-operator/self use; revisit when going public)
@@ -332,7 +360,7 @@ Current release-track snapshot:
 - No repository task is currently marked `in progress`.
 - The `v1.0.0` release track is closed.
 - The post-release architecture slice through `TASK-072` is merged into `develop`.
-- The product-quality track (`TASK-076` through `TASK-081`) is merged into `develop`.
+- The product-quality track (`TASK-076` through `TASK-086`) is merged into `develop`.
 
 ## NEXT
 
@@ -340,7 +368,7 @@ Current release-track snapshot:
 - no task is currently queued as immediate
 - `TASK-073` and `TASK-074` are deprioritized (see Planned Post-`v1.0.0`)
 - next work will be driven by operator-use feedback on Twitch VOD clip selection
-- keep post-release work on top of the checked-in `TASK-081` baseline
+- keep post-release work on top of the checked-in `TASK-086` baseline
 
 ### Validation
 - `TASK-064` browser E2E suite and CI gate are now present in source.
@@ -414,6 +442,11 @@ Status: completed locally on 2026-04-06
 - completed: `TASK-079` Job Lifecycle On Moderation: Auto-Complete, Manual Complete, Delete From Review (`0dd3992`)
 - completed: `TASK-080` Fix Clip Export: Single Muxed Format + Two-Stage Seek + Bounded Threads (`76760e8`)
 - completed: `TASK-081` Use TwitchDownloaderCLI For Twitch Sources To Fix A/V Desync (merged into develop)
+- completed: `TASK-082` Replace Native Delete Confirm With In-App Dialog (`32cd5f2`)
+- completed: `TASK-083` Extend Operator Session Lifetime (`1d467ae`)
+- completed: `TASK-084` Stabilize Processing Status Labels And Surface Percent (`8b80f12`)
+- completed: `TASK-085` Update Moderated Candidate In Place Instead Of Full Re-Render (`b60d9cf`)
+- completed: `TASK-086` Clip-Scoped Review Player With In-Clip Scrubbing (`a250cf8`)
 - perf: yt-dlp concurrent fragment downloads 4 to 8 (`5eaa0bd`)
 
 ### Execution Order
@@ -436,7 +469,7 @@ Status: completed locally on 2026-04-06
 - `TASK-071` and `TASK-072` are now checked in, so the next sequencing decision starts at quotas and broker preparation.
 - `TASK-073` should start only after the execution model is explicit enough to enforce concurrency and cost controls coherently. Deprioritized for now: not justified for single-operator/self use.
 - `TASK-074` should happen after the current task-centric baseline; broker migration without a clear task contract would just move the current ambiguity into another component. Deprioritized for now: DB polling is fine at n=1.
-- `TASK-076` through `TASK-081` form the product-quality track, driven by operator real-use feedback on Twitch VODs. They are all merged into `develop`.
+- `TASK-076` through `TASK-086` form the product-quality track, driven by operator real-use feedback on Twitch VODs. They are all merged into `develop`.
 
 ## LATER
 
@@ -468,7 +501,7 @@ Status: completed locally on 2026-04-06
 1. Continue operator-use-driven product-quality work as issues surface from real Twitch VOD clip selection.
 2. `TASK-073` Add Product Quotas And Runtime Limits (when going public).
 3. `TASK-074` Prepare Queue Delivery Abstraction For Broker Migration (when scale evidence justifies it).
-4. Keep post-`v1.0.0` work on top of the checked-in `worker_task` / `worker_execution`, durable object-storage, and product-quality (`TASK-081`) baselines.
+4. Keep post-`v1.0.0` work on top of the checked-in `worker_task` / `worker_execution`, durable object-storage, and product-quality (`TASK-086`) baselines.
 
 ## Path To Service v1.0.0
 
@@ -524,7 +557,7 @@ Status: completed on 2026-04-09 through `TASK-066`
 2. separate orchestration from `VodJobService` into a dedicated transition layer (done)
 3. split export work into its own pool (done)
 4. move media delivery toward signed URLs and durable object storage references (done)
-5. improve operator clip-selection quality and usability through real-use feedback (done: product-quality track `TASK-076` through `TASK-081`)
+5. improve operator clip-selection quality and usability through real-use feedback (done: product-quality track `TASK-076` through `TASK-086`)
 6. add quotas and queue-delivery abstraction only after the execution model is stable (deprioritized: not needed for single-operator use)
 7. migrate operator UI to React when candidate review or multi-developer frontend work makes local component state unavoidable (`TASK-075`, deprioritized)
 
@@ -554,6 +587,11 @@ Status: completed on 2026-04-09 through `TASK-066`
 - completed: `TASK-079` Job Lifecycle On Moderation: Auto-Complete, Manual Complete, Delete From Review (`0dd3992`)
 - completed: `TASK-080` Fix Clip Export: Single Muxed Format + Two-Stage Seek + Bounded Threads (`76760e8`)
 - completed: `TASK-081` Use TwitchDownloaderCLI For Twitch Sources To Fix A/V Desync (merged into develop)
+- completed: `TASK-082` Replace Native Delete Confirm With In-App Dialog (`32cd5f2`)
+- completed: `TASK-083` Extend Operator Session Lifetime (`1d467ae`)
+- completed: `TASK-084` Stabilize Processing Status Labels And Surface Percent (`8b80f12`)
+- completed: `TASK-085` Update Moderated Candidate In Place Instead Of Full Re-Render (`b60d9cf`)
+- completed: `TASK-086` Clip-Scoped Review Player With In-Clip Scrubbing (`a250cf8`)
 
 ### Critical Path To v1.0.0
 1. Finish the current release baseline and move it intentionally to `main`.
