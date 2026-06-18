@@ -2265,3 +2265,57 @@ tbody tr:hover {
     justify-content: flex-start;
   }
 }
+
+/* ── Confirmation dialog ── */
+
+.confirm-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.confirm-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+}
+
+.confirm-panel {
+  position: relative;
+  width: 100%;
+  max-width: 420px;
+  margin: 16px;
+  padding: 24px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-panel), var(--shadow-ring);
+}
+
+.confirm-title {
+  margin: 0 0 8px;
+  color: var(--text);
+  font-size: 17px;
+  font-weight: 590;
+  line-height: 1.35;
+  letter-spacing: -0.2px;
+}
+
+.confirm-message {
+  margin: 0 0 20px;
+  color: var(--text-muted);
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.55;
+}
+
+.confirm-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}

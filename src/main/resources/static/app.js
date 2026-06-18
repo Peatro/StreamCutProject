@@ -395,7 +395,12 @@ ${renderJobFailureSummary(job)}
     root.querySelectorAll("[data-delete-job]").forEach((button) => {
       button.addEventListener("click", async () => {
         const jobId = button.dataset.jobId;
-        if (!window.confirm(`Permanently delete Job #${jobId}? This removes the job, its source files, artifacts, and all pipeline data. This cannot be undone.`)) {
+        const confirmed = await confirmAction({
+          title: "Delete Job",
+          message: `Permanently delete Job #${jobId}? This removes the job, its source files, artifacts, and all pipeline data. This cannot be undone.`,
+          confirmLabel: "Delete"
+        });
+        if (!confirmed) {
           return;
         }
         const previousLabel = button.textContent;
@@ -535,7 +540,12 @@ ${renderJobFailureSummary(job)}
       if (!selectedIds.length) {
         return;
       }
-      if (!window.confirm(`Permanently delete ${selectedIds.length} job${selectedIds.length === 1 ? "" : "s"}? This removes the jobs, their source files, artifacts, and all pipeline data. This cannot be undone.`)) {
+      const confirmed = await confirmAction({
+        title: "Delete Jobs",
+        message: `Permanently delete ${selectedIds.length} job${selectedIds.length === 1 ? "" : "s"}? This removes the jobs, their source files, artifacts, and all pipeline data. This cannot be undone.`,
+        confirmLabel: "Delete"
+      });
+      if (!confirmed) {
         return;
       }
 
@@ -599,7 +609,12 @@ ${renderJobFailureSummary(job)}
         };
 
         if (action === "delete") {
-          if (!window.confirm(`Permanently delete Job #${jobId}? This removes the job, its source files, artifacts, and all pipeline data. This cannot be undone.`)) {
+          const confirmed = await confirmAction({
+            title: "Delete Job",
+            message: `Permanently delete Job #${jobId}? This removes the job, its source files, artifacts, and all pipeline data. This cannot be undone.`,
+            confirmLabel: "Delete"
+          });
+          if (!confirmed) {
             return;
           }
         }
@@ -1450,6 +1465,68 @@ ${renderJobFailureSummary(job)}
         ${renderCandidatePagination(candidatePage)}
       </div>
     `;
+  }
+
+  function confirmAction({ title, message, confirmLabel = "Delete" }) {
+    return new Promise((resolve) => {
+      const previouslyFocused = document.activeElement;
+
+      const overlay = document.createElement("div");
+      overlay.className = "confirm-overlay";
+      overlay.setAttribute("role", "dialog");
+      overlay.setAttribute("aria-modal", "true");
+      overlay.setAttribute("aria-label", title);
+
+      overlay.innerHTML = `
+        <div class="confirm-backdrop"></div>
+        <div class="confirm-panel">
+          <h2 class="confirm-title">${escapeHtml(title)}</h2>
+          <p class="confirm-message">${escapeHtml(message)}</p>
+          <div class="confirm-actions">
+            <button type="button" class="action-button action-button-neutral" data-confirm-cancel>Cancel</button>
+            <button type="button" class="action-button action-button-reject" data-confirm-ok>${escapeHtml(confirmLabel)}</button>
+          </div>
+        </div>
+      `;
+
+      const close = (result) => {
+        overlay.remove();
+        if (previouslyFocused && typeof previouslyFocused.focus === "function") {
+          previouslyFocused.focus();
+        }
+        resolve(result);
+      };
+
+      overlay.querySelector("[data-confirm-cancel]").addEventListener("click", () => close(false));
+      overlay.querySelector("[data-confirm-ok]").addEventListener("click", () => close(true));
+      overlay.querySelector(".confirm-backdrop").addEventListener("click", () => close(false));
+
+      overlay.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") {
+          e.stopPropagation();
+          close(false);
+        }
+        if (e.key === "Enter") {
+          e.stopPropagation();
+          close(true);
+        }
+        if (e.key === "Tab") {
+          const focusable = overlay.querySelectorAll("button");
+          const first = focusable[0];
+          const last = focusable[focusable.length - 1];
+          if (e.shiftKey && document.activeElement === first) {
+            e.preventDefault();
+            last.focus();
+          } else if (!e.shiftKey && document.activeElement === last) {
+            e.preventDefault();
+            first.focus();
+          }
+        }
+      });
+
+      document.body.appendChild(overlay);
+      overlay.querySelector("[data-confirm-ok]").focus();
+    });
   }
 
   function setCardMessage(target, message) {
