@@ -1517,7 +1517,6 @@ ${renderJobFailureSummary(job)}
               <div class="candidate-preview-stage">
                 <video
                   class="candidate-preview"
-                  controls
                   preload="metadata"
                   playsinline
                   data-preview-video
@@ -1525,10 +1524,14 @@ ${renderJobFailureSummary(job)}
                   data-preview-end-sec="${escapeHtml(candidate.endSec)}"
                   src="/api/jobs/${encodeURIComponent(job.id)}/source/stream"></video>
               </div>
+              <div class="candidate-preview-controls" data-preview-controls>
+                <button class="candidate-preview-play" type="button" data-preview-play title="Play / Pause">
+                  <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" data-preview-play-icon><polygon points="3,1 13,8 3,15"/></svg>
+                </button>
+                <input class="candidate-preview-scrubber" type="range" min="0" max="1000" value="0" step="1" data-preview-scrubber aria-label="Clip scrubber" />
+                <span class="candidate-preview-time" data-preview-time>0:00 / 0:00</span>
+              </div>
               <div class="candidate-preview-foot">
-                <div class="candidate-preview-progress" aria-hidden="true">
-                  <span class="candidate-preview-progress-bar"></span>
-                </div>
                 <div class="candidate-preview-note" data-preview-note>Loading clip window...</div>
               </div>
               </div>
@@ -1892,6 +1895,10 @@ ${renderJobFailureSummary(job)}
     root.querySelectorAll("[data-preview-video]").forEach((video) => {
       const shell = video.closest("[data-preview-shell]");
       const note = shell?.querySelector("[data-preview-note]");
+      const scrubber = shell?.querySelector("[data-preview-scrubber]");
+      const playBtn = shell?.querySelector("[data-preview-play]");
+      const playIcon = shell?.querySelector("[data-preview-play-icon]");
+      const timeDisplay = shell?.querySelector("[data-preview-time]");
       const startSec = Number(video.dataset.previewStartSec || "0");
       const endSec = Number(video.dataset.previewEndSec || "0");
       if (Number.isNaN(startSec) || Number.isNaN(endSec) || endSec <= startSec) {
@@ -1911,7 +1918,17 @@ ${renderJobFailureSummary(job)}
       const pausedMessage = "Preview paused inside the clip window.";
       const replayMessage = "Clip window finished. Press play to replay it from the start.";
       const clampedMessage = "Playback is limited to the selected clip window.";
+      const playPath = '<polygon points="3,1 13,8 3,15"/>';
+      const pausePath = '<g><rect x="2" y="1" width="4" height="14"/><rect x="10" y="1" width="4" height="14"/></g>';
       let internalPause = false;
+      let scrubbing = false;
+
+      const formatClipTime = (sec) => {
+        const t = Math.max(0, sec);
+        const m = Math.floor(t / 60);
+        const s = Math.floor(t % 60);
+        return `${m}:${String(s).padStart(2, "0")}`;
+      };
 
       const setPreviewState = (state, message) => {
         if (shell) {
@@ -1922,10 +1939,23 @@ ${renderJobFailureSummary(job)}
         }
       };
 
-      const updateProgress = () => {
+      const updatePlayIcon = () => {
+        if (playIcon) {
+          playIcon.innerHTML = video.paused ? playPath : pausePath;
+        }
+      };
+
+      const updateScrubber = () => {
         const progress = Math.max(0, Math.min((video.currentTime - startSec) / clipDuration, 1));
         if (shell) {
           shell.style.setProperty("--preview-progress", `${Math.round(progress * 100)}%`);
+        }
+        if (scrubber && !scrubbing) {
+          scrubber.value = String(Math.round(progress * 1000));
+        }
+        if (timeDisplay) {
+          const elapsed = Math.max(0, video.currentTime - startSec);
+          timeDisplay.textContent = `${formatClipTime(elapsed)} / ${formatClipTime(clipDuration)}`;
         }
       };
 
@@ -1937,7 +1967,7 @@ ${renderJobFailureSummary(job)}
         } catch (error) {
           void error;
         }
-        updateProgress();
+        updateScrubber();
       };
 
       const clampToClipWindow = () => {
@@ -1949,14 +1979,47 @@ ${renderJobFailureSummary(job)}
           seekToClipStart(true);
           return true;
         }
-        updateProgress();
+        updateScrubber();
         return false;
       };
+
+      /* --- Play / pause button --- */
+      if (playBtn) {
+        playBtn.addEventListener("click", () => {
+          if (video.paused) {
+            if (video.currentTime < startSec || video.currentTime >= endSec - 0.05) {
+              seekToClipStart(true);
+            }
+            video.play();
+          } else {
+            video.pause();
+          }
+        });
+      }
+
+      /* --- Scrubber interaction --- */
+      if (scrubber) {
+        scrubber.addEventListener("input", () => {
+          scrubbing = true;
+          const ratio = Number(scrubber.value) / 1000;
+          const target = startSec + ratio * clipDuration;
+          video.currentTime = Math.max(startSec, Math.min(target, endSec));
+          updateScrubber();
+        });
+        scrubber.addEventListener("change", () => {
+          scrubbing = false;
+          const ratio = Number(scrubber.value) / 1000;
+          const target = startSec + ratio * clipDuration;
+          video.currentTime = Math.max(startSec, Math.min(target, endSec));
+          updateScrubber();
+        });
+      }
 
       setPreviewState("loading", "Loading clip window...");
       video.addEventListener("loadedmetadata", () => {
         seekToClipStart(true);
         setPreviewState("ready", readyMessage);
+        updatePlayIcon();
       });
       video.addEventListener("loadeddata", () => {
         seekToClipStart(true);
@@ -1968,8 +2031,10 @@ ${renderJobFailureSummary(job)}
       video.addEventListener("play", () => {
         clampToClipWindow();
         setPreviewState("playing", playingMessage);
+        updatePlayIcon();
       });
       video.addEventListener("pause", () => {
+        updatePlayIcon();
         if (internalPause) {
           return;
         }
@@ -1981,18 +2046,20 @@ ${renderJobFailureSummary(job)}
         }
       });
       video.addEventListener("timeupdate", () => {
-        updateProgress();
+        updateScrubber();
         if (video.currentTime >= endSec - 0.05) {
           internalPause = true;
           video.pause();
           internalPause = false;
           seekToClipStart(true);
           setPreviewState("ready", replayMessage);
+          updatePlayIcon();
         }
       });
       video.addEventListener("ended", () => {
         seekToClipStart(true);
         setPreviewState("ready", replayMessage);
+        updatePlayIcon();
       });
       video.addEventListener("error", () => {
         if (shell) {

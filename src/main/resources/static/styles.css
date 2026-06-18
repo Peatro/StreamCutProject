@@ -1080,8 +1080,8 @@ th,
 .candidate-preview-shell {
   --preview-progress: 0%;
   display: grid;
-  gap: 12px;
-  padding: 12px;
+  gap: 6px;
+  padding: 10px;
   overflow: hidden;
   border: 1px solid var(--line-subtle);
   border-radius: var(--radius-lg);
@@ -1143,7 +1143,7 @@ th,
   content: "";
   position: absolute;
   inset: auto 0 0 0;
-  height: 72px;
+  height: 48px;
   background: linear-gradient(180deg, transparent, rgba(5, 6, 7, 0.58));
   pointer-events: none;
   opacity: 0.65;
@@ -1152,34 +1152,110 @@ th,
 .candidate-preview {
   display: block;
   width: 100%;
-  aspect-ratio: 16 / 9;
+  max-height: 220px;
+  object-fit: contain;
   background: #050607;
 }
 
-.candidate-preview-progress {
-  position: relative;
-  flex: 1 1 180px;
-  min-width: 160px;
-  height: 7px;
-  overflow: hidden;
+/* --- Custom clip-scoped controls --- */
+
+.candidate-preview-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 4px;
+}
+
+.candidate-preview-play {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  padding: 0;
+  border: 1px solid var(--line-subtle);
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.candidate-preview-play:hover {
+  background: rgba(113, 112, 255, 0.14);
+  border-color: rgba(130, 143, 255, 0.32);
+  color: var(--text-primary);
+}
+
+.candidate-preview-scrubber {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 6px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: var(--radius-pill);
+  outline: none;
+  cursor: pointer;
+}
+
+.candidate-preview-scrubber::-webkit-slider-runnable-track {
+  height: 6px;
   border-radius: var(--radius-pill);
   background: rgba(255, 255, 255, 0.06);
 }
 
-.candidate-preview-progress-bar {
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: var(--preview-progress);
-  border-radius: inherit;
-  background: linear-gradient(90deg, rgba(94, 106, 210, 0.24), var(--accent-bright), rgba(130, 143, 255, 0.34));
-  box-shadow: 0 0 18px rgba(113, 112, 255, 0.32);
-  transition: width 120ms linear;
+.candidate-preview-scrubber::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-top: -4px;
+  border: 2px solid var(--accent-bright);
+  border-radius: 50%;
+  background: var(--surface);
+  cursor: pointer;
+  box-shadow: 0 0 6px rgba(113, 112, 255, 0.4);
+  transition: transform 100ms ease;
 }
 
-.candidate-preview-note {
-  flex: 2 1 280px;
+.candidate-preview-scrubber::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+}
+
+.candidate-preview-scrubber::-moz-range-track {
+  height: 6px;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.candidate-preview-scrubber::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--accent-bright);
+  border-radius: 50%;
+  background: var(--surface);
+  cursor: pointer;
+  box-shadow: 0 0 6px rgba(113, 112, 255, 0.4);
+}
+
+.candidate-preview-time {
+  flex-shrink: 0;
   color: var(--text-muted);
-  font-size: 13px;
+  font-size: 11px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+/* --- End custom controls --- */
+
+.candidate-preview-note {
+  color: var(--text-muted);
+  font-size: 12px;
   line-height: 1.5;
   letter-spacing: -0.13px;
 }
