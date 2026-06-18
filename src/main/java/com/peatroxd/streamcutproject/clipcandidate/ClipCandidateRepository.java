@@ -47,4 +47,15 @@ public interface ClipCandidateRepository extends JpaRepository<ClipCandidate, Lo
     boolean existsByVodJobIdAndExportStatus(Long jobId, ExportStatus exportStatus);
 
     List<ClipCandidate> findAllByVodJobIdAndExportStatus(Long jobId, ExportStatus exportStatus);
+
+    boolean existsByVodJobIdAndModerationStatus(Long jobId, ModerationStatus moderationStatus);
+
+    @Query("""
+            select case when count(c) > 0 then true else false end
+            from ClipCandidate c
+            where c.vodJob.id = :jobId
+              and c.moderationStatus = com.peatroxd.streamcutproject.clipcandidate.ModerationStatus.APPROVED
+              and c.exportStatus <> com.peatroxd.streamcutproject.clipcandidate.ExportStatus.COMPLETED
+            """)
+    boolean existsByVodJobIdAndApprovedButNotExported(@Param("jobId") Long jobId);
 }

@@ -109,6 +109,7 @@ public class VodJobService {
     private static final String EVENT_JOB_FAILED = "JOB_FAILED";
     private static final String EVENT_EXPORT_STARTED = "EXPORT_STARTED";
     private static final String EVENT_EXPORT_COMPLETED = "EXPORT_COMPLETED";
+    private static final String EVENT_JOB_COMPLETED = "JOB_COMPLETED";
     private static final String METRIC_JOBS_CREATED = "streamcut.jobs.created";
     private static final String METRIC_JOBS_COMPLETED = "streamcut.jobs.completed";
     private static final String METRIC_JOBS_FAILED = "streamcut.jobs.failed";
@@ -136,7 +137,8 @@ public class VodJobService {
     private static final Set<JobStatus> DELETABLE_STATUSES = EnumSet.of(
             JobStatus.COMPLETED,
             JobStatus.FAILED,
-            JobStatus.CANCELED
+            JobStatus.CANCELED,
+            JobStatus.READY_FOR_REVIEW
     );
 
     private final VodJobRepository vodJobRepository;
@@ -447,6 +449,31 @@ public class VodJobService {
         jobEventRepository.deleteAllByVodJobId(jobId);
         vodJobRepository.delete(job);
         log.info("job_deleted jobId={} status={}", jobId, job.getStatus());
+    }
+
+    @Transactional
+    public JobDetailResponse completeJob(Long jobId) {
+        VodJob job = requireJob(jobId);
+        if (job.getStatus() != JobStatus.READY_FOR_REVIEW) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "Job can only be completed from READY_FOR_REVIEW status, current status: " + job.getStatus()
+            );
+        }
+
+        Instant now = Instant.now();
+        JobProjection.applyCompletedExport(job, now);
+        vodJobRepository.save(job);
+        jobEventRepository.save(JobEvent.create(
+                job,
+                EVENT_JOB_COMPLETED,
+                "Job manually completed by operator",
+                now
+        ));
+        incrementCounterAfterCommit(METRIC_JOBS_COMPLETED);
+        log.info("job_completed jobId={} trigger=manual", job.getId());
+
+        return toJobDetailResponse(job);
     }
 
     @Transactional
@@ -953,7 +980,7 @@ public class VodJobService {
             }
         }
         candidate.setExportStatus(ExportStatus.COMPLETED);
-        JobProjection.applyCompletedExport(job, now);
+        JobProjection.applyReadyForReview(job, now);
         execution.setStatus(WorkerExecutionStatus.SUCCEEDED);
         execution.setLastHeartbeatAt(now);
         execution.setFinishedAt(now);
@@ -968,6 +995,7 @@ public class VodJobService {
                 "Export completed for candidate " + candidate.getId(),
                 now
         ));
+        tryAutoCompleteJob(job);
         log.info(
                 "export_completed jobId={} candidateId={} status={} artifactPath={}",
                 job.getId(),
@@ -976,7 +1004,7 @@ public class VodJobService {
                 candidate.getExportedClipPath()
         );
 
-        return new WorkerTransportAck(job.getId(), JobStatus.COMPLETED.name());
+        return new WorkerTransportAck(job.getId(), job.getStatus().name());
     }
 
     @Transactional
@@ -1424,7 +1452,32 @@ public class VodJobService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Candidate not found: " + candidateId));
         candidate.setModerationStatus(moderationStatus);
         ClipCandidate savedCandidate = clipCandidateRepository.save(candidate);
+        tryAutoCompleteJob(candidate.getVodJob());
         return toCandidateResponse(savedCandidate);
+    }
+
+    private void tryAutoCompleteJob(VodJob job) {
+        if (job.getStatus() != JobStatus.READY_FOR_REVIEW) {
+            return;
+        }
+        if (clipCandidateRepository.existsByVodJobIdAndModerationStatus(job.getId(), ModerationStatus.PENDING)) {
+            return;
+        }
+        if (clipCandidateRepository.existsByVodJobIdAndApprovedButNotExported(job.getId())) {
+            return;
+        }
+
+        Instant now = Instant.now();
+        JobProjection.applyCompletedExport(job, now);
+        vodJobRepository.save(job);
+        jobEventRepository.save(JobEvent.create(
+                job,
+                EVENT_JOB_COMPLETED,
+                "Job auto-completed: all candidates resolved",
+                now
+        ));
+        incrementCounterAfterCommit(METRIC_JOBS_COMPLETED);
+        log.info("job_completed jobId={} trigger=auto", job.getId());
     }
 
     private ClipCandidate requireCandidate(Long candidateId) {

@@ -175,7 +175,12 @@ public final class JobProjection {
                     applyReadyForReview(job, projectionTime);
                 }
             }
-            case EXPORT -> applyCompletedExport(job, projectionTime);
+            case EXPORT -> {
+                if (job.getStatus() != JobStatus.READY_FOR_REVIEW
+                        && job.getStatus() != JobStatus.COMPLETED) {
+                    applyReadyForReview(job, projectionTime);
+                }
+            }
         }
     }
 

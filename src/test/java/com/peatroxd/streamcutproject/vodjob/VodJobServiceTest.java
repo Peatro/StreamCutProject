@@ -460,7 +460,7 @@ class VodJobServiceTest {
 
         JobDetailResponse response = vodJobService.getJob(1L);
 
-        assertThat(response.status()).isEqualTo("COMPLETED");
+        assertThat(response.status()).isEqualTo("READY_FOR_REVIEW");
         assertThat(response.progressPercent()).isEqualTo(100);
     }
 
@@ -1670,6 +1670,8 @@ class VodJobServiceTest {
                 Mockito.eq(7L),
                 Mockito.eq(Path.of("/var/lib/streamcut/jobs/1/exports/candidate-7.mp4"))
         )).thenReturn("s3://streamcut-artifacts/exports/jobs/1/candidate-7.mp4");
+        when(clipCandidateRepository.existsByVodJobIdAndModerationStatus(1L, ModerationStatus.PENDING)).thenReturn(false);
+        when(clipCandidateRepository.existsByVodJobIdAndApprovedButNotExported(1L)).thenReturn(false);
 
         WorkerTransportAck ack = vodJobService.ingestWorkerExportResult(
                 new WorkerExportResultPayload(55L, 1L, "worker-1", 1L, 7L, "/var/lib/streamcut/jobs/1/exports/candidate-7.mp4")
@@ -1682,8 +1684,8 @@ class VodJobServiceTest {
         verify(jobEventRepository).deleteAllByVodJobIdAndEventType(1L, "WORKER_PROGRESS");
         verify(workerExecutionRepository, Mockito.atLeastOnce()).save(any(WorkerExecution.class));
         verify(clipCandidateRepository).save(candidate);
-        verify(vodJobRepository).save(job);
-        verify(jobEventRepository).save(any(JobEvent.class));
+        verify(vodJobRepository, Mockito.atLeastOnce()).save(job);
+        verify(jobEventRepository, Mockito.atLeast(2)).save(any(JobEvent.class));
     }
 
     @Test
@@ -1953,6 +1955,150 @@ class VodJobServiceTest {
         assertThatThrownBy(() -> vodJobService.listJobEvents(99L))
                 .isInstanceOf(ResponseStatusException.class)
                 .hasMessageContaining("Job not found: 99");
+    }
+
+    // --- TASK-079: Auto-complete, manual complete, deletable-from-review ---
+
+    @Test
+    void autoCompletesJobOnLastModerationWhenAllRejected() {
+        VodJob job = buildJob(1L, "https://example.com/video", Instant.parse("2026-04-05T10:00:00Z"));
+        job.setStatus(JobStatus.READY_FOR_REVIEW);
+
+        ClipCandidate candidate = ClipCandidate.create(job, 5.0, 12.0, 0.91, "excerpt");
+        candidate.setId(7L);
+        candidate.setModerationStatus(ModerationStatus.PENDING);
+
+        when(clipCandidateRepository.findById(7L)).thenReturn(java.util.Optional.of(candidate));
+        when(clipCandidateRepository.save(any(ClipCandidate.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(clipCandidateRepository.existsByVodJobIdAndModerationStatus(1L, ModerationStatus.PENDING)).thenReturn(false);
+        when(clipCandidateRepository.existsByVodJobIdAndApprovedButNotExported(1L)).thenReturn(false);
+
+        vodJobService.rejectCandidate(7L);
+
+        assertThat(job.getStatus()).isEqualTo(JobStatus.COMPLETED);
+        verify(jobEventRepository).save(any(JobEvent.class));
+    }
+
+    @Test
+    void autoCompletesJobOnLastModerationWhenAllApprovedAndExported() {
+        VodJob job = buildJob(1L, "https://example.com/video", Instant.parse("2026-04-05T10:00:00Z"));
+        job.setStatus(JobStatus.READY_FOR_REVIEW);
+
+        ClipCandidate candidate = ClipCandidate.create(job, 5.0, 12.0, 0.91, "excerpt");
+        candidate.setId(7L);
+        candidate.setModerationStatus(ModerationStatus.PENDING);
+
+        when(clipCandidateRepository.findById(7L)).thenReturn(java.util.Optional.of(candidate));
+        when(clipCandidateRepository.save(any(ClipCandidate.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(clipCandidateRepository.existsByVodJobIdAndModerationStatus(1L, ModerationStatus.PENDING)).thenReturn(false);
+        when(clipCandidateRepository.existsByVodJobIdAndApprovedButNotExported(1L)).thenReturn(false);
+
+        vodJobService.approveCandidate(7L);
+
+        assertThat(job.getStatus()).isEqualTo(JobStatus.COMPLETED);
+        verify(jobEventRepository).save(any(JobEvent.class));
+    }
+
+    @Test
+    void autoCompleteStaysInReviewWhenApprovedButNotExported() {
+        VodJob job = buildJob(1L, "https://example.com/video", Instant.parse("2026-04-05T10:00:00Z"));
+        job.setStatus(JobStatus.READY_FOR_REVIEW);
+
+        ClipCandidate candidate = ClipCandidate.create(job, 5.0, 12.0, 0.91, "excerpt");
+        candidate.setId(7L);
+        candidate.setModerationStatus(ModerationStatus.PENDING);
+
+        when(clipCandidateRepository.findById(7L)).thenReturn(java.util.Optional.of(candidate));
+        when(clipCandidateRepository.save(any(ClipCandidate.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(clipCandidateRepository.existsByVodJobIdAndModerationStatus(1L, ModerationStatus.PENDING)).thenReturn(false);
+        when(clipCandidateRepository.existsByVodJobIdAndApprovedButNotExported(1L)).thenReturn(true);
+
+        vodJobService.approveCandidate(7L);
+
+        assertThat(job.getStatus()).isEqualTo(JobStatus.READY_FOR_REVIEW);
+    }
+
+    @Test
+    void autoCompleteStaysInReviewWhenPendingCandidatesRemain() {
+        VodJob job = buildJob(1L, "https://example.com/video", Instant.parse("2026-04-05T10:00:00Z"));
+        job.setStatus(JobStatus.READY_FOR_REVIEW);
+
+        ClipCandidate candidate = ClipCandidate.create(job, 5.0, 12.0, 0.91, "excerpt");
+        candidate.setId(7L);
+        candidate.setModerationStatus(ModerationStatus.PENDING);
+
+        when(clipCandidateRepository.findById(7L)).thenReturn(java.util.Optional.of(candidate));
+        when(clipCandidateRepository.save(any(ClipCandidate.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(clipCandidateRepository.existsByVodJobIdAndModerationStatus(1L, ModerationStatus.PENDING)).thenReturn(true);
+
+        vodJobService.rejectCandidate(7L);
+
+        assertThat(job.getStatus()).isEqualTo(JobStatus.READY_FOR_REVIEW);
+    }
+
+    @Test
+    void manualCompleteTransitionsReadyForReviewToCompleted() {
+        VodJob job = buildJob(1L, "https://example.com/video", Instant.parse("2026-04-05T10:00:00Z"));
+        job.setStatus(JobStatus.READY_FOR_REVIEW);
+        when(vodJobRepository.findById(1L)).thenReturn(java.util.Optional.of(job));
+        when(workerExecutionRepository.findFirstByVodJobIdOrderByIdDesc(1L))
+                .thenReturn(java.util.Optional.empty());
+        when(workerTaskRepository.findFirstByVodJobIdOrderByIdDesc(1L))
+                .thenReturn(java.util.Optional.empty());
+
+        JobDetailResponse response = vodJobService.completeJob(1L);
+
+        assertThat(response.status()).isEqualTo("COMPLETED");
+        assertThat(job.getStatus()).isEqualTo(JobStatus.COMPLETED);
+        verify(jobEventRepository).save(any(JobEvent.class));
+    }
+
+    @Test
+    void manualCompleteRejects409WhenNotInReview() {
+        VodJob job = buildJob(1L, "https://example.com/video", Instant.parse("2026-04-05T10:00:00Z"));
+        job.setStatus(JobStatus.DOWNLOADING);
+        when(vodJobRepository.findById(1L)).thenReturn(java.util.Optional.of(job));
+
+        assertThatThrownBy(() -> vodJobService.completeJob(1L))
+                .isInstanceOf(ResponseStatusException.class)
+                .extracting(ex -> ((ResponseStatusException) ex).getStatusCode().value())
+                .isEqualTo(409);
+    }
+
+    @Test
+    void manualCompleteRejects409WhenAlreadyCompleted() {
+        VodJob job = buildJob(1L, "https://example.com/video", Instant.parse("2026-04-05T10:00:00Z"));
+        job.setStatus(JobStatus.COMPLETED);
+        when(vodJobRepository.findById(1L)).thenReturn(java.util.Optional.of(job));
+
+        assertThatThrownBy(() -> vodJobService.completeJob(1L))
+                .isInstanceOf(ResponseStatusException.class)
+                .extracting(ex -> ((ResponseStatusException) ex).getStatusCode().value())
+                .isEqualTo(409);
+    }
+
+    @Test
+    void deleteJobSucceedsForReadyForReviewStatus() {
+        VodJob job = buildJob(1L, "https://example.com/video", Instant.parse("2026-04-05T10:00:00Z"));
+        job.setStatus(JobStatus.READY_FOR_REVIEW);
+        when(vodJobRepository.findById(1L)).thenReturn(java.util.Optional.of(job));
+        when(clipCandidateRepository.findAllByVodJobIdAndExportStatus(1L, ExportStatus.COMPLETED))
+                .thenReturn(List.of());
+
+        vodJobService.deleteJob(1L);
+
+        verify(vodJobRepository).delete(job);
+    }
+
+    @Test
+    void deleteJobStillRejectsActiveStatuses() {
+        VodJob job = buildJob(1L, "https://example.com/video", Instant.parse("2026-04-05T10:00:00Z"));
+        job.setStatus(JobStatus.DOWNLOADING);
+        when(vodJobRepository.findById(1L)).thenReturn(java.util.Optional.of(job));
+
+        assertThatThrownBy(() -> vodJobService.deleteJob(1L))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("Job cannot be deleted from status: DOWNLOADING");
     }
 
     private static VodJob buildJob(Long id, String sourceUrl, Instant createdAt) {

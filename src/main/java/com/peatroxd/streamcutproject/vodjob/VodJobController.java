@@ -80,6 +80,11 @@ public class VodJobController {
         return vodJobService.forceFailJob(id);
     }
 
+    @PostMapping("/{id}/complete")
+    public JobDetailResponse completeJob(@PathVariable Long id) {
+        return vodJobService.completeJob(id);
+    }
+
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void deleteJob(@PathVariable Long id) {

@@ -463,6 +463,19 @@ class VodJobControllerTest {
                 .andExpect(jsonPath("$.path").value("/api/jobs/upload"));
     }
 
+    @Test
+    void completesReviewJob() throws Exception {
+        when(vodJobService.completeJob(1L)).thenReturn(jobDetailResponse("COMPLETED"));
+
+        mockMvc.perform(post("/api/jobs/1/complete"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.id").value(1))
+                .andExpect(jsonPath("$.status").value("COMPLETED"));
+
+        verify(vodJobService).completeJob(1L);
+    }
+
     private static JobDetailResponse jobDetailResponse(String status) {
         return new JobDetailResponse(
                 1L,
