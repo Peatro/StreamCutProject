@@ -11,6 +11,8 @@ app:
   security:
     operator-username: ${APP_OPERATOR_USERNAME}
     operator-password: ${APP_OPERATOR_PASSWORD}
+    remember-me-key: ${APP_SECURITY_REMEMBER_ME_KEY}
+    remember-me-validity: ${APP_SECURITY_REMEMBER_ME_VALIDITY:30d}
   storage:
     local-root: ${APP_STORAGE_LOCAL_ROOT}
   artifact-storage:

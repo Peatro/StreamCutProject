@@ -17,6 +17,8 @@ import org.springframework.mock.web.MockHttpSession;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.web.context.WebApplicationContext;
 
+import jakarta.servlet.http.Cookie;
+
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Base64;
@@ -32,16 +34,19 @@ import static org.springframework.security.test.web.servlet.setup.SecurityMockMv
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.cookie;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.redirectedUrl;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 @SpringBootTest(properties = {
         "spring.datasource.url=jdbc:h2:mem:streamcut-security;MODE=PostgreSQL;DB_CLOSE_DELAY=-1",
         "spring.datasource.driver-class-name=org.h2.Driver",
         "spring.datasource.username=sa",
-        "spring.datasource.password="
+        "spring.datasource.password=",
+        "app.security.remember-me-key=test-remember-me-key"
 })
 class SecurityConfigurationIntegrationTest {
 
@@ -240,6 +245,45 @@ class SecurityConfigurationIntegrationTest {
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
                 .andExpect(jsonPath("$.jobId").value(7))
                 .andExpect(jsonPath("$.taskType").value("ANALYZE"));
+    }
+
+    @Test
+    void loginWithRememberMeSetsRememberMeCookie() throws Exception {
+        MvcResult result = mockMvc.perform(post("/login")
+                        .with(csrf())
+                        .param("username", "operator")
+                        .param("password", "operator-password")
+                        .param("remember-me", "on"))
+                .andExpect(status().isFound())
+                .andExpect(redirectedUrl("/index.html"))
+                .andExpect(cookie().exists("remember-me"))
+                .andReturn();
+
+        Cookie rememberMeCookie = result.getResponse().getCookie("remember-me");
+        assertThat(rememberMeCookie).isNotNull();
+        assertThat(rememberMeCookie.getMaxAge()).isGreaterThan(0);
+    }
+
+    @Test
+    void rememberMeCookieAuthenticatesWithoutSession() throws Exception {
+        when(vodJobService.listJobs()).thenReturn(List.of());
+
+        MvcResult loginResult = mockMvc.perform(post("/login")
+                        .with(csrf())
+                        .param("username", "operator")
+                        .param("password", "operator-password")
+                        .param("remember-me", "on"))
+                .andExpect(status().isFound())
+                .andExpect(cookie().exists("remember-me"))
+                .andReturn();
+
+        Cookie rememberMeCookie = loginResult.getResponse().getCookie("remember-me");
+        assertThat(rememberMeCookie).isNotNull();
+
+        // Use only the remember-me cookie (no session) to access a protected endpoint
+        mockMvc.perform(get("/api/jobs")
+                        .cookie(rememberMeCookie))
+                .andExpect(status().isOk());
     }
 
     private MockHttpSession operatorSession() throws Exception {

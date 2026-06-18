@@ -7,6 +7,8 @@ import jakarta.validation.constraints.NotBlank;
 import lombok.Getter;
 import lombok.Setter;
 
+import java.time.Duration;
+
 @Validated
 @ConfigurationProperties(prefix = "app.security")
 @Getter
@@ -18,5 +20,10 @@ public class OperatorSecurityProperties {
 
     @NotBlank
     private String operatorPassword;
+
+    @NotBlank
+    private String rememberMeKey;
+
+    private Duration rememberMeValidity = Duration.ofDays(30);
 
 }

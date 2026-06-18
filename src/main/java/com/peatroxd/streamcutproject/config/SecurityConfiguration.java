@@ -16,6 +16,8 @@ import org.springframework.security.provisioning.InMemoryUserDetailsManager;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 
+import java.time.Duration;
+
 @Configuration
 @EnableWebSecurity
 @EnableConfigurationProperties(OperatorSecurityProperties.class)
@@ -24,7 +26,8 @@ public class SecurityConfiguration {
     @Bean
     SecurityFilterChain securityFilterChain(
             HttpSecurity http,
-            ApiSecurityErrorHandler apiSecurityErrorHandler
+            ApiSecurityErrorHandler apiSecurityErrorHandler,
+            OperatorSecurityProperties securityProperties
     ) throws Exception {
         http
                 .csrf(csrf -> csrf
@@ -50,7 +53,16 @@ public class SecurityConfiguration {
                 .logout(logout -> logout
                         .logoutUrl("/logout")
                         .logoutSuccessUrl("/login.html?logout")
+                        .deleteCookies("remember-me")
                 )
+                .rememberMe(rememberMe -> {
+                    Duration validity = securityProperties.getRememberMeValidity();
+                    rememberMe
+                            .key(securityProperties.getRememberMeKey())
+                            .tokenValiditySeconds((int) validity.toSeconds())
+                            .rememberMeParameter("remember-me")
+                            .rememberMeCookieName("remember-me");
+                })
                 .exceptionHandling(exceptionHandling -> exceptionHandling
                         .authenticationEntryPoint((request, response, authException) -> {
                             if (request.getRequestURI().startsWith("/api/")) {

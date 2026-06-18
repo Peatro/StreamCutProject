@@ -11,6 +11,8 @@ app:
   security:
     operator-username: ${APP_OPERATOR_USERNAME:operator}
     operator-password: ${APP_OPERATOR_PASSWORD:operator-password}
+    remember-me-key: ${APP_SECURITY_REMEMBER_ME_KEY:streamcut-local-remember-me-key}
+    remember-me-validity: ${APP_SECURITY_REMEMBER_ME_VALIDITY:30d}
   storage:
     local-root: ${APP_STORAGE_LOCAL_ROOT:data/storage}
   artifact-storage:

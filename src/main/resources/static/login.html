@@ -216,6 +216,54 @@
       cursor: not-allowed;
     }
 
+    .remember-me {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+    }
+
+    .remember-me input[type="checkbox"] {
+      appearance: none;
+      width: 16px;
+      height: 16px;
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      background: rgba(255, 255, 255, 0.02);
+      cursor: pointer;
+      flex-shrink: 0;
+      transition: border-color 140ms ease, background 140ms ease;
+    }
+
+    .remember-me input[type="checkbox"]:checked {
+      background: var(--accent);
+      border-color: rgba(113, 112, 255, 0.45);
+    }
+
+    .remember-me input[type="checkbox"]:checked::after {
+      content: "";
+      display: block;
+      width: 10px;
+      height: 10px;
+      margin: 2px;
+      background: #ffffff;
+      mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Cpath d='M1.5 5.5L4 8L8.5 2' stroke='white' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center/contain no-repeat;
+      -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Cpath d='M1.5 5.5L4 8L8.5 2' stroke='white' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center/contain no-repeat;
+    }
+
+    .remember-me input[type="checkbox"]:focus-visible {
+      outline: none;
+      box-shadow: var(--shadow-focus);
+    }
+
+    .remember-me-label {
+      color: var(--text-muted);
+      font-size: 13px;
+      line-height: 1.5;
+      letter-spacing: -0.13px;
+      user-select: none;
+    }
+
     .hint {
       color: var(--text-muted);
       font-size: 13px;
@@ -259,6 +307,10 @@
         <label class="field-label" for="password-input">Password</label>
         <input id="password-input" type="password" name="password" autocomplete="current-password" required>
       </div>
+      <label class="remember-me">
+        <input type="checkbox" name="remember-me" id="remember-me-input" checked>
+        <span class="remember-me-label">Keep me signed in</span>
+      </label>
       <div class="actions">
         <button type="submit">Sign in</button>
         <span class="hint">Need the operator credentials? Check the runtime docs for the configured bootstrap values.</span>
