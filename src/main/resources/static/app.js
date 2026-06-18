@@ -662,6 +662,91 @@ ${renderJobFailureSummary(job)}
     });
   }
 
+  function patchCandidateCardInPlace(card, updatedCandidate) {
+    if (!card) {
+      return;
+    }
+    const newStatus = updatedCandidate.moderationStatus;
+
+    // Update all status pills on this card (summary + body both have one)
+    card.querySelectorAll(".pill").forEach((pill) => {
+      const tmp = document.createElement("span");
+      tmp.innerHTML = renderStatusPill(newStatus);
+      const newPill = tmp.firstElementChild;
+      pill.replaceWith(newPill);
+    });
+
+    // Update approve/reject button disabled state
+    card.querySelectorAll("[data-candidate-action='approve']").forEach((btn) => {
+      btn.disabled = newStatus === "APPROVED";
+      btn.textContent = "Approve";
+    });
+    card.querySelectorAll("[data-candidate-action='reject']").forEach((btn) => {
+      btn.disabled = newStatus === "REJECTED";
+      btn.textContent = "Reject";
+    });
+
+    // Update moderator note if present in the response
+    if (updatedCandidate.moderatorNote != null) {
+      const metaDiv = card.querySelector(".candidate-meta");
+      if (metaDiv) {
+        const noteSpan = metaDiv.querySelector("span:first-child");
+        if (noteSpan) {
+          noteSpan.textContent = updatedCandidate.moderatorNote || "No moderator note yet.";
+        }
+      }
+    }
+
+    // Update runtime state if export fields changed in the response
+    if ("exportReady" in updatedCandidate || "exportStatus" in updatedCandidate) {
+      const existingRuntime = card.querySelector(".runtime-state, .runtime-progress");
+      const tmp = document.createElement("div");
+      tmp.innerHTML = renderCandidateRuntimeState(updatedCandidate);
+      const newRuntime = tmp.firstElementChild;
+      if (existingRuntime && newRuntime) {
+        existingRuntime.replaceWith(newRuntime);
+      } else if (existingRuntime && !newRuntime) {
+        existingRuntime.remove();
+      }
+    }
+  }
+
+  function patchLiveSnapshotCandidate(root, jobId, updatedCandidate) {
+    if (liveUpdates.mode !== "job" || liveUpdates.root !== root) {
+      return;
+    }
+    if (String(liveUpdates.jobId) !== String(jobId)) {
+      return;
+    }
+    if (!liveUpdates.snapshot) {
+      return;
+    }
+    try {
+      const parsed = JSON.parse(liveUpdates.snapshot);
+      if (Array.isArray(parsed.candidates)) {
+        // candidates format: [id, moderationStatus, exportStatus, exportReady, moderatorNote]
+        for (let i = 0; i < parsed.candidates.length; i++) {
+          if (String(parsed.candidates[i][0]) === String(updatedCandidate.id)) {
+            parsed.candidates[i][1] = updatedCandidate.moderationStatus;
+            if (updatedCandidate.exportStatus != null) {
+              parsed.candidates[i][2] = updatedCandidate.exportStatus;
+            }
+            if (updatedCandidate.exportReady != null) {
+              parsed.candidates[i][3] = updatedCandidate.exportReady;
+            }
+            if (updatedCandidate.moderatorNote != null) {
+              parsed.candidates[i][4] = updatedCandidate.moderatorNote;
+            }
+            break;
+          }
+        }
+      }
+      liveUpdates.snapshot = JSON.stringify(parsed);
+    } catch (_) {
+      // If snapshot parse fails, leave it as-is; the next poll will re-render
+    }
+  }
+
   function bindCandidateActions(root, jobId) {
     root.querySelectorAll("[data-candidate-action]").forEach((button) => {
       button.addEventListener("click", async (event) => {
@@ -680,12 +765,18 @@ ${renderJobFailureSummary(job)}
           let result;
           if (action === "approve") {
             result = await api.approveCandidate(candidateId);
-            await renderJobPage(root, jobId, `Candidate #${result.id} approved.`, "success");
+            patchCandidateCardInPlace(candidateCard, result);
+            patchLiveSnapshotCandidate(root, jobId, result);
+            showInlineBanner(root, `Candidate #${result.id} approved.`, "success");
+            setCardMessage(message, "");
             return;
           }
           if (action === "reject") {
             result = await api.rejectCandidate(candidateId);
-            await renderJobPage(root, jobId, `Candidate #${result.id} rejected.`, "warning");
+            patchCandidateCardInPlace(candidateCard, result);
+            patchLiveSnapshotCandidate(root, jobId, result);
+            showInlineBanner(root, `Candidate #${result.id} rejected.`, "warning");
+            setCardMessage(message, "");
             return;
           }
           if (action === "export") {
