@@ -6,6 +6,7 @@ services:
     environment:
       WHISPER_DEVICE: cuda
       WHISPER_COMPUTE_TYPE: float16
+      NVIDIA_DRIVER_CAPABILITIES: all
     deploy:
       resources:
         reservations:
