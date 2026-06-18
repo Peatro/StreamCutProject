@@ -42,11 +42,20 @@ class YtDlpPlatformDownloader:
         target_dir.mkdir(parents=True, exist_ok=True)
         output_template = str(target_dir / f"{filename_stem}.%(ext)s")
 
+        # Monotonic high-water mark: only heartbeat when downloaded_bytes
+        # strictly exceeds the previous maximum.  A stalled download that
+        # keeps emitting ticks with frozen bytes will NOT trigger
+        # on_progress, so the backend's stale-heartbeat recovery fires.
+        max_downloaded_bytes: list[int] = [0]
+
         def _yt_dlp_hook(info: dict) -> None:
             if on_progress is None or info.get("status") != "downloading":
                 return
             downloaded = info.get("downloaded_bytes") or 0
             total = info.get("total_bytes") or info.get("total_bytes_estimate") or 0
+            if downloaded <= max_downloaded_bytes[0]:
+                return
+            max_downloaded_bytes[0] = downloaded
             if total > 0:
                 on_progress(min(downloaded / total * 100.0, 100.0))
 

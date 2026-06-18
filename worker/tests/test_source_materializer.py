@@ -268,5 +268,152 @@ class SourceMaterializerTests(unittest.TestCase):
             del sys.modules["yt_dlp"]
 
 
+class YtDlpProgressGatingTests(unittest.TestCase):
+    """TASK-077: download heartbeat must be gated on real byte progress."""
+
+    def _make_downloader_and_hook(self):
+        """Create a YtDlpPlatformDownloader and extract the _yt_dlp_hook closure.
+
+        Returns (progress_calls, hook) where progress_calls is a list that
+        collects every on_progress(percent) invocation.
+        """
+        progress_calls: list[float] = []
+
+        captured_hooks: list = []
+        original_init = None
+
+        class CapturingYoutubeDL:
+            def __init__(self, options: dict) -> None:
+                captured_hooks.extend(options.get("progress_hooks", []))
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return None
+
+            def extract_info(self, url: str, download: bool = True) -> None:
+                pass
+
+        import types
+        fake_module = types.ModuleType("yt_dlp")
+        fake_module.YoutubeDL = CapturingYoutubeDL
+        sys.modules["yt_dlp"] = fake_module
+
+        try:
+            downloader = YtDlpPlatformDownloader()
+            with TemporaryDirectory() as temp_dir:
+                target_dir = Path(temp_dir)
+                (target_dir / "source-video.mp4").write_bytes(b"fake")
+                downloader.download(
+                    "https://www.twitch.tv/videos/123",
+                    target_dir,
+                    "source-video",
+                    on_progress=lambda pct: progress_calls.append(pct),
+                )
+        finally:
+            del sys.modules["yt_dlp"]
+
+        self.assertEqual(len(captured_hooks), 1, "Expected exactly one progress hook")
+        return progress_calls, captured_hooks[0]
+
+    def test_stalled_download_does_not_heartbeat(self) -> None:
+        """Repeated downloading events with non-increasing downloaded_bytes
+        must NOT invoke on_progress after the first real progress event."""
+        progress_calls, hook = self._make_downloader_and_hook()
+
+        # First real progress event -- should invoke on_progress
+        hook({"status": "downloading", "downloaded_bytes": 1000, "total_bytes": 10000})
+        self.assertEqual(len(progress_calls), 1)
+        self.assertAlmostEqual(progress_calls[0], 10.0)
+
+        # Stalled: same byte count repeated many times
+        for _ in range(20):
+            hook({"status": "downloading", "downloaded_bytes": 1000, "total_bytes": 10000})
+
+        # on_progress must NOT have been called again
+        self.assertEqual(
+            len(progress_calls), 1,
+            f"Expected 1 progress call during stall, got {len(progress_calls)}",
+        )
+
+    def test_advancing_download_heartbeats_with_correct_percentage(self) -> None:
+        """Increasing downloaded_bytes must invoke on_progress with correct %."""
+        progress_calls, hook = self._make_downloader_and_hook()
+
+        hook({"status": "downloading", "downloaded_bytes": 2000, "total_bytes": 10000})
+        hook({"status": "downloading", "downloaded_bytes": 5000, "total_bytes": 10000})
+        hook({"status": "downloading", "downloaded_bytes": 10000, "total_bytes": 10000})
+
+        self.assertEqual(len(progress_calls), 3)
+        self.assertAlmostEqual(progress_calls[0], 20.0)
+        self.assertAlmostEqual(progress_calls[1], 50.0)
+        self.assertAlmostEqual(progress_calls[2], 100.0)
+
+    def test_stall_then_resume_heartbeats_correctly(self) -> None:
+        """After a stall period, resumed progress must heartbeat again."""
+        progress_calls, hook = self._make_downloader_and_hook()
+
+        # Initial progress
+        hook({"status": "downloading", "downloaded_bytes": 1000, "total_bytes": 10000})
+        self.assertEqual(len(progress_calls), 1)
+
+        # Stall (5 ticks at same byte count)
+        for _ in range(5):
+            hook({"status": "downloading", "downloaded_bytes": 1000, "total_bytes": 10000})
+        self.assertEqual(len(progress_calls), 1, "Stall should not produce extra heartbeats")
+
+        # Resume
+        hook({"status": "downloading", "downloaded_bytes": 3000, "total_bytes": 10000})
+        self.assertEqual(len(progress_calls), 2)
+        self.assertAlmostEqual(progress_calls[1], 30.0)
+
+    def test_zero_downloaded_bytes_does_not_heartbeat(self) -> None:
+        """Events with downloaded_bytes=0 must not invoke on_progress."""
+        progress_calls, hook = self._make_downloader_and_hook()
+
+        hook({"status": "downloading", "downloaded_bytes": 0, "total_bytes": 10000})
+        hook({"status": "downloading", "downloaded_bytes": 0, "total_bytes": 10000})
+
+        self.assertEqual(len(progress_calls), 0, "Zero bytes should not heartbeat")
+
+    def test_byte_fluctuation_below_max_does_not_heartbeat(self) -> None:
+        """Per-fragment byte fluctuations below the max must not heartbeat."""
+        progress_calls, hook = self._make_downloader_and_hook()
+
+        hook({"status": "downloading", "downloaded_bytes": 5000, "total_bytes": 10000})
+        self.assertEqual(len(progress_calls), 1)
+
+        # Fluctuation: bytes drop below max (fragment retry)
+        hook({"status": "downloading", "downloaded_bytes": 3000, "total_bytes": 10000})
+        hook({"status": "downloading", "downloaded_bytes": 4000, "total_bytes": 10000})
+        self.assertEqual(len(progress_calls), 1, "Fluctuation below max should not heartbeat")
+
+        # Genuine new progress above max
+        hook({"status": "downloading", "downloaded_bytes": 6000, "total_bytes": 10000})
+        self.assertEqual(len(progress_calls), 2)
+        self.assertAlmostEqual(progress_calls[1], 60.0)
+
+    def test_non_downloading_status_ignored(self) -> None:
+        """Events with status != 'downloading' must be ignored regardless."""
+        progress_calls, hook = self._make_downloader_and_hook()
+
+        hook({"status": "finished", "downloaded_bytes": 10000, "total_bytes": 10000})
+        hook({"status": "error", "downloaded_bytes": 500, "total_bytes": 10000})
+
+        self.assertEqual(len(progress_calls), 0)
+
+    def test_missing_total_bytes_does_not_heartbeat(self) -> None:
+        """When total_bytes is unknown (0), on_progress should not be called
+        even if downloaded_bytes increases -- percentage cannot be computed."""
+        progress_calls, hook = self._make_downloader_and_hook()
+
+        hook({"status": "downloading", "downloaded_bytes": 1000, "total_bytes": 0})
+        hook({"status": "downloading", "downloaded_bytes": 2000})
+
+        self.assertEqual(len(progress_calls), 0,
+                         "No heartbeat expected when total_bytes is unknown")
+
+
 if __name__ == "__main__":
     unittest.main()
