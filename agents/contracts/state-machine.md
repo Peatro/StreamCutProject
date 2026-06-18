@@ -29,7 +29,11 @@ Rules:
 - operator retry from `FAILED` moves the aggregate back to `QUEUED_FOR_DOWNLOAD` and increments `processing_version`
 - operator cancel is only valid from `QUEUED_FOR_DOWNLOAD` or `QUEUED_FOR_PROCESSING` and ends in `CANCELED`
 - operator force-fail is only valid from active worker states and ends in `FAILED`
+- operator manual complete is only valid from `READY_FOR_REVIEW` and ends in `COMPLETED`
+- auto-complete fires from `READY_FOR_REVIEW` when no candidates are `PENDING` and every `APPROVED` candidate has a completed export
 - export is user-triggered after moderation, not an automatic continuation of analysis
+- after each export completion, the job returns to `READY_FOR_REVIEW` (not `COMPLETED`) and auto-complete is evaluated
+- delete is valid from `COMPLETED`, `FAILED`, `CANCELED`, or `READY_FOR_REVIEW`
 
 Typical aggregate flow:
 NEW
@@ -43,7 +47,13 @@ NEW
 -> GENERATING_CANDIDATES
 -> READY_FOR_REVIEW
 -> EXPORTING_CLIP
--> COMPLETED
+-> READY_FOR_REVIEW (after each export; auto-complete evaluated)
+-> COMPLETED (auto or manual)
+
+Completion paths from `READY_FOR_REVIEW`:
+- auto-complete: all candidates moderated + all approved exports completed
+- manual: operator `POST /api/jobs/{id}/complete`
+- delete: operator `DELETE /api/jobs/{id}` (removes job entirely)
 
 ## WorkerTaskStatus
 `worker_task` is the queue/runtime work unit.

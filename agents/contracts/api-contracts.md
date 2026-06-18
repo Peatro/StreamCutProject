@@ -57,6 +57,27 @@ Effects:
 - moves the aggregate job to `CANCELED`
 - records a `JOB_CANCELED` event
 
+### POST /api/jobs/{id}/complete
+Manually completes a job that is in `READY_FOR_REVIEW`.
+
+Effects:
+- only valid when the aggregate job status is `READY_FOR_REVIEW`
+- moves the aggregate job to `COMPLETED`
+- records a `JOB_COMPLETED` event with `"Job manually completed by operator"`
+- returns `409 Conflict` if the job is not in `READY_FOR_REVIEW`
+
+Notes:
+- jobs also auto-complete when all candidates are moderated (none `PENDING`) and every `APPROVED` candidate has a completed export
+- auto-completion is evaluated after each moderation action and after each export completion
+
+### DELETE /api/jobs/{id}
+Deletes a job.
+
+Effects:
+- valid when the aggregate job status is `COMPLETED`, `FAILED`, `CANCELED`, or `READY_FOR_REVIEW`
+- returns `204 No Content` on success
+- returns `409 Conflict` if the job status does not allow deletion
+
 ### POST /api/jobs/{id}/force-fail
 Force-fails an active worker run that appears stuck.
 

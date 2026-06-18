@@ -8,8 +8,8 @@ It tracks:
 - remaining work required to stabilize the MVP and finish the service through `v1.0.0`
 - the next architecture track after `v1.0.0`
 
-Last updated: 2026-04-13
-Branch snapshot: `develop` carries post-`v1.0.0` architecture work through `TASK-072` plus follow-up runtime and UI fixes ahead of `main`
+Last updated: 2026-06-18
+Branch snapshot: `develop` carries post-`v1.0.0` architecture work through `TASK-072`, plus the product-quality track (`TASK-076` through `TASK-080`) and worker tuning fixes ahead of `main`
 Synced note: Obsidian backlog mirror in `StreamCutProject`
 
 ## Sync Policy
@@ -106,9 +106,17 @@ Synced note: Obsidian backlog mirror in `StreamCutProject`
 - Signed export delivery and the durable object-storage contract are now present in source:
   - completed exports prefer temporary signed object-storage URLs over backend proxying when S3 mode is enabled
   - durable source and export references are persisted as the long-term artifact contract
+- The product-quality track (`TASK-076` through `TASK-080`) is now merged into `develop`:
+  - clip candidate scoring now incorporates an audio loudness signal alongside transcript density and silence (`TASK-076`, `4e722b0`)
+  - download heartbeat is gated on real byte progress so stalled downloads auto-recover via the existing stale timeout (`TASK-077`, `987d710`)
+  - clip export uses a single muxed Twitch format (fixing ~12s audio desync) and two-stage seek with bounded `-threads` (fixing CPU hog) (`TASK-080`, `76760e8`)
+  - jobs auto-complete when all candidates are moderated and all approved exports finish; manual `POST /api/jobs/{id}/complete` is available; delete is now allowed from `READY_FOR_REVIEW` (`TASK-079`, `0dd3992`)
+  - job list UI adds delete button, bulk clear, manual complete button, and a static progress bar at rest (`TASK-078`, `b5eb976`)
+  - yt-dlp concurrent fragment downloads raised from 4 to 8 (`5eaa0bd`)
 - The remaining larger architecture gaps are still future work:
-  - quotas and fairness controls are still future work
-  - broker-backed queue semantics are still future work
+  - quotas and fairness controls are still future work (deprioritized: not justified for single-operator/self use; revisit when going public)
+  - broker-backed queue semantics are still future work (deprioritized: DB polling is fine at n=1; evidence-gated)
+  - React UI migration is still future work (deprioritized: current vanilla JS UI is sufficient for operator self-use)
 - `TASK-059` health, readiness, and worker diagnostics are now present in source.
 - `TASK-061` operator recovery controls are now present in source.
 - `TASK-062` metrics and alertable observability are now present in source.
@@ -128,6 +136,11 @@ Synced note: Obsidian backlog mirror in `StreamCutProject`
 - `TASK-070` Introduce Dedicated `export-worker` Pool
 - `TASK-071` Move Artifact Delivery To Signed URLs And Reduce Backend Media Proxying
 - `TASK-072` Make Object Storage The Durable Artifact Contract
+- `TASK-076` Add Audio Loudness Signal And Re-Weight Clip Candidate Scoring (`4e722b0`)
+- `TASK-077` Make Download Stall Detectable By Gating Heartbeat On Real Progress (`987d710`)
+- `TASK-078` Job List/Detail UI: Delete, Bulk Clear, Complete, Static Progress Bar (`b5eb976`)
+- `TASK-079` Job Lifecycle On Moderation: Auto-Complete, Manual Complete, Delete From Review (`0dd3992`)
+- `TASK-080` Fix Clip Export: Single Muxed Format + Two-Stage Seek + Bounded Threads (`76760e8`)
 - `TASK-055` Add Authentication And Protected Operator Access
 - `TASK-056` Add Security Baseline And Input Hardening
 - `TASK-057` Introduce Production Runtime Profiles And Secret Handling
@@ -145,42 +158,48 @@ Synced note: Obsidian backlog mirror in `StreamCutProject`
 
 Status note:
 - this backlog pass records a real status transition:
-  - `TASK-068` -> completed / merged
-  - `TASK-069` -> completed / merged
-  - `TASK-070` -> completed / merged
-  - `TASK-071` -> completed / merged
-  - `TASK-072` -> completed / merged
-  - `TASK-064` -> completed / merged
-  - `TASK-065` -> completed / merged
+  - `TASK-076` -> completed / merged (`4e722b0`)
+  - `TASK-077` -> completed / merged (`987d710`)
+  - `TASK-078` -> completed / merged (`b5eb976`)
+  - `TASK-079` -> completed / merged (`0dd3992`)
+  - `TASK-080` -> completed / merged (`76760e8`)
+- prior status transitions recorded:
+  - `TASK-068` through `TASK-072` -> completed / merged (post-`v1.0.0` architecture track)
+  - `TASK-064`, `TASK-065` -> completed / merged
   - `TASK-067` -> completed / passed on 2026-04-09
   - `TASK-066` -> completed / `v1.0.0` released
 
 Current release-track snapshot:
 - `v1.0.0` is released on `main` and back-merged into `develop`
 - the release point is explicit and reproducible through git tag `v1.0.0`
-- `develop` now carries the checked-in post-release architecture baseline through `TASK-072`
-- the next tracked work starts at `TASK-073`
+- `develop` now carries the checked-in post-release architecture baseline through `TASK-072` plus the product-quality track through `TASK-080`
+- the product-quality track was driven by real operator-use feedback on Twitch VOD clip selection
+- the next tracked work starts at `TASK-073` (deprioritized) or the next operator-use issue
 
 ### Closed In `v1.0.0`
 - `TASK-067` Run Backup Restore And Rollback Drill
 - `TASK-066` Prepare And Execute `v1.0.0` Release
 
-### Active (Product Quality Track)
-- `TASK-076` Add Audio Loudness Signal And Re-Weight Clip Candidate Scoring
+### Completed (Product Quality Track)
+- `TASK-076` Add Audio Loudness Signal And Re-Weight Clip Candidate Scoring (`4e722b0`)
   - direction shift: primary goal is a fully working clip-selection tool for the operator's own Twitch VODs; clip-selection quality leads, multi-tenant work follows
-  - current analyzer scores only transcript density + silence ("talks a lot" detector); adds an ffmpeg loudness signal so laughter/hype outranks monologue
-- `TASK-077` Make Download Stall Detectable By Gating Heartbeat On Real Progress
-  - automatic retry/backoff already exists (TASK-068); the gap is the trigger — heartbeat refreshes on every yt-dlp tick incl. frozen-byte stalls, so a stalled download never looks stale and needs manual restart
-  - worker-only fix: only heartbeat when downloaded_bytes actually advance, so the existing DOWNLOAD stale timeout + recovery fires
-
-Operator real-use problems (from Obsidian `Problems.md`, 2026-06-17) -> tasks:
-- `TASK-079` Job Lifecycle On Moderation (backend): auto-complete (all moderated + all approved exported), manual `POST /api/jobs/{id}/complete`, allow delete from `READY_FOR_REVIEW`. Fixes problem #3; unblocks #2/#4. Land first.
-- `TASK-078` Job List/Detail UI (frontend): static progress bar at rest (#1), delete button (#4), bulk/selective clear (#2), manual complete button. Consumes TASK-079.
-- `TASK-080` Fix Clip Export (worker): both defects diagnosed + fixed empirically on a live 3h Twitch VOD. (a) audio desync — download format merged a separate audio HLS onto Twitch's already-muxed stream → ~12s drift; fix = prefer single muxed format. (b) export CPU hog/hang — `-ss` after `-i` decoded the whole source + no thread cap; fix = two-stage seek + bounded `-threads`. Verified: muxed A/V match 0.04s/2min; export 16s vs minutes at 945% CPU.
+  - added ffmpeg loudness signal so laughter/hype outranks monologue in clip scoring
+- `TASK-077` Make Download Stall Detectable By Gating Heartbeat On Real Progress (`987d710`)
+  - heartbeat now only refreshes when downloaded_bytes actually advance, so the existing stale timeout + recovery fires on frozen downloads
+- `TASK-079` Job Lifecycle On Moderation (`0dd3992`)
+  - auto-complete when all candidates moderated and all approved exports finished
+  - manual `POST /api/jobs/{id}/complete` (409 if not `READY_FOR_REVIEW`)
+  - `DELETE /api/jobs/{id}` now allowed from `READY_FOR_REVIEW`
+- `TASK-078` Job List/Detail UI (`b5eb976`)
+  - delete button, bulk clear, manual complete button, static progress bar at rest
+- `TASK-080` Fix Clip Export (`76760e8`)
+  - audio desync fixed: single muxed Twitch format instead of merged separate audio HLS (~12s drift eliminated)
+  - CPU hog fixed: two-stage seek + bounded `-threads` (export 16s vs minutes at 945% CPU)
 
 ### Planned Post-`v1.0.0`
 - `TASK-073` Add Product Quotas And Runtime Limits (deprioritized: not justified for single-operator/self use; revisit when going public)
 - `TASK-074` Prepare Queue Delivery Abstraction For Broker Migration (deprioritized: DB polling is fine at n=1; evidence-gated)
+- `TASK-075` Migrate Operator UI To React (deprioritized: current vanilla JS UI is sufficient for operator self-use)
 
 ## DONE
 
@@ -307,13 +326,15 @@ Operator real-use problems (from Obsidian `Problems.md`, 2026-06-17) -> tasks:
 - No repository task is currently marked `in progress`.
 - The `v1.0.0` release track is closed.
 - The post-release architecture slice through `TASK-072` is merged into `develop`.
+- The product-quality track (`TASK-076` through `TASK-080`) is merged into `develop`.
 
 ## NEXT
 
 ### Immediate
-- `TASK-073` Add Product Quotas And Runtime Limits
-- `TASK-074` Prepare Queue Delivery Abstraction For Broker Migration
-- keep post-release work on top of the checked-in `TASK-072` baseline
+- no task is currently queued as immediate
+- `TASK-073` and `TASK-074` are deprioritized (see Planned Post-`v1.0.0`)
+- next work will be driven by operator-use feedback on Twitch VOD clip selection
+- keep post-release work on top of the checked-in `TASK-080` baseline
 
 ### Validation
 - `TASK-064` browser E2E suite and CI gate are now present in source.
@@ -321,8 +342,8 @@ Operator real-use problems (from Obsidian `Problems.md`, 2026-06-17) -> tasks:
 - `TASK-067` backup, restore, export recovery, and post-restore health checks passed on 2026-04-09.
 
 ### Post-release
-- `TASK-073` should add bounded product-level limits only after the task contract and storage contract stay explicit.
-- `TASK-074` should prepare broker migration only after the current task-centric delivery contract is stable.
+- `TASK-073` should add bounded product-level limits only after the task contract and storage contract stay explicit. Deprioritized: not justified for single-operator/self use; revisit when going public.
+- `TASK-074` should prepare broker migration only after the current task-centric delivery contract is stable. Deprioritized: DB polling is fine at n=1; evidence-gated.
 
 ### Architectural Follow-Up After `v1.0.0`
 - the current `v1.0.0` track hardens the service for a small authenticated operator team
@@ -377,8 +398,16 @@ Status: completed locally on 2026-04-06
 - completed: `TASK-070` Introduce Dedicated `export-worker` Pool
 - completed: `TASK-071` Move Artifact Delivery To Signed URLs And Reduce Backend Media Proxying
 - completed: `TASK-072` Make Object Storage The Durable Artifact Contract
-- `TASK-073` Add Product Quotas And Runtime Limits
-- `TASK-074` Prepare Queue Delivery Abstraction For Broker Migration
+- deprioritized: `TASK-073` Add Product Quotas And Runtime Limits
+- deprioritized: `TASK-074` Prepare Queue Delivery Abstraction For Broker Migration
+
+### Product Quality Track (Operator Clip-Selection Usability)
+- completed: `TASK-076` Add Audio Loudness Signal And Re-Weight Clip Candidate Scoring (`4e722b0`)
+- completed: `TASK-077` Make Download Stall Detectable By Gating Heartbeat On Real Progress (`987d710`)
+- completed: `TASK-078` Job List/Detail UI: Delete, Bulk Clear, Complete, Static Progress Bar (`b5eb976`)
+- completed: `TASK-079` Job Lifecycle On Moderation: Auto-Complete, Manual Complete, Delete From Review (`0dd3992`)
+- completed: `TASK-080` Fix Clip Export: Single Muxed Format + Two-Stage Seek + Bounded Threads (`76760e8`)
+- perf: yt-dlp concurrent fragment downloads 4 to 8 (`5eaa0bd`)
 
 ### Execution Order
 1. finish the current MVP release baseline
@@ -398,16 +427,17 @@ Status: completed locally on 2026-04-06
 - `TASK-066` executed only after `TASK-067` evidence was recorded and the accepted drill fix was captured in source.
 - `TASK-068`, `TASK-069`, and `TASK-070` are now the checked-in post-release baseline for retry semantics, orchestration extraction, and export-worker routing.
 - `TASK-071` and `TASK-072` are now checked in, so the next sequencing decision starts at quotas and broker preparation.
-- `TASK-073` should start only after the execution model is explicit enough to enforce concurrency and cost controls coherently.
-- `TASK-074` should happen after the current task-centric baseline; broker migration without a clear task contract would just move the current ambiguity into another component.
+- `TASK-073` should start only after the execution model is explicit enough to enforce concurrency and cost controls coherently. Deprioritized for now: not justified for single-operator/self use.
+- `TASK-074` should happen after the current task-centric baseline; broker migration without a clear task contract would just move the current ambiguity into another component. Deprioritized for now: DB polling is fine at n=1.
+- `TASK-076` through `TASK-080` form the product-quality track, driven by operator real-use feedback on Twitch VODs. They are all merged into `develop`.
 
 ## LATER
 
 ### Product Gaps Still Open
 - Error handling and observability are still MVP-level, not hardened operations-grade.
 - The current pipeline still stops short of the target architecture described for larger-scale operation:
-  - no quotas or fairness controls
-  - no broker-backed queue delivery yet
+  - no quotas or fairness controls (deprioritized: not needed for single-operator use)
+  - no broker-backed queue delivery yet (deprioritized: DB polling is fine at n=1)
 
 ### Engineering Follow-Up
 - Add a single progress/status document under `agents/` if team workflow needs per-task lifecycle tracking.
@@ -428,9 +458,10 @@ Status: completed locally on 2026-04-06
 - Backend media streaming endpoints still exist for source preview and local-mode export fallback, which is acceptable for the current contract but not the desired long-term general delivery path.
 
 ## Recommended Next Sequence
-1. `TASK-073` Add Product Quotas And Runtime Limits.
-2. `TASK-074` Prepare Queue Delivery Abstraction For Broker Migration.
-3. Keep post-`v1.0.0` work on top of the checked-in `worker_task` / `worker_execution` and durable object-storage baseline.
+1. Continue operator-use-driven product-quality work as issues surface from real Twitch VOD clip selection.
+2. `TASK-073` Add Product Quotas And Runtime Limits (when going public).
+3. `TASK-074` Prepare Queue Delivery Abstraction For Broker Migration (when scale evidence justifies it).
+4. Keep post-`v1.0.0` work on top of the checked-in `worker_task` / `worker_execution`, durable object-storage, and product-quality baselines.
 
 ## Path To Service v1.0.0
 
@@ -482,12 +513,13 @@ Status: completed on 2026-04-09 through `TASK-066`
 - completed: `TASK-066` Prepare And Execute `v1.0.0` Release
 
 ### Post-`v1.0.0` Architecture Phase
-1. expand the existing task lifecycle with retries, backoff, and dead-letter behavior
-2. separate orchestration from `VodJobService` into a dedicated transition layer
-3. split export work into its own pool
-4. move media delivery toward signed URLs and durable object storage references
-5. add quotas and queue-delivery abstraction only after the execution model is stable
-6. migrate operator UI to React when candidate review or multi-developer frontend work makes local component state unavoidable (`TASK-075`)
+1. expand the existing task lifecycle with retries, backoff, and dead-letter behavior (done)
+2. separate orchestration from `VodJobService` into a dedicated transition layer (done)
+3. split export work into its own pool (done)
+4. move media delivery toward signed URLs and durable object storage references (done)
+5. improve operator clip-selection quality and usability through real-use feedback (done: product-quality track `TASK-076` through `TASK-080`)
+6. add quotas and queue-delivery abstraction only after the execution model is stable (deprioritized: not needed for single-operator use)
+7. migrate operator UI to React when candidate review or multi-developer frontend work makes local component state unavoidable (`TASK-075`, deprioritized)
 
 ### Post-`v1.0.0` Architecture Task Queue
 - completed: `TASK-068` Expand Task Model With Retry, Backoff, And Dead-Letter Semantics
@@ -495,9 +527,9 @@ Status: completed on 2026-04-09 through `TASK-066`
 - completed: `TASK-070` Introduce Dedicated `export-worker` Pool
 - completed: `TASK-071` Move Artifact Delivery To Signed URLs And Reduce Backend Media Proxying
 - completed: `TASK-072` Make Object Storage The Durable Artifact Contract
-- `TASK-073` Add Product Quotas And Runtime Limits
-- `TASK-074` Prepare Queue Delivery Abstraction For Broker Migration
-- `TASK-075` Migrate Operator UI To React
+- deprioritized: `TASK-073` Add Product Quotas And Runtime Limits
+- deprioritized: `TASK-074` Prepare Queue Delivery Abstraction For Broker Migration
+- deprioritized: `TASK-075` Migrate Operator UI To React
 
   **Do not start until at least one of the following is true:**
   - Candidate review needs per-candidate local state (scrubber, inline approval, clip preview). The current full-`innerHTML` re-render strategy kills local component state on every 5-second poll; React's reconciliation makes this tractable.
@@ -507,6 +539,13 @@ Status: completed on 2026-04-09 through `TASK-066`
   **Not a trigger on its own:** file size, "feels like vanilla", or adding a stage progress bar. Those are solvable with targeted DOM patching and a local interval without a framework migration.
 
   **Scope when the time comes:** Preact is the low-overhead entry point if the backend stays Spring and there is no build infrastructure yet. Full React + Vite is the right call if TypeScript is introduced at the same time.
+
+### Product Quality Track (Operator Clip-Selection Usability)
+- completed: `TASK-076` Add Audio Loudness Signal And Re-Weight Clip Candidate Scoring (`4e722b0`)
+- completed: `TASK-077` Make Download Stall Detectable By Gating Heartbeat On Real Progress (`987d710`)
+- completed: `TASK-078` Job List/Detail UI: Delete, Bulk Clear, Complete, Static Progress Bar (`b5eb976`)
+- completed: `TASK-079` Job Lifecycle On Moderation: Auto-Complete, Manual Complete, Delete From Review (`0dd3992`)
+- completed: `TASK-080` Fix Clip Export: Single Muxed Format + Two-Stage Seek + Bounded Threads (`76760e8`)
 
 ### Critical Path To v1.0.0
 1. Finish the current release baseline and move it intentionally to `main`.

@@ -24,15 +24,28 @@ What already exists:
 - `download-worker` and `processing-worker`
 - MinIO / S3-compatible export artifact storage
 
-What is still missing:
+What was added through `TASK-072`:
 
 - retry/backoff/dead-letter task semantics
-- explicit transition/orchestration layer
+- explicit transition/orchestration layer (`TaskTransitionService`)
 - dedicated `export-worker`
 - signed-URL-first media delivery
 - durable object-storage-first execution contract
-- quotas and fairness controls
-- queue delivery seam for later broker migration
+
+What was added through the product-quality track (`TASK-076` through `TASK-080`):
+
+- audio loudness signal in clip candidate scoring
+- download stall detection via progress-gated heartbeat
+- job auto-complete on moderation and manual complete endpoint
+- delete allowed from `READY_FOR_REVIEW`
+- clip export audio desync fix and CPU bound fix
+- job UI delete, bulk clear, complete button, static progress bar
+
+What is still missing (deprioritized for single-operator use):
+
+- quotas and fairness controls (`TASK-073`, revisit when going public)
+- queue delivery seam for later broker migration (`TASK-074`, evidence-gated)
+- React UI migration (`TASK-075`, vanilla JS sufficient for operator self-use)
 
 ---
 
@@ -52,26 +65,15 @@ First shape the execution model. Then scale it.
 
 ## Architecture Phases
 
-### Phase A. Finish `v1.0.0`
+### Phase A. Finish `v1.0.0` (completed)
 
 Goal:
 
 - release a stable operator-facing service for a small authenticated team
 
-Focus:
+Status: completed through `TASK-066` on 2026-04-09
 
-- diagnostics
-- recovery clarity
-- operator controls
-- observability
-- cleanup
-- release discipline
-
-Tracked primarily in:
-
-- `Documentation/backlog.md`
-
-### Phase B. Make Task Lifecycle Explicit
+### Phase B. Make Task Lifecycle Explicit (completed)
 
 Goal:
 
@@ -82,15 +84,9 @@ Primary tasks:
 - `TASK-068`
 - `TASK-069`
 
-Outcomes:
+Status: completed / merged into `develop`
 
-- retry budgets
-- delayed retry/backoff
-- dead-letter state
-- explicit transition rules
-- clearer split between `VodJob` and `worker_task`
-
-### Phase C. Split Worker Responsibilities Cleanly
+### Phase C. Split Worker Responsibilities Cleanly (completed)
 
 Goal:
 
@@ -100,13 +96,9 @@ Primary task:
 
 - `TASK-070`
 
-Outcomes:
+Status: completed / merged into `develop`
 
-- `download-worker`
-- `analyze` or `processing-worker`
-- `export-worker`
-
-### Phase D. Normalize Delivery And Storage Contracts
+### Phase D. Normalize Delivery And Storage Contracts (completed)
 
 Goal:
 
@@ -118,14 +110,30 @@ Primary tasks:
 - `TASK-071`
 - `TASK-072`
 
-Outcomes:
+Status: completed / merged into `develop`
 
-- signed URLs for completed exports
-- reduced backend media streaming
-- durable artifact references
-- local disk treated as scratch space
+### Phase D+. Product Quality Track (completed)
 
-### Phase E. Add Guardrails And Economics
+Goal:
+
+- make the clip-selection tool fully usable for the operator's own Twitch VODs before pursuing multi-tenant/scale architecture
+
+Primary tasks:
+
+- `TASK-076` audio loudness signal in clip scoring
+- `TASK-077` download stall detection via progress-gated heartbeat
+- `TASK-078` job UI: delete, bulk clear, complete button, static progress bar
+- `TASK-079` job auto-complete on moderation, manual complete, delete from `READY_FOR_REVIEW`
+- `TASK-080` clip export audio desync fix and CPU bound fix
+
+Rationale:
+
+- post-`v1.0.0` priority shifted to operator-facing clip-quality and usability driven by real-use feedback before pursuing quotas, broker abstraction, or React migration
+- the current tool is single-operator/self-use; multi-tenant and scale work waits until going public
+
+Status: completed / merged into `develop`
+
+### Phase E. Add Guardrails And Economics (deprioritized)
 
 Goal:
 
@@ -142,7 +150,9 @@ Outcomes:
 - export limits
 - explicit failure responses for exceeded limits
 
-### Phase F. Prepare The Queue Boundary
+Status: deprioritized. Not justified for single-operator/self use. Revisit when going public.
+
+### Phase F. Prepare The Queue Boundary (deprioritized)
 
 Goal:
 
@@ -158,17 +168,20 @@ Outcomes:
 - delivery mechanism can later move beyond direct DB polling
 - future broker adoption stays evidence-based
 
+Status: deprioritized. DB polling is fine at n=1. Evidence-gated.
+
 ---
 
 ## Recommended Order
 
-1. `TASK-068`
-2. `TASK-069`
-3. `TASK-070`
-4. `TASK-071`
-5. `TASK-072`
-6. `TASK-073`
-7. `TASK-074`
+1. `TASK-068` (completed)
+2. `TASK-069` (completed)
+3. `TASK-070` (completed)
+4. `TASK-071` (completed)
+5. `TASK-072` (completed)
+6. `TASK-076` through `TASK-080` product-quality track (completed)
+7. `TASK-073` (deprioritized)
+8. `TASK-074` (deprioritized)
 
 ---
 
