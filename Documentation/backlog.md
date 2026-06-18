@@ -9,7 +9,7 @@ It tracks:
 - the next architecture track after `v1.0.0`
 
 Last updated: 2026-06-18
-Branch snapshot: `develop` carries post-`v1.0.0` architecture work through `TASK-072`, plus the product-quality track (`TASK-076` through `TASK-080`) and worker tuning fixes ahead of `main`
+Branch snapshot: `develop` carries post-`v1.0.0` architecture work through `TASK-072`, plus the product-quality track (`TASK-076` through `TASK-081`) and worker tuning fixes ahead of `main`
 Synced note: Obsidian backlog mirror in `StreamCutProject`
 
 ## Sync Policy
@@ -106,13 +106,14 @@ Synced note: Obsidian backlog mirror in `StreamCutProject`
 - Signed export delivery and the durable object-storage contract are now present in source:
   - completed exports prefer temporary signed object-storage URLs over backend proxying when S3 mode is enabled
   - durable source and export references are persisted as the long-term artifact contract
-- The product-quality track (`TASK-076` through `TASK-080`) is now merged into `develop`:
+- The product-quality track (`TASK-076` through `TASK-081`) is now merged into `develop`:
   - clip candidate scoring now incorporates an audio loudness signal alongside transcript density and silence (`TASK-076`, `4e722b0`)
   - download heartbeat is gated on real byte progress so stalled downloads auto-recover via the existing stale timeout (`TASK-077`, `987d710`)
   - clip export uses a single muxed Twitch format (fixing ~12s audio desync) and two-stage seek with bounded `-threads` (fixing CPU hog) (`TASK-080`, `76760e8`)
   - jobs auto-complete when all candidates are moderated and all approved exports finish; manual `POST /api/jobs/{id}/complete` is available; delete is now allowed from `READY_FOR_REVIEW` (`TASK-079`, `0dd3992`)
   - job list UI adds delete button, bulk clear, manual complete button, and a static progress bar at rest (`TASK-078`, `b5eb976`)
   - yt-dlp concurrent fragment downloads raised from 4 to 8 (`5eaa0bd`)
+  - Twitch VOD downloads now use TwitchDownloaderCLI instead of yt-dlp to fix A/V desync; other platform URLs still use yt-dlp (`TASK-081`, merged into develop)
 - The remaining larger architecture gaps are still future work:
   - quotas and fairness controls are still future work (deprioritized: not justified for single-operator/self use; revisit when going public)
   - broker-backed queue semantics are still future work (deprioritized: DB polling is fine at n=1; evidence-gated)
@@ -141,6 +142,7 @@ Synced note: Obsidian backlog mirror in `StreamCutProject`
 - `TASK-078` Job List/Detail UI: Delete, Bulk Clear, Complete, Static Progress Bar (`b5eb976`)
 - `TASK-079` Job Lifecycle On Moderation: Auto-Complete, Manual Complete, Delete From Review (`0dd3992`)
 - `TASK-080` Fix Clip Export: Single Muxed Format + Two-Stage Seek + Bounded Threads (`76760e8`)
+- `TASK-081` Use TwitchDownloaderCLI For Twitch Sources To Fix A/V Desync (merged into develop)
 - `TASK-055` Add Authentication And Protected Operator Access
 - `TASK-056` Add Security Baseline And Input Hardening
 - `TASK-057` Introduce Production Runtime Profiles And Secret Handling
@@ -158,12 +160,13 @@ Synced note: Obsidian backlog mirror in `StreamCutProject`
 
 Status note:
 - this backlog pass records a real status transition:
+  - `TASK-081` -> completed / merged into develop (pending commit)
+- prior status transitions recorded:
   - `TASK-076` -> completed / merged (`4e722b0`)
   - `TASK-077` -> completed / merged (`987d710`)
   - `TASK-078` -> completed / merged (`b5eb976`)
   - `TASK-079` -> completed / merged (`0dd3992`)
   - `TASK-080` -> completed / merged (`76760e8`)
-- prior status transitions recorded:
   - `TASK-068` through `TASK-072` -> completed / merged (post-`v1.0.0` architecture track)
   - `TASK-064`, `TASK-065` -> completed / merged
   - `TASK-067` -> completed / passed on 2026-04-09
@@ -172,7 +175,7 @@ Status note:
 Current release-track snapshot:
 - `v1.0.0` is released on `main` and back-merged into `develop`
 - the release point is explicit and reproducible through git tag `v1.0.0`
-- `develop` now carries the checked-in post-release architecture baseline through `TASK-072` plus the product-quality track through `TASK-080`
+- `develop` now carries the checked-in post-release architecture baseline through `TASK-072` plus the product-quality track through `TASK-081`
 - the product-quality track was driven by real operator-use feedback on Twitch VOD clip selection
 - the next tracked work starts at `TASK-073` (deprioritized) or the next operator-use issue
 
@@ -195,6 +198,9 @@ Current release-track snapshot:
 - `TASK-080` Fix Clip Export (`76760e8`)
   - audio desync fixed: single muxed Twitch format instead of merged separate audio HLS (~12s drift eliminated)
   - CPU hog fixed: two-stage seek + bounded `-threads` (export 16s vs minutes at 945% CPU)
+- `TASK-081` Use TwitchDownloaderCLI For Twitch Sources To Fix A/V Desync (merged into develop)
+  - Twitch VOD downloads now route to TwitchDownloaderCLI v1.56.4 instead of yt-dlp, eliminating residual A/V desync on Twitch sources
+  - non-Twitch platform URLs continue to use yt-dlp unchanged
 
 ### Planned Post-`v1.0.0`
 - `TASK-073` Add Product Quotas And Runtime Limits (deprioritized: not justified for single-operator/self use; revisit when going public)
@@ -326,7 +332,7 @@ Current release-track snapshot:
 - No repository task is currently marked `in progress`.
 - The `v1.0.0` release track is closed.
 - The post-release architecture slice through `TASK-072` is merged into `develop`.
-- The product-quality track (`TASK-076` through `TASK-080`) is merged into `develop`.
+- The product-quality track (`TASK-076` through `TASK-081`) is merged into `develop`.
 
 ## NEXT
 
@@ -334,7 +340,7 @@ Current release-track snapshot:
 - no task is currently queued as immediate
 - `TASK-073` and `TASK-074` are deprioritized (see Planned Post-`v1.0.0`)
 - next work will be driven by operator-use feedback on Twitch VOD clip selection
-- keep post-release work on top of the checked-in `TASK-080` baseline
+- keep post-release work on top of the checked-in `TASK-081` baseline
 
 ### Validation
 - `TASK-064` browser E2E suite and CI gate are now present in source.
@@ -407,6 +413,7 @@ Status: completed locally on 2026-04-06
 - completed: `TASK-078` Job List/Detail UI: Delete, Bulk Clear, Complete, Static Progress Bar (`b5eb976`)
 - completed: `TASK-079` Job Lifecycle On Moderation: Auto-Complete, Manual Complete, Delete From Review (`0dd3992`)
 - completed: `TASK-080` Fix Clip Export: Single Muxed Format + Two-Stage Seek + Bounded Threads (`76760e8`)
+- completed: `TASK-081` Use TwitchDownloaderCLI For Twitch Sources To Fix A/V Desync (merged into develop)
 - perf: yt-dlp concurrent fragment downloads 4 to 8 (`5eaa0bd`)
 
 ### Execution Order
@@ -429,7 +436,7 @@ Status: completed locally on 2026-04-06
 - `TASK-071` and `TASK-072` are now checked in, so the next sequencing decision starts at quotas and broker preparation.
 - `TASK-073` should start only after the execution model is explicit enough to enforce concurrency and cost controls coherently. Deprioritized for now: not justified for single-operator/self use.
 - `TASK-074` should happen after the current task-centric baseline; broker migration without a clear task contract would just move the current ambiguity into another component. Deprioritized for now: DB polling is fine at n=1.
-- `TASK-076` through `TASK-080` form the product-quality track, driven by operator real-use feedback on Twitch VODs. They are all merged into `develop`.
+- `TASK-076` through `TASK-081` form the product-quality track, driven by operator real-use feedback on Twitch VODs. They are all merged into `develop`.
 
 ## LATER
 
@@ -461,7 +468,7 @@ Status: completed locally on 2026-04-06
 1. Continue operator-use-driven product-quality work as issues surface from real Twitch VOD clip selection.
 2. `TASK-073` Add Product Quotas And Runtime Limits (when going public).
 3. `TASK-074` Prepare Queue Delivery Abstraction For Broker Migration (when scale evidence justifies it).
-4. Keep post-`v1.0.0` work on top of the checked-in `worker_task` / `worker_execution`, durable object-storage, and product-quality baselines.
+4. Keep post-`v1.0.0` work on top of the checked-in `worker_task` / `worker_execution`, durable object-storage, and product-quality (`TASK-081`) baselines.
 
 ## Path To Service v1.0.0
 
@@ -517,7 +524,7 @@ Status: completed on 2026-04-09 through `TASK-066`
 2. separate orchestration from `VodJobService` into a dedicated transition layer (done)
 3. split export work into its own pool (done)
 4. move media delivery toward signed URLs and durable object storage references (done)
-5. improve operator clip-selection quality and usability through real-use feedback (done: product-quality track `TASK-076` through `TASK-080`)
+5. improve operator clip-selection quality and usability through real-use feedback (done: product-quality track `TASK-076` through `TASK-081`)
 6. add quotas and queue-delivery abstraction only after the execution model is stable (deprioritized: not needed for single-operator use)
 7. migrate operator UI to React when candidate review or multi-developer frontend work makes local component state unavoidable (`TASK-075`, deprioritized)
 
@@ -546,6 +553,7 @@ Status: completed on 2026-04-09 through `TASK-066`
 - completed: `TASK-078` Job List/Detail UI: Delete, Bulk Clear, Complete, Static Progress Bar (`b5eb976`)
 - completed: `TASK-079` Job Lifecycle On Moderation: Auto-Complete, Manual Complete, Delete From Review (`0dd3992`)
 - completed: `TASK-080` Fix Clip Export: Single Muxed Format + Two-Stage Seek + Bounded Threads (`76760e8`)
+- completed: `TASK-081` Use TwitchDownloaderCLI For Twitch Sources To Fix A/V Desync (merged into develop)
 
 ### Critical Path To v1.0.0
 1. Finish the current release baseline and move it intentionally to `main`.
