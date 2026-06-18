@@ -10,6 +10,7 @@
     retryJob: (id) => postJson(`/api/jobs/${id}/retry`),
     cancelJob: (id) => postJson(`/api/jobs/${id}/cancel`),
     forceFailJob: (id) => postJson(`/api/jobs/${id}/force-fail`),
+    completeJob: (id) => postJson(`/api/jobs/${id}/complete`),
     deleteJob: (id) => deleteRequest(`/api/jobs/${id}`),
     createUrlJob: (url) => postJson("/api/jobs/url", {
       headers: {
@@ -394,6 +395,9 @@ ${renderJobFailureSummary(job)}
     root.querySelectorAll("[data-delete-job]").forEach((button) => {
       button.addEventListener("click", async () => {
         const jobId = button.dataset.jobId;
+        if (!window.confirm(`Permanently delete Job #${jobId}? This removes the job, its source files, artifacts, and all pipeline data. This cannot be undone.`)) {
+          return;
+        }
         const previousLabel = button.textContent;
         setLiveInteractionLock(true, "Deleting job...");
         button.disabled = true;
@@ -410,6 +414,28 @@ ${renderJobFailureSummary(job)}
         }
       });
     });
+
+    root.querySelectorAll("[data-complete-job]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        const jobId = button.dataset.jobId;
+        const previousLabel = button.textContent;
+        setLiveInteractionLock(true, "Completing job...");
+        button.disabled = true;
+        button.textContent = "Completing...";
+        try {
+          await api.completeJob(jobId);
+          await renderJobsPage(root, `Job #${jobId} was marked as completed.`, "success");
+        } catch (error) {
+          showInlineBanner(root, error.message || "Failed to complete job.", "error");
+          button.disabled = false;
+          button.textContent = previousLabel;
+        } finally {
+          setLiveInteractionLock(false);
+        }
+      });
+    });
+
+    bindBulkActions(root);
 
     urlForm?.addEventListener("submit", async (event) => {
       event.preventDefault();
@@ -472,6 +498,77 @@ ${renderJobFailureSummary(job)}
     });
   }
 
+  function bindBulkActions(root) {
+    const selectAllCheckbox = root.querySelector("[data-bulk-select-all]");
+    const bulkDeleteButton = root.querySelector("[data-bulk-delete]");
+    const bulkStatus = root.querySelector("[data-bulk-status]");
+    const itemCheckboxes = root.querySelectorAll("[data-bulk-select]");
+
+    if (!selectAllCheckbox || !bulkDeleteButton || !itemCheckboxes.length) {
+      return;
+    }
+
+    function updateBulkState() {
+      const checked = root.querySelectorAll("[data-bulk-select]:checked");
+      const total = root.querySelectorAll("[data-bulk-select]");
+      bulkDeleteButton.disabled = checked.length === 0;
+      selectAllCheckbox.checked = checked.length === total.length && total.length > 0;
+      selectAllCheckbox.indeterminate = checked.length > 0 && checked.length < total.length;
+      if (bulkStatus) {
+        bulkStatus.textContent = checked.length > 0 ? `${checked.length} selected` : "";
+      }
+    }
+
+    selectAllCheckbox.addEventListener("change", () => {
+      const isChecked = selectAllCheckbox.checked;
+      itemCheckboxes.forEach((cb) => { cb.checked = isChecked; });
+      updateBulkState();
+    });
+
+    itemCheckboxes.forEach((cb) => {
+      cb.addEventListener("change", updateBulkState);
+    });
+
+    bulkDeleteButton.addEventListener("click", async () => {
+      const selectedIds = Array.from(root.querySelectorAll("[data-bulk-select]:checked"))
+        .map((cb) => cb.dataset.jobId);
+      if (!selectedIds.length) {
+        return;
+      }
+      if (!window.confirm(`Permanently delete ${selectedIds.length} job${selectedIds.length === 1 ? "" : "s"}? This removes the jobs, their source files, artifacts, and all pipeline data. This cannot be undone.`)) {
+        return;
+      }
+
+      setLiveInteractionLock(true, "Bulk delete in progress...");
+      bulkDeleteButton.disabled = true;
+      bulkDeleteButton.textContent = "Deleting...";
+      const errors = [];
+      let deletedCount = 0;
+
+      for (const jobId of selectedIds) {
+        try {
+          await api.deleteJob(jobId);
+          deletedCount += 1;
+          if (bulkStatus) {
+            bulkStatus.textContent = `Deleted ${deletedCount} of ${selectedIds.length}...`;
+          }
+        } catch (error) {
+          errors.push(`Job #${jobId}: ${error.message || "failed"}`);
+        }
+      }
+
+      setLiveInteractionLock(false);
+
+      if (errors.length > 0 && deletedCount > 0) {
+        await renderJobsPage(root, `Deleted ${deletedCount} job${deletedCount === 1 ? "" : "s"}. ${errors.length} failed: ${errors.join("; ")}`, "warning");
+      } else if (errors.length > 0) {
+        await renderJobsPage(root, `Bulk delete failed: ${errors.join("; ")}`, "error");
+      } else {
+        await renderJobsPage(root, `${deletedCount} job${deletedCount === 1 ? "" : "s"} deleted.`, "success");
+      }
+    });
+  }
+
   function bindJobPageActions(root, jobId) {
     const refreshButton = root.querySelector("[data-page-refresh]");
     refreshButton?.addEventListener("click", async () => {
@@ -497,8 +594,16 @@ ${renderJobFailureSummary(job)}
           retry: "Retrying...",
           cancel: "Canceling...",
           "force-fail": "Force Failing...",
+          complete: "Completing...",
           delete: "Deleting..."
         };
+
+        if (action === "delete") {
+          if (!window.confirm(`Permanently delete Job #${jobId}? This removes the job, its source files, artifacts, and all pipeline data. This cannot be undone.`)) {
+            return;
+          }
+        }
+
         const previousLabel = button.textContent;
         setLiveInteractionLock(true, `${previousLabel} in progress.`);
         button.disabled = true;
@@ -518,6 +623,11 @@ ${renderJobFailureSummary(job)}
           if (action === "force-fail") {
             await api.forceFailJob(jobId);
             await renderJobPage(root, jobId, `Job #${jobId} was force-failed by an operator.`, "warning");
+            return;
+          }
+          if (action === "complete") {
+            await api.completeJob(jobId);
+            await renderJobPage(root, jobId, `Job #${jobId} was marked as completed.`, "success");
             return;
           }
           if (action === "delete") {
@@ -819,6 +929,11 @@ ${renderJobFailureSummary(job)}
       return liveUpdates.interactionReason || "Live updates paused while work is in progress.";
     }
 
+    const anyBulkSelected = root.querySelector("[data-bulk-select]:checked");
+    if (anyBulkSelected) {
+      return "Live updates paused while jobs are selected for bulk action.";
+    }
+
     const fileInput = root.querySelector("input[name='file']");
     if (fileInput?.files?.length) {
       return "Live updates paused while a file is selected for upload.";
@@ -918,6 +1033,7 @@ ${renderJobFailureSummary(job)}
     const canRetry = isJobRetryable(job);
     const canCancel = isJobCancelable(job);
     const canForceFail = isJobForceFailable(job);
+    const canComplete = isJobCompletable(job);
     const canDelete = isJobDeletable(job);
     const progressLabel = job?.progressMessage || defaultProgressMessage(job);
     const phaseLabel = formatEventType(currentStatus);
@@ -931,6 +1047,7 @@ ${renderJobFailureSummary(job)}
           ${canRetry ? '<button class="action-button action-button-primary" type="button" data-job-control="retry">Retry</button>' : ""}
           ${canCancel ? '<button class="action-button action-button-reject" type="button" data-job-control="cancel">Cancel</button>' : ""}
           ${canForceFail ? '<button class="action-button action-button-reject" type="button" data-job-control="force-fail">Force Fail</button>' : ""}
+          ${canComplete ? '<button class="action-button action-button-approve" type="button" data-job-control="complete">Complete</button>' : ""}
           ${canDelete ? '<button class="action-button action-button-reject" type="button" data-job-control="delete">Delete</button>' : ""}
         </div>
         <div class="worker-progress-shell ${activeWorkerStatuses.has(currentStatus) ? "is-active" : ""}">
@@ -1234,8 +1351,14 @@ ${renderJobFailureSummary(job)}
     return ["DOWNLOADING", "EXTRACTING_AUDIO", "TRANSCRIBING", "DETECTING_SILENCE", "ANALYZING_WINDOWS", "GENERATING_CANDIDATES", "EXPORTING_CLIP"].includes(status);
   }
 
+  const deletableJobStatuses = new Set(["READY_FOR_REVIEW", "COMPLETED", "FAILED", "CANCELED"]);
+
   function isJobDeletable(job) {
-    return terminalJobStatuses.has(String(job?.status || "").toUpperCase());
+    return deletableJobStatuses.has(String(job?.status || "").toUpperCase());
+  }
+
+  function isJobCompletable(job) {
+    return String(job?.status || "").toUpperCase() === "READY_FOR_REVIEW";
   }
 
   function workerActionHint(job) {
@@ -1248,6 +1371,9 @@ ${renderJobFailureSummary(job)}
     }
     if (isJobForceFailable(job)) {
       return "Force Fail marks the active worker run as failed and records an explicit operator recovery event.";
+    }
+    if (isJobCompletable(job)) {
+      return "Complete marks this job as finished. Delete permanently removes this job, its source files, artifacts, and all pipeline data.";
     }
     if (isJobDeletable(job)) {
       return "Delete permanently removes this job, its source files, artifacts, and all pipeline data.";
@@ -1761,19 +1887,43 @@ ${renderJobFailureSummary(job)}
       return `<div class="empty-state">No jobs yet. Submit a URL or upload a file to create the first one.</div>`;
     }
 
-    const rows = jobs.map((job) => `
-      <tr>
-        <td><a href="/job.html?id=${encodeURIComponent(job.id)}">Job #${escapeHtml(job.id)}</a></td>
-        <td>${renderStatusPill(job.status)}</td>
-        <td>${renderCompactProgress(job)}</td>
-        <td>${escapeHtml(sourceLabel(job))}</td>
-        <td title="${escapeHtml(formatDate(job.createdAt))}">${escapeHtml(formatRelativeDateTime(job.createdAt))}</td>
-        <td>${escapeHtml(formatDuration(job.durationSec))}</td>
-        <td>${isJobDeletable(job) ? `<button class="action-button action-button-reject" type="button" data-delete-job data-job-id="${escapeHtml(String(job.id))}">Delete</button>` : ""}</td>
-      </tr>
-    `).join("");
+    const deletableCount = jobs.filter((job) => isJobDeletable(job)).length;
+    const completableCount = jobs.filter((job) => isJobCompletable(job)).length;
+
+    const rows = jobs.map((job) => {
+      const deletable = isJobDeletable(job);
+      const completable = isJobCompletable(job);
+      const actions = [];
+      if (completable) {
+        actions.push(`<button class="action-button action-button-approve" type="button" data-complete-job data-job-id="${escapeHtml(String(job.id))}">Complete</button>`);
+      }
+      if (deletable) {
+        actions.push(`<button class="action-button action-button-reject" type="button" data-delete-job data-job-id="${escapeHtml(String(job.id))}">Delete</button>`);
+      }
+
+      return `
+        <tr>
+          <td>${deletable ? `<label class="bulk-select-label"><input type="checkbox" class="bulk-select-checkbox" data-bulk-select data-job-id="${escapeHtml(String(job.id))}" /> </label>` : ""}<a href="/job.html?id=${encodeURIComponent(job.id)}">Job #${escapeHtml(job.id)}</a></td>
+          <td>${renderStatusPill(job.status)}</td>
+          <td>${renderCompactProgress(job)}</td>
+          <td>${escapeHtml(sourceLabel(job))}</td>
+          <td title="${escapeHtml(formatDate(job.createdAt))}">${escapeHtml(formatRelativeDateTime(job.createdAt))}</td>
+          <td>${escapeHtml(formatDuration(job.durationSec))}</td>
+          <td class="actions-cell">${actions.join(" ")}</td>
+        </tr>
+      `;
+    }).join("");
+
+    const bulkControls = deletableCount > 0 ? `
+      <div class="bulk-actions-bar" data-bulk-actions>
+        <label class="bulk-select-label"><input type="checkbox" data-bulk-select-all /> Select all deletable (${deletableCount})</label>
+        <button class="action-button action-button-reject" type="button" data-bulk-delete disabled>Delete selected</button>
+        <span class="bulk-status" data-bulk-status></span>
+      </div>
+    ` : "";
 
     return `
+      ${bulkControls}
       <div class="table-wrap">
         <table>
           <thead>
@@ -1800,11 +1950,14 @@ ${renderJobFailureSummary(job)}
     const heartbeat = describeWorkerHeartbeat(job);
     const latestExecution = job?.latestExecution || null;
     const executionSummary = latestExecution ? summarizeLatestExecution(latestExecution) : "No execution yet";
+    const currentStatus = String(job?.status || "").toUpperCase();
+    const isActive = activeWorkerStatuses.has(currentStatus);
     return `
-      <div class="table-progress">
+      <div class="table-progress ${isActive ? "is-active" : ""}">
         <div class="table-progress-copy">${escapeHtml(progressLabel)}</div>
         <div class="table-progress-track" aria-hidden="true">
           <span class="table-progress-fill" style="width: ${escapeHtml(progressPercent)}%;"></span>
+          <span class="table-progress-sheen"></span>
         </div>
         <div class="table-progress-meta">${escapeHtml(`${progressPercent}% | ${stageProgress.label}`)}</div>
         <div class="table-progress-meta table-progress-meta-secondary">${escapeHtml(heartbeat.badge)}${job?.currentWorkerId ? ` | ${escapeHtml(job.currentWorkerId)}` : ""}</div>
