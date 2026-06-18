@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+import re
+import subprocess
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Protocol
 from urllib import parse, request
 
 from streamcut_worker.models import ClaimedJob
+
+_TWITCH_VOD_RE = re.compile(r"twitch\.tv/videos/(\d+)")
 
 
 class SourceMaterializationError(RuntimeError):
@@ -91,6 +96,92 @@ class YtDlpPlatformDownloader:
         if not candidates:
             raise SourceMaterializationError(
                 f"platform download did not produce a media file for {source_url}",
+            )
+        return candidates[0]
+
+
+class TwitchDownloaderCliDownloader:
+    @staticmethod
+    def extract_vod_id(source_url: str) -> str:
+        match = _TWITCH_VOD_RE.search(source_url)
+        if not match:
+            raise SourceMaterializationError(
+                f"cannot extract Twitch VOD id from {source_url}",
+            )
+        return match.group(1)
+
+    def download(
+        self,
+        source_url: str,
+        target_dir: Path,
+        filename_stem: str,
+        on_progress: "Callable[[float], None] | None" = None,
+    ) -> Path:
+        target_dir.mkdir(parents=True, exist_ok=True)
+        vod_id = self.extract_vod_id(source_url)
+        output_path = target_dir / f"{filename_stem}.mp4"
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            cmd = [
+                "TwitchDownloaderCLI",
+                "videodownload",
+                "--id", vod_id,
+                "-q", "1080p60",
+                "-o", str(output_path),
+                "--temp-path", tmp_dir,
+                "--ffmpeg-path", "ffmpeg",
+            ]
+
+            try:
+                proc = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                )
+            except Exception as exc:
+                raise SourceMaterializationError(
+                    f"failed to launch TwitchDownloaderCLI for {source_url}: {exc}",
+                ) from exc
+
+            max_pct: list[float] = [0.0]
+
+            try:
+                assert proc.stdout is not None
+                for line in proc.stdout:
+                    if on_progress is None:
+                        continue
+                    pct_match = re.search(r"(\d+(?:\.\d+)?)%", line)
+                    if pct_match:
+                        pct = float(pct_match.group(1))
+                        if pct > max_pct[0]:
+                            max_pct[0] = pct
+                            on_progress(min(pct, 100.0))
+
+                returncode = proc.wait()
+            except Exception as exc:
+                proc.kill()
+                raise SourceMaterializationError(
+                    f"TwitchDownloaderCLI failed for {source_url}: {exc}",
+                ) from exc
+
+        if returncode != 0:
+            raise SourceMaterializationError(
+                f"TwitchDownloaderCLI exited {returncode} for {source_url}",
+            )
+
+        candidates = sorted(
+            (
+                path
+                for path in target_dir.iterdir()
+                if path.is_file() and path.suffix.lower() not in {".part", ".tmp"}
+            ),
+            key=lambda path: (path.stat().st_mtime, path.stat().st_size),
+            reverse=True,
+        )
+        if not candidates:
+            raise SourceMaterializationError(
+                f"TwitchDownloaderCLI did not produce a media file for {source_url}",
             )
         return candidates[0]
 
@@ -225,8 +316,18 @@ class SourceMaterializer:
         target_dir: Path,
         on_progress: Callable[[float], None] | None = None,
     ) -> Path:
-        downloader = self.platform_downloader or YtDlpPlatformDownloader()
+        downloader = self.platform_downloader or self._select_downloader(source_url)
         return downloader.download(source_url, target_dir, "source-video", on_progress)
+
+    @staticmethod
+    def _is_twitch_vod(source_url: str) -> bool:
+        return bool(_TWITCH_VOD_RE.search(source_url))
+
+    @staticmethod
+    def _select_downloader(source_url: str) -> PlatformVideoDownloader:
+        if SourceMaterializer._is_twitch_vod(source_url):
+            return TwitchDownloaderCliDownloader()
+        return YtDlpPlatformDownloader()
 
     def _looks_like_html(self, path: Path) -> bool:
         prefix = path.read_bytes()[:512].lstrip().lower()

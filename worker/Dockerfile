@@ -7,7 +7,13 @@ ENV PATH="/opt/venv/bin:${PATH}"
 ENV HF_HOME=/app/model-cache
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ffmpeg \
+    && apt-get install -y --no-install-recommends ffmpeg unzip curl \
+    && curl -fSL -o /tmp/twitch-dl.zip \
+       https://github.com/lay295/TwitchDownloader/releases/download/1.56.4/TwitchDownloaderCLI-1.56.4-Linux-x64.zip \
+    && unzip /tmp/twitch-dl.zip -d /tmp/twitch-dl \
+    && install -m 755 /tmp/twitch-dl/TwitchDownloaderCLI /usr/local/bin/TwitchDownloaderCLI \
+    && rm -rf /tmp/twitch-dl.zip /tmp/twitch-dl \
+    && apt-get purge -y --auto-remove unzip curl \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

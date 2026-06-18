@@ -14,6 +14,7 @@ from streamcut_worker.services import source_materializer as source_materializer
 from streamcut_worker.services.source_materializer import (
     SourceMaterializationError,
     SourceMaterializer,
+    TwitchDownloaderCliDownloader,
     YtDlpPlatformDownloader,
 )
 
@@ -413,6 +414,267 @@ class YtDlpProgressGatingTests(unittest.TestCase):
 
         self.assertEqual(len(progress_calls), 0,
                          "No heartbeat expected when total_bytes is unknown")
+
+
+class TwitchDownloaderRoutingTests(unittest.TestCase):
+    """TASK-081: Twitch VODs route to TwitchDownloaderCLI; others to yt-dlp."""
+
+    def test_twitch_vod_url_selects_twitch_downloader(self) -> None:
+        downloader = SourceMaterializer._select_downloader(
+            "https://www.twitch.tv/videos/2735588522",
+        )
+        self.assertIsInstance(downloader, TwitchDownloaderCliDownloader)
+
+    def test_youtube_url_selects_ytdlp(self) -> None:
+        downloader = SourceMaterializer._select_downloader(
+            "https://www.youtube.com/watch?v=abc123",
+        )
+        self.assertIsInstance(downloader, YtDlpPlatformDownloader)
+
+    def test_vimeo_url_selects_ytdlp(self) -> None:
+        downloader = SourceMaterializer._select_downloader(
+            "https://vimeo.com/123456789",
+        )
+        self.assertIsInstance(downloader, YtDlpPlatformDownloader)
+
+    def test_generic_url_selects_ytdlp(self) -> None:
+        downloader = SourceMaterializer._select_downloader(
+            "https://example.com/video.mp4",
+        )
+        self.assertIsInstance(downloader, YtDlpPlatformDownloader)
+
+    def test_twitch_clip_url_does_not_select_twitch_downloader(self) -> None:
+        """Twitch clip URLs (not /videos/) should fall back to yt-dlp."""
+        downloader = SourceMaterializer._select_downloader(
+            "https://www.twitch.tv/streamer/clip/SomeClipSlug",
+        )
+        self.assertIsInstance(downloader, YtDlpPlatformDownloader)
+
+    def test_twitch_vod_routes_to_twitch_downloader_in_materializer(self) -> None:
+        """End-to-end: a Twitch VOD URL with no injected platform_downloader
+        must route to TwitchDownloaderCliDownloader (not yt-dlp)."""
+        with TemporaryDirectory() as temp_dir:
+            storage_root = Path(temp_dir)
+            materializer = SourceMaterializer(storage_root=storage_root)
+
+            captured_cmd: list[list[str]] = []
+
+            class FakePopen:
+                def __init__(self, cmd, **kwargs):
+                    captured_cmd.append(list(cmd))
+                    self.stdout = iter([])
+                    self.returncode = 0
+
+                def wait(self):
+                    return 0
+
+                def kill(self):
+                    pass
+
+            import streamcut_worker.services.source_materializer as mod
+            original_popen = mod.subprocess.Popen
+            mod.subprocess.Popen = FakePopen
+            try:
+                target_dir = storage_root / "jobs" / "99" / "source"
+                target_dir.mkdir(parents=True, exist_ok=True)
+                (target_dir / "source-video.mp4").write_bytes(b"fake-video")
+
+                result = materializer.materialize(
+                    ClaimedJob(
+                        execution_id=900,
+                        job_id=99,
+                        processing_version=1,
+                        task_type="DOWNLOAD",
+                        source_type="URL",
+                        video_path=None,
+                        source_url="https://www.twitch.tv/videos/2735588522",
+                    )
+                )
+                self.assertTrue(result.exists())
+                self.assertEqual(len(captured_cmd), 1)
+                self.assertEqual(captured_cmd[0][0], "TwitchDownloaderCLI")
+                self.assertIn("2735588522", captured_cmd[0])
+            finally:
+                mod.subprocess.Popen = original_popen
+
+
+class TwitchVodIdParsingTests(unittest.TestCase):
+    """TASK-081: Twitch VOD id extraction."""
+
+    def test_standard_vod_url(self) -> None:
+        vod_id = TwitchDownloaderCliDownloader.extract_vod_id(
+            "https://www.twitch.tv/videos/2735588522",
+        )
+        self.assertEqual(vod_id, "2735588522")
+
+    def test_vod_url_without_www(self) -> None:
+        vod_id = TwitchDownloaderCliDownloader.extract_vod_id(
+            "https://twitch.tv/videos/12345",
+        )
+        self.assertEqual(vod_id, "12345")
+
+    def test_vod_url_with_query_params(self) -> None:
+        vod_id = TwitchDownloaderCliDownloader.extract_vod_id(
+            "https://www.twitch.tv/videos/99999?t=1h30m",
+        )
+        self.assertEqual(vod_id, "99999")
+
+    def test_invalid_url_raises_error(self) -> None:
+        with self.assertRaises(SourceMaterializationError) as ctx:
+            TwitchDownloaderCliDownloader.extract_vod_id(
+                "https://www.twitch.tv/streamer",
+            )
+        self.assertEqual(ctx.exception.failed_state, "DOWNLOADING")
+
+    def test_clip_url_raises_error(self) -> None:
+        with self.assertRaises(SourceMaterializationError):
+            TwitchDownloaderCliDownloader.extract_vod_id(
+                "https://www.twitch.tv/streamer/clip/SomeSlug",
+            )
+
+
+class TwitchDownloaderCommandBuildTests(unittest.TestCase):
+    """TASK-081: TwitchDownloaderCLI command construction."""
+
+    def test_command_args_are_correct(self) -> None:
+        captured_cmd: list[list[str]] = []
+
+        class FakePopen:
+            def __init__(self, cmd, **kwargs):
+                captured_cmd.append(list(cmd))
+                self.stdout = iter([])
+                self.returncode = 0
+
+            def wait(self):
+                return 0
+
+            def kill(self):
+                pass
+
+        import streamcut_worker.services.source_materializer as mod
+        original_popen = mod.subprocess.Popen
+        mod.subprocess.Popen = FakePopen
+        try:
+            with TemporaryDirectory() as temp_dir:
+                target_dir = Path(temp_dir)
+                (target_dir / "source-video.mp4").write_bytes(b"fake")
+                downloader = TwitchDownloaderCliDownloader()
+                downloader.download(
+                    "https://www.twitch.tv/videos/2735588522",
+                    target_dir,
+                    "source-video",
+                )
+        finally:
+            mod.subprocess.Popen = original_popen
+
+        self.assertEqual(len(captured_cmd), 1)
+        cmd = captured_cmd[0]
+        self.assertEqual(cmd[0], "TwitchDownloaderCLI")
+        self.assertEqual(cmd[1], "videodownload")
+        self.assertIn("--id", cmd)
+        self.assertEqual(cmd[cmd.index("--id") + 1], "2735588522")
+        self.assertIn("-q", cmd)
+        self.assertEqual(cmd[cmd.index("-q") + 1], "1080p60")
+        self.assertIn("-o", cmd)
+        self.assertIn("--temp-path", cmd)
+        self.assertIn("--ffmpeg-path", cmd)
+        self.assertEqual(cmd[cmd.index("--ffmpeg-path") + 1], "ffmpeg")
+
+    def test_failure_raises_source_materialization_error(self) -> None:
+        class FakePopen:
+            def __init__(self, cmd, **kwargs):
+                self.stdout = iter([])
+                self.returncode = 1
+
+            def wait(self):
+                return 1
+
+            def kill(self):
+                pass
+
+        import streamcut_worker.services.source_materializer as mod
+        original_popen = mod.subprocess.Popen
+        mod.subprocess.Popen = FakePopen
+        try:
+            with TemporaryDirectory() as temp_dir:
+                target_dir = Path(temp_dir)
+                downloader = TwitchDownloaderCliDownloader()
+                with self.assertRaises(SourceMaterializationError) as ctx:
+                    downloader.download(
+                        "https://www.twitch.tv/videos/123",
+                        target_dir,
+                        "source-video",
+                    )
+                self.assertEqual(ctx.exception.failed_state, "DOWNLOADING")
+        finally:
+            mod.subprocess.Popen = original_popen
+
+    def test_launch_failure_raises_source_materialization_error(self) -> None:
+        import streamcut_worker.services.source_materializer as mod
+        original_popen = mod.subprocess.Popen
+
+        def exploding_popen(*args, **kwargs):
+            raise FileNotFoundError("TwitchDownloaderCLI not found")
+
+        mod.subprocess.Popen = exploding_popen
+        try:
+            with TemporaryDirectory() as temp_dir:
+                target_dir = Path(temp_dir)
+                downloader = TwitchDownloaderCliDownloader()
+                with self.assertRaises(SourceMaterializationError) as ctx:
+                    downloader.download(
+                        "https://www.twitch.tv/videos/123",
+                        target_dir,
+                        "source-video",
+                    )
+                self.assertEqual(ctx.exception.failed_state, "DOWNLOADING")
+                self.assertIn("failed to launch", str(ctx.exception))
+        finally:
+            mod.subprocess.Popen = original_popen
+
+
+class TwitchDownloaderProgressTests(unittest.TestCase):
+    """TASK-081: progress parsing gates on monotonic increase."""
+
+    def test_progress_reports_only_on_increase(self) -> None:
+        progress_calls: list[float] = []
+
+        class FakePopen:
+            def __init__(self, cmd, **kwargs):
+                self.stdout = iter([
+                    "[STATUS] - Downloading 10.0%\n",
+                    "[STATUS] - Downloading 10.0%\n",
+                    "[STATUS] - Downloading 25.5%\n",
+                    "[STATUS] - Downloading 20.0%\n",
+                    "[STATUS] - Downloading 50.0%\n",
+                    "[STATUS] - Downloading 100.0%\n",
+                ])
+                self.returncode = 0
+
+            def wait(self):
+                return 0
+
+            def kill(self):
+                pass
+
+        import streamcut_worker.services.source_materializer as mod
+        original_popen = mod.subprocess.Popen
+        mod.subprocess.Popen = FakePopen
+        try:
+            with TemporaryDirectory() as temp_dir:
+                target_dir = Path(temp_dir)
+                (target_dir / "source-video.mp4").write_bytes(b"fake")
+                downloader = TwitchDownloaderCliDownloader()
+                downloader.download(
+                    "https://www.twitch.tv/videos/123",
+                    target_dir,
+                    "source-video",
+                    on_progress=lambda pct: progress_calls.append(pct),
+                )
+        finally:
+            mod.subprocess.Popen = original_popen
+
+        self.assertEqual(progress_calls, [10.0, 25.5, 50.0, 100.0])
 
 
 if __name__ == "__main__":
