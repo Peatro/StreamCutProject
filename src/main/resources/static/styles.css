@@ -361,6 +361,19 @@ textarea {
   content: "Show";
 }
 
+/* --- TASK-084: stabilize active-processing panel header against reflow --- */
+.worker-runtime-panel > .panel-header h2 {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.worker-runtime-panel > .panel-header p {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .worker-runtime-body {
   padding: 0 22px 22px;
 }
@@ -891,21 +904,25 @@ th,
   display: flex;
   align-items: center;
   gap: 12px;
-  flex-wrap: wrap;
+  min-height: 32px;
 }
 
 .worker-progress-pill {
   display: inline-flex;
   align-items: center;
-  min-height: 28px;
-  padding: 0 12px;
+  justify-content: center;
+  min-height: 32px;
+  min-width: 56px;
+  padding: 0 14px;
   border: 1px solid rgba(113, 112, 255, 0.24);
   border-radius: var(--radius-pill);
   background: rgba(113, 112, 255, 0.12);
   color: var(--accent-hover);
-  font-size: 12px;
-  font-weight: 590;
+  font-size: 15px;
+  font-weight: 630;
   line-height: 1.4;
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
 }
 
 .worker-progress-copy {
@@ -913,6 +930,10 @@ th,
   font-size: 15px;
   line-height: 1.6;
   letter-spacing: -0.165px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
 }
 
 .worker-progress-detail-row {
@@ -920,7 +941,7 @@ th,
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  flex-wrap: wrap;
+  min-height: 24px;
 }
 
 .worker-progress-detail {
@@ -930,6 +951,10 @@ th,
   line-height: 1.5;
   letter-spacing: -0.13px;
   text-transform: uppercase;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
 }
 
 .worker-heartbeat-badge {
@@ -944,6 +969,8 @@ th,
   font-size: 12px;
   font-weight: 510;
   line-height: 1.4;
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .worker-heartbeat-fresh {
