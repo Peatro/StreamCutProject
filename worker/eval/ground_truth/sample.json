@@ -1,0 +1,14 @@
+[
+  {
+    "source": "sample-stream-2026-01-01",
+    "start_sec": 120.0,
+    "end_sec": 145.0,
+    "note": "SAMPLE ONLY -- not real labels. Replace with actual hand-labeled moments."
+  },
+  {
+    "source": "sample-stream-2026-01-01",
+    "start_sec": 780.0,
+    "end_sec": 810.0,
+    "note": "SAMPLE ONLY -- second example moment for format reference."
+  }
+]
