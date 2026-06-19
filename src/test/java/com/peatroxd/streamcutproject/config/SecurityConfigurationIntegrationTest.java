@@ -229,7 +229,8 @@ class SecurityConfigurationIntegrationTest {
                         null,
                         null,
                         null,
-                        null
+                        null,
+                        java.util.List.of()
                 ))
         );
 

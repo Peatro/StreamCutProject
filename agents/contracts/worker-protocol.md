@@ -58,7 +58,14 @@ Defines the backend <-> worker transport and payload contract for the current ta
   "candidateId": "number or null",
   "clipStartSec": "number or null",
   "clipEndSec": "number or null",
-  "artifactPath": "string or null"
+  "artifactPath": "string or null",
+  "clipWords": [
+    {
+      "word": "string",
+      "startSec": 0.0,
+      "endSec": 0.0
+    }
+  ]
 }
 ```
 
@@ -202,7 +209,9 @@ Returned by worker callback endpoints.
 - paths must reference artifacts visible to both backend and worker through the shared storage or object-storage contract
 - `taskType` must be `DOWNLOAD`, `ANALYZE`, or `EXPORT`
 - `videoPath` may be `null` before source materialization is complete
-- `candidateId`, `clipStartSec`, `clipEndSec`, and `artifactPath` are export-specific fields
+- `candidateId`, `clipStartSec`, `clipEndSec`, `artifactPath`, and `clipWords` are export-specific fields
+- `clipWords` contains the persisted per-word timings (absolute, as stored) that fall within the clip `[clipStartSec, clipEndSec]` window; each entry is `{word, startSec, endSec}`
+- `clipWords` is additive and optional; an empty array is valid for word-less transcripts or non-export tasks (backward-compatible)
 - worker must execute exactly one claimed task payload at a time
 - worker must not invent follow-up tasks; backend owns orchestration and queue transitions
 - worker should remain idempotent across retries whenever practical

@@ -1,15 +1,25 @@
 package com.peatroxd.streamcutproject.workerdispatch;
 
 import com.peatroxd.streamcutproject.clipcandidate.ClipCandidate;
+import com.peatroxd.streamcutproject.transcript.TranscriptSegment;
+import com.peatroxd.streamcutproject.transcript.TranscriptSegmentPersistenceMapper;
+import com.peatroxd.streamcutproject.transcript.TranscriptSegmentRepository;
+import com.peatroxd.streamcutproject.transcript.TranscriptWordPayload;
 import com.peatroxd.streamcutproject.vodjob.VodJob;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
+import java.util.List;
+
 @Component
+@RequiredArgsConstructor
 public class WorkerDispatchPayloadFactory {
 
     private static final String TASK_DOWNLOAD = "DOWNLOAD";
     private static final String TASK_ANALYZE = "ANALYZE";
     private static final String TASK_EXPORT = "EXPORT";
+
+    private final TranscriptSegmentRepository transcriptSegmentRepository;
 
     public WorkerDispatchPayload fromDownloadJob(VodJob job, Long executionId) {
         return new WorkerDispatchPayload(
@@ -25,7 +35,8 @@ public class WorkerDispatchPayloadFactory {
                 null,
                 null,
                 null,
-                null
+                null,
+                List.of()
         );
     }
 
@@ -49,7 +60,8 @@ public class WorkerDispatchPayloadFactory {
                 null,
                 null,
                 null,
-                null
+                null,
+                List.of()
         );
     }
 
@@ -64,6 +76,12 @@ public class WorkerDispatchPayloadFactory {
             throw new IllegalStateException("Candidate " + candidate.getId() + " has no export artifact path");
         }
 
+        List<TranscriptWordPayload> clipWords = queryClipWords(
+                job.getId(),
+                candidate.getStartSec(),
+                candidate.getEndSec()
+        );
+
         return new WorkerDispatchPayload(
                 executionId,
                 job.getId(),
@@ -77,8 +95,22 @@ public class WorkerDispatchPayloadFactory {
                 candidate.getId(),
                 candidate.getStartSec(),
                 candidate.getEndSec(),
-                candidate.getExportedClipPath()
+                candidate.getExportedClipPath(),
+                clipWords
         );
+    }
+
+    private List<TranscriptWordPayload> queryClipWords(Long jobId, Double clipStartSec, Double clipEndSec) {
+        if (clipStartSec == null || clipEndSec == null) {
+            return List.of();
+        }
+        List<TranscriptSegment> segments = transcriptSegmentRepository
+                .findAllByJobIdOrderByStartSecAscIdAsc(jobId);
+        return segments.stream()
+                .flatMap(segment -> TranscriptSegmentPersistenceMapper.wordsFromJson(segment.getWordsJson()).stream())
+                .filter(word -> word.startSec() != null && word.endSec() != null)
+                .filter(word -> word.startSec() >= clipStartSec && word.endSec() <= clipEndSec)
+                .toList();
     }
 
     private static String resolveSourceVideoReference(VodJob job) {

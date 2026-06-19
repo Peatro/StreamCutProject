@@ -958,7 +958,8 @@ class VodJobServiceTest {
                 null,
                 null,
                 null,
-                null
+                null,
+                List.of()
         );
         when(workerDispatchPayloadFactory.fromDownloadJob(job, null)).thenReturn(payload);
 
@@ -997,7 +998,8 @@ class VodJobServiceTest {
                 null,
                 null,
                 null,
-                null
+                null,
+                List.of()
         );
         when(workerDispatchPayloadFactory.fromDownloadJob(job, null)).thenReturn(payload);
 
@@ -1054,7 +1056,8 @@ class VodJobServiceTest {
                 null,
                 null,
                 null,
-                null
+                null,
+                List.of()
         );
         when(workerDispatchPayloadFactory.fromDownloadJob(Mockito.eq(job), anyLong())).thenReturn(payload);
 
@@ -1105,7 +1108,8 @@ class VodJobServiceTest {
                 null,
                 null,
                 null,
-                null
+                null,
+                List.of()
         );
         when(workerDispatchPayloadFactory.fromDownloadJob(Mockito.eq(readyJob), anyLong())).thenReturn(payload);
 
@@ -1149,7 +1153,8 @@ class VodJobServiceTest {
                 null,
                 null,
                 null,
-                null
+                null,
+                List.of()
         );
         when(workerDispatchPayloadFactory.fromAnalyzeJob(Mockito.eq(job), anyLong())).thenReturn(payload);
 
@@ -1204,7 +1209,8 @@ class VodJobServiceTest {
                 null,
                 null,
                 null,
-                null
+                null,
+                List.of()
         );
         when(workerDispatchPayloadFactory.fromAnalyzeJob(Mockito.eq(readyJob), anyLong())).thenReturn(payload);
 
@@ -1254,7 +1260,8 @@ class VodJobServiceTest {
                 7L,
                 null,
                 null,
-                "/var/lib/streamcut/jobs/1/exports/candidate-7.mp4"
+                "/var/lib/streamcut/jobs/1/exports/candidate-7.mp4",
+                List.of()
         );
         when(workerTaskRepository.findAllByTaskTypeAndStatusOrderByAvailableAtAscIdAsc(
                 WorkerTaskType.EXPORT,

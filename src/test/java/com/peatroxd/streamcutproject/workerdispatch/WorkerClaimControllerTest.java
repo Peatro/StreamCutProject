@@ -49,7 +49,8 @@ class WorkerClaimControllerTest {
                         null,
                         null,
                         null,
-                        null
+                        null,
+                        java.util.List.of()
                 )
         ));
 
