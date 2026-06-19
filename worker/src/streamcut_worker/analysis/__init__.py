@@ -6,3 +6,4 @@ from .models import (
     LoudnessProfile,
 )
 from .service import SlidingWindowCandidateAnalysisService, analyze_candidates
+from .hybrid import analyze_candidates_hybrid

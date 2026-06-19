@@ -254,6 +254,49 @@ def candidates_from_detector(
 
 
 # ---------------------------------------------------------------------------
+# Adapter: run the hybrid LLM detector and emit Candidate objects
+# ---------------------------------------------------------------------------
+
+def candidates_from_hybrid_detector(
+    *,
+    job_id: str,
+    transcript_segments: list,
+    silence_segments: list,
+    duration_sec: float,
+    emotion_keywords: tuple[str, ...] = (),
+    loudness_profile=None,
+    top_n: int | None = None,
+    llm_client=None,
+) -> list[Candidate]:
+    """Run the hybrid LLM+heuristic detector and return Candidate objects.
+
+    Requires a ``LlmClient`` instance.  If not provided or unavailable,
+    falls back to the heuristic detector internally.
+    """
+    from streamcut_worker.analysis.models import CandidateAnalysisRequest
+    from streamcut_worker.analysis.hybrid import analyze_candidates_hybrid
+
+    request = CandidateAnalysisRequest(
+        job_id=job_id,
+        transcript_segments=transcript_segments,
+        silence_segments=silence_segments,
+        duration_sec=duration_sec,
+        emotion_keywords=emotion_keywords,
+        loudness_profile=loudness_profile,
+        top_n=top_n,
+    )
+    result = analyze_candidates_hybrid(request, llm_client)
+    return [
+        Candidate(
+            start_sec=c.start_sec,
+            end_sec=c.end_sec,
+            score=c.score,
+        )
+        for c in result.clip_candidates
+    ]
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 

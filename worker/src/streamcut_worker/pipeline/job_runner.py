@@ -7,6 +7,7 @@ import threading
 from typing import Callable, TypeVar
 
 from streamcut_worker.analysis import CandidateAnalysisRequest, LoudnessProfile, SlidingWindowCandidateAnalysisService
+from streamcut_worker.analysis.hybrid import analyze_candidates_hybrid
 from streamcut_worker.audio import AudioExtractionRequest, FfmpegAudioExtractionService
 from streamcut_worker.export import ClipExportRequest, FfmpegClipExportService
 from streamcut_worker.inference import LlmClient
@@ -407,22 +408,29 @@ class WorkerJobRunner:
         loudness_profile: LoudnessProfile | None,
         on_progress: Callable[[str, int, str], None] | None,
     ):
+        request = CandidateAnalysisRequest(
+            job_id=str(job.job_id),
+            transcript_segments=transcription_result.transcript_segments,
+            silence_segments=silence_result.silence_segments,
+            duration_sec=transcription_result.duration_sec,
+            emotion_keywords=self.emotion_keywords,
+            loudness_profile=loudness_profile,
+        )
+
+        def _run_analysis():
+            return analyze_candidates_hybrid(
+                request,
+                self.llm_client,
+                heuristic_fallback=lambda req: self.analysis_service.analyze(req),
+            )
+
         try:
             return self._run_with_stage_heartbeat(
                 on_progress=on_progress,
                 status="ANALYZING_WINDOWS",
                 progress_percent=self.ANALYZING_WINDOWS_PROGRESS,
                 message="Worker is still scoring sliding analysis windows",
-                operation=lambda: self.analysis_service.analyze(
-                    CandidateAnalysisRequest(
-                        job_id=str(job.job_id),
-                        transcript_segments=transcription_result.transcript_segments,
-                        silence_segments=silence_result.silence_segments,
-                        duration_sec=transcription_result.duration_sec,
-                        emotion_keywords=self.emotion_keywords,
-                        loudness_profile=loudness_profile,
-                    )
-                )
+                operation=_run_analysis,
             )
         except Exception as exc:
             raise WorkerJobRunnerError("ANALYZING_WINDOWS", str(exc)) from exc
