@@ -18,6 +18,7 @@ class ClipExportRequest:
     source_video_path: Path
     start_sec: float
     end_sec: float
+    vertical_reframe: bool = False
 
 
 @dataclass(frozen=True, slots=True)

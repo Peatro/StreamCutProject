@@ -12,6 +12,46 @@ _SAFE_COMPONENT_RE = re.compile(r"[^a-zA-Z0-9._-]+")
 _SEEK_PREROLL_SEC: float = 10.0
 _FFMPEG_THREAD_CAP: int = 4
 
+# --- Vertical reframe (Tier 0 blurred-fill) constants ---
+REFRAME_CANVAS_WIDTH: int = 1080
+REFRAME_CANVAS_HEIGHT: int = 1920
+REFRAME_BLUR_SIGMA: int = 40
+# Downscale the background to this width before blurring (keeps blur cheap).
+REFRAME_BG_DOWNSCALE_WIDTH: int = 270
+
+
+def _build_reframe_filter(
+    canvas_w: int = REFRAME_CANVAS_WIDTH,
+    canvas_h: int = REFRAME_CANVAS_HEIGHT,
+    blur_sigma: int = REFRAME_BLUR_SIGMA,
+    bg_downscale_w: int = REFRAME_BG_DOWNSCALE_WIDTH,
+) -> str:
+    """Build a filter_complex string for Tier 0 blurred-fill vertical reframe.
+
+    The graph:
+      1. Split the input into two streams.
+      2. Background: downscale to bg_downscale_w (cheap), blur, scale up to
+         canvas, center-crop to exact canvas dimensions.
+      3. Foreground: scale to fit canvas width, preserve aspect ratio.
+      4. Overlay foreground centered on background.
+
+    The foreground height is capped at canvas_h so ultra-tall sources don't
+    overflow. The overlay y-position uses (H-h)/2 to vertically center the
+    source.  Subtitle burning (TASK-092) can later compose on top of the
+    [out] pad or after this filter; the 9:16 safe-zone is the foreground
+    rectangle centered in the canvas.
+    """
+    bg_downscale_h = int(bg_downscale_w * canvas_h / canvas_w)
+    return (
+        f"[0:v]split=2[bg_in][fg_in];"
+        f"[bg_in]scale={bg_downscale_w}:{bg_downscale_h}:force_original_aspect_ratio=increase,"
+        f"crop={bg_downscale_w}:{bg_downscale_h},"
+        f"gblur=sigma={blur_sigma},"
+        f"scale={canvas_w}:{canvas_h}[bg];"
+        f"[fg_in]scale={canvas_w}:-2:force_original_aspect_ratio=decrease[fg_scaled];"
+        f"[bg][fg_scaled]overlay=(W-w)/2:(H-h)/2[out]"
+    )
+
 
 class FfmpegClipExportService:
     def __init__(self, artifact_root: Path, runner: ProcessRunner | None = None) -> None:
@@ -27,6 +67,14 @@ class FfmpegClipExportService:
         duration_sec = request.end_sec - request.start_sec
         coarse_sec = max(0.0, request.start_sec - _SEEK_PREROLL_SEC)
         fine_sec = request.start_sec - coarse_sec
+
+        filter_args: list[str] = []
+        map_args: list[str] = []
+        if request.vertical_reframe:
+            filter_graph = _build_reframe_filter()
+            filter_args = ["-filter_complex", filter_graph]
+            map_args = ["-map", "[out]", "-map", "0:a"]
+
         command = [
             "ffmpeg",
             "-y",
@@ -38,6 +86,8 @@ class FfmpegClipExportService:
             _format_time(fine_sec),
             "-t",
             _format_time(duration_sec),
+            *filter_args,
+            *map_args,
             "-c:v",
             "libx264",
             "-preset",
