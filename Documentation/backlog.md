@@ -235,6 +235,18 @@ Current release-track snapshot:
 - `TASK-074` Prepare Queue Delivery Abstraction For Broker Migration (deprioritized: DB polling is fine at n=1; evidence-gated)
 - `TASK-075` Migrate Operator UI To React (deprioritized: current vanilla JS UI is sufficient for operator self-use)
 
+### Clip Quality Track (Operator Clip-Selection Quality) — planned, drafted 2026-06-19
+Priority ladder and decisions are recorded in `Documentation/clip-quality-plan.md`. Order is by leverage (moment-selection is the brain; the rest is plumbing), but ground-truth (`TASK-087`) runs first because it gates honest detector tuning. Decisions locked: local Qwen on the GPU worker; hybrid detection (LLM walks transcript chunks, heuristic loudness/emotion peaks injected as hints); word-by-word karaoke subtitles; persist the word timings whisper already computes.
+- `TASK-087` Ground-Truth Clip Set And Detector Evaluation Harness (do first — gates `TASK-089`)
+- `TASK-088` Local Qwen Inference Serving In The GPU Worker (infra)
+- `TASK-089` Hybrid LLM Highlight Detection Logic (depends `TASK-088`, measured by `TASK-087`)
+- `TASK-090` Hook: Shift Clip Start To The Action Peak
+- `TASK-091` Persist Word-Level Transcript Timings End-To-End (enables `TASK-092`; additive transport + schema)
+- `TASK-092` Word-By-Word Karaoke Burned-In Subtitles At Export (depends `TASK-091`)
+- `TASK-093` Vertical Reframe Tier 0 Blurred-Fill At Export
+
+Guardrail: "better" is the detector's hit-rate against a hand-labeled set (`TASK-087`), not a feeling — tune from the metric, not by taste.
+
 ## DONE
 
 ### Docs And Process
