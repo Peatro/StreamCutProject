@@ -244,6 +244,7 @@ Priority ladder and decisions are recorded in `Documentation/clip-quality-plan.m
 - `TASK-091` Persist Word-Level Transcript Timings End-To-End (enables `TASK-092`; additive transport + schema)
 - `TASK-092` Word-By-Word Karaoke Burned-In Subtitles At Export (depends `TASK-091`)
 - `TASK-093` Vertical Reframe Tier 0 Blurred-Fill At Export
+- `TASK-094` Supply Clip-Local Word Timings In The Export-Claim Payload (backend; closes the TASK-091→TASK-092 delivery gap so karaoke captions actually fire)
 
 Guardrail: "better" is the detector's hit-rate against a hand-labeled set (`TASK-087`), not a feeling — tune from the metric, not by taste.
 
