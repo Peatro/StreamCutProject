@@ -1,6 +1,6 @@
 """Thin local-LLM client for Qwen inference on the GPU worker.
 
-Serving approach: llama-cpp-python (pinned 0.3.8) loading a quantized
+Serving approach: llama-cpp-python (pinned 0.3.12) loading a quantized
 Qwen2.5-7B-Instruct GGUF directly into the process.  No separate server,
 no HTTP overhead, no Ollama daemon.
 
@@ -22,7 +22,7 @@ GPU contention strategy:
   This ensures whisper and Qwen never co-reside in VRAM.
 
 Pinned versions:
-  - Runtime: llama-cpp-python == 0.3.8
+  - Runtime: llama-cpp-python == 0.3.12
   - Model:   Qwen2.5-7B-Instruct-Q4_K_M.gguf
               from repo Qwen/Qwen2.5-7B-Instruct-GGUF on HuggingFace
 """
@@ -42,7 +42,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 PINNED_MODEL_REPO = "Qwen/Qwen2.5-7B-Instruct-GGUF"
 PINNED_MODEL_FILENAME = "qwen2.5-7b-instruct-q4_k_m.gguf"
-PINNED_LLAMA_CPP_VERSION = "0.3.8"
+PINNED_LLAMA_CPP_VERSION = "0.3.12"
 
 # Default generation parameters
 DEFAULT_MAX_TOKENS = 512

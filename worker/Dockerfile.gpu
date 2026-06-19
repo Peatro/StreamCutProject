@@ -5,7 +5,7 @@ ENV PYTHONUNBUFFERED=1
 ENV VIRTUAL_ENV=/opt/venv
 ENV PATH="/opt/venv/bin:${PATH}"
 ENV HF_HOME=/app/model-cache
-ENV LD_LIBRARY_PATH="/opt/venv/lib/python3.12/site-packages/nvidia/cublas/lib:/opt/venv/lib/python3.12/site-packages/nvidia/cudnn/lib"
+ENV LD_LIBRARY_PATH="/opt/venv/lib/python3.12/site-packages/nvidia/cublas/lib:/opt/venv/lib/python3.12/site-packages/nvidia/cudnn/lib:/opt/venv/lib/python3.12/site-packages/nvidia/cuda_runtime/lib"
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ffmpeg \
@@ -17,7 +17,8 @@ COPY pyproject.toml ./
 COPY src ./src
 
 RUN python -m venv "${VIRTUAL_ENV}" \
-    && pip install --no-cache-dir . nvidia-cublas-cu12 nvidia-cudnn-cu12 \
-    && CMAKE_ARGS="-DGGML_CUDA=on" pip install --no-cache-dir llama-cpp-python==0.3.8
+    && pip install --no-cache-dir . nvidia-cublas-cu12 nvidia-cudnn-cu12 nvidia-cuda-runtime-cu12 \
+    && pip install --no-cache-dir llama-cpp-python==0.3.12 \
+        --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cu124
 
 CMD ["python", "-m", "streamcut_worker"]
