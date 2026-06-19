@@ -2866,14 +2866,18 @@ ${renderJobFailureSummary(job)}
   }
 
   async function getCsrfToken() {
-    if (authState.csrfToken) {
-      return authState.csrfToken;
-    }
-
+    // The XSRF-TOKEN cookie always holds the server's current token
+    // (CookieCsrfTokenRepository rotates it on login/logout). Read it
+    // fresh every time so a rotated token never goes stale and turns a
+    // POST into a 403 — which used to bounce the operator to /login.
     const cookieToken = readCookie("XSRF-TOKEN");
     if (cookieToken) {
       authState.csrfToken = cookieToken;
       return cookieToken;
+    }
+
+    if (authState.csrfToken) {
+      return authState.csrfToken;
     }
 
     if (!authState.csrfPromise) {
@@ -2901,7 +2905,11 @@ ${renderJobFailureSummary(job)}
   }
 
   function handleAuthFailure(response) {
-    if (response.status !== 401 && response.status !== 403) {
+    // Only 401 means the session is actually gone. A 403 is
+    // authenticated-but-forbidden (most often a stale CSRF token) and
+    // must NOT force a re-login — that's what made the session feel like
+    // it "died fast" while remember-me was still valid.
+    if (response.status !== 401) {
       return false;
     }
 
