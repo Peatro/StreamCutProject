@@ -9,6 +9,7 @@ from typing import Callable, TypeVar
 from streamcut_worker.analysis import CandidateAnalysisRequest, LoudnessProfile, SlidingWindowCandidateAnalysisService
 from streamcut_worker.audio import AudioExtractionRequest, FfmpegAudioExtractionService
 from streamcut_worker.export import ClipExportRequest, FfmpegClipExportService
+from streamcut_worker.inference import LlmClient
 from streamcut_worker.loudness import (
     FfmpegLoudnessDetectionService,
     LoudnessDetectionException,
@@ -56,6 +57,7 @@ class WorkerJobRunner:
     loudness_service: FfmpegLoudnessDetectionService
     analysis_service: SlidingWindowCandidateAnalysisService
     export_service: FfmpegClipExportService
+    llm_client: LlmClient | None = None
     emotion_keywords: tuple[str, ...] = field(default_factory=tuple)
 
     def run(
@@ -458,6 +460,7 @@ def create_default_job_runner(
     load_transcription_model: bool = True,
     whisper_device: str = "cpu",
     whisper_compute_type: str = "int8",
+    llm_client: LlmClient | None = None,
 ) -> WorkerJobRunner:
     return WorkerJobRunner(
         storage_root=storage_root,
@@ -471,5 +474,6 @@ def create_default_job_runner(
         loudness_service=FfmpegLoudnessDetectionService(),
         analysis_service=SlidingWindowCandidateAnalysisService(),
         export_service=FfmpegClipExportService(storage_root),
+        llm_client=llm_client,
         emotion_keywords=emotion_keywords,
     )

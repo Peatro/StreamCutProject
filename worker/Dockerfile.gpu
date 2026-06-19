@@ -17,6 +17,7 @@ COPY pyproject.toml ./
 COPY src ./src
 
 RUN python -m venv "${VIRTUAL_ENV}" \
-    && pip install --no-cache-dir . nvidia-cublas-cu12 nvidia-cudnn-cu12
+    && pip install --no-cache-dir . nvidia-cublas-cu12 nvidia-cudnn-cu12 \
+    && CMAKE_ARGS="-DGGML_CUDA=on" pip install --no-cache-dir llama-cpp-python==0.3.8
 
 CMD ["python", "-m", "streamcut_worker"]

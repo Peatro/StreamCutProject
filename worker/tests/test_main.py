@@ -18,7 +18,12 @@ class WorkerMainTests(unittest.TestCase):
             WHISPER_COMPUTE_TYPE="float16",
         ), mock.patch.object(worker_main.signal, "signal"), mock.patch.object(
             worker_main, "create_default_job_runner", return_value=object()
-        ) as create_runner, mock.patch.object(worker_main, "WorkerPollingLoop") as polling_loop:
+        ) as create_runner, mock.patch.object(
+            worker_main, "create_llm_client",
+        ) as create_llm, mock.patch.object(worker_main, "WorkerPollingLoop") as polling_loop:
+            create_llm.return_value = mock.MagicMock()
+            create_llm.return_value.enabled = False
+            create_llm.return_value.is_available = False
             polling_loop.return_value.run_forever.return_value = None
 
             worker_main.main()
@@ -29,7 +34,9 @@ class WorkerMainTests(unittest.TestCase):
             load_transcription_model=True,
             whisper_device="cuda",
             whisper_compute_type="float16",
+            llm_client=create_llm.return_value,
         )
+        create_llm.assert_called_once()
         polling_loop.assert_called_once()
         self.assertEqual(polling_loop.call_args.kwargs["worker_role"], "processing")
         self.assertEqual(polling_loop.call_args.kwargs["whisper_device"], "cuda")
@@ -52,6 +59,7 @@ class WorkerMainTests(unittest.TestCase):
             load_transcription_model=False,
             whisper_device="cuda",
             whisper_compute_type="int8",
+            llm_client=None,
         )
         polling_loop.assert_called_once()
         self.assertEqual(polling_loop.call_args.kwargs["worker_role"], "export")

@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 import signal
 
+from streamcut_worker.inference import create_llm_client
 from streamcut_worker.pipeline import WorkerPollingLoop, create_default_job_runner
 from streamcut_worker.services import BackendClient
 
@@ -47,12 +48,23 @@ def main() -> None:
             os.getenv("HF_HOME", "/app/model-cache"),
         )
 
+    # Create local LLM client — only active for processing workers when
+    # QWEN_ENABLED=true AND the GPU override is active.
+    llm_client = create_llm_client() if loads_transcription_model else None
+    if llm_client is not None:
+        logging.info(
+            "Local LLM client created: enabled=%s available=%s",
+            llm_client.enabled,
+            llm_client.is_available,
+        )
+
     job_runner = create_default_job_runner(
         storage_root=storage_root,
         emotion_keywords=emotion_keywords,
         load_transcription_model=loads_transcription_model,
         whisper_device=whisper_device,
         whisper_compute_type=whisper_compute_type,
+        llm_client=llm_client,
     )
 
     if loads_transcription_model:
