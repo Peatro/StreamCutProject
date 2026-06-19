@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import shutil
 import subprocess
 import tempfile
 from dataclasses import dataclass
@@ -129,7 +130,9 @@ class TwitchDownloaderCliDownloader:
                 "-q", "1080p60",
                 "-o", str(output_path),
                 "--temp-path", tmp_dir,
-                "--ffmpeg-path", "ffmpeg",
+                # TDCLI does not PATH-resolve --ffmpeg-path; it needs an
+                # absolute path or it aborts (-6) at the finalize/mux step.
+                "--ffmpeg-path", shutil.which("ffmpeg") or "ffmpeg",
             ]
 
             try:
