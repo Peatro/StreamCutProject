@@ -10,6 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from streamcut_worker.transcription import (
     FasterWhisperTranscriptionService,
     TranscriptSegment,
+    TranscriptWord,
     TranscriptionException,
     TranscriptionRequest,
     TranscriptionResult,
@@ -17,8 +18,10 @@ from streamcut_worker.transcription import (
 
 
 class FakeWord:
-    def __init__(self, word: str) -> None:
+    def __init__(self, word: str, start: float = 0.0, end: float = 0.0) -> None:
         self.word = word
+        self.start = start
+        self.end = end
 
 
 class FakeSegment:
@@ -55,7 +58,10 @@ class TranscriptionServiceTests(unittest.TestCase):
             model = FakeWhisperModel(
                 (
                     [
-                        FakeSegment(0.0, 1.2, "Hello world", [FakeWord("Hello"), FakeWord("world")]),
+                        FakeSegment(0.0, 1.2, "Hello world", [
+                            FakeWord("Hello", 0.0, 0.5),
+                            FakeWord("world", 0.6, 1.1),
+                        ]),
                         FakeSegment(1.2, 2.8, "More text", None),
                     ],
                     FakeInfo("en", 0.97, 2.8),
@@ -77,8 +83,16 @@ class TranscriptionServiceTests(unittest.TestCase):
         self.assertEqual(result.job_id, "job-1")
         self.assertEqual(result.language, "en")
         self.assertEqual(result.duration_sec, 2.8)
-        self.assertEqual(result.transcript_segments[0], TranscriptSegment(0.0, 1.2, "Hello world", 2))
+        self.assertEqual(result.transcript_segments[0].start_sec, 0.0)
+        self.assertEqual(result.transcript_segments[0].end_sec, 1.2)
+        self.assertEqual(result.transcript_segments[0].text, "Hello world")
+        self.assertEqual(result.transcript_segments[0].word_count, 2)
+        self.assertEqual(result.transcript_segments[0].words, [
+            TranscriptWord("Hello", 0.0, 0.5),
+            TranscriptWord("world", 0.6, 1.1),
+        ])
         self.assertEqual(result.transcript_segments[1].word_count, 2)
+        self.assertEqual(result.transcript_segments[1].words, [])
         self.assertEqual(model.calls[0][0], str(audio_path))
         self.assertTrue(model.calls[0][1]["word_timestamps"])
 
@@ -87,6 +101,11 @@ class TranscriptionServiceTests(unittest.TestCase):
         self.assertEqual(payload["durationSec"], 2.8)
         self.assertEqual(payload["language"], "en")
         self.assertEqual(payload["transcriptSegments"][0]["wordCount"], 2)
+        self.assertEqual(payload["transcriptSegments"][0]["words"], [
+            {"word": "Hello", "startSec": 0.0, "endSec": 0.5},
+            {"word": "world", "startSec": 0.6, "endSec": 1.1},
+        ])
+        self.assertEqual(payload["transcriptSegments"][1]["words"], [])
         self.assertEqual(progress_updates, [(1.2, 2.8), (2.8, 2.8), (2.8, 2.8)])
 
     def test_missing_audio_fails_fast(self) -> None:

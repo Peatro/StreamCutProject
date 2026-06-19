@@ -41,3 +41,6 @@ databaseChangeLog:
   - include:
       file: changes/014-add-source-video-reference-to-vod-job.yaml
       relativeToChangelogFile: true
+  - include:
+      file: changes/015-add-words-json-to-transcript-segment.yaml
+      relativeToChangelogFile: true

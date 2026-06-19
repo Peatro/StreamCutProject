@@ -326,8 +326,11 @@ class VodJobControllerTest {
     @Test
     void listsTranscriptSegments() throws Exception {
         when(vodJobService.listTranscriptSegments(1L)).thenReturn(List.of(
-                new TranscriptSegmentResponse(21L, 1.5, 3.0, "Hello world", 2),
-                new TranscriptSegmentResponse(22L, 3.0, 5.0, "More text", 2)
+                new TranscriptSegmentResponse(21L, 1.5, 3.0, "Hello world", 2, List.of(
+                        new com.peatroxd.streamcutproject.transcript.TranscriptWordPayload("Hello", 1.5, 2.0),
+                        new com.peatroxd.streamcutproject.transcript.TranscriptWordPayload("world", 2.1, 3.0)
+                )),
+                new TranscriptSegmentResponse(22L, 3.0, 5.0, "More text", 2, List.of())
         ));
 
         mockMvc.perform(get("/api/jobs/1/transcript"))
@@ -336,8 +339,13 @@ class VodJobControllerTest {
                 .andExpect(jsonPath("$[0].id").value(21))
                 .andExpect(jsonPath("$[0].startSec").value(1.5))
                 .andExpect(jsonPath("$[0].text").value("Hello world"))
+                .andExpect(jsonPath("$[0].words[0].word").value("Hello"))
+                .andExpect(jsonPath("$[0].words[0].startSec").value(1.5))
+                .andExpect(jsonPath("$[0].words[0].endSec").value(2.0))
+                .andExpect(jsonPath("$[0].words[1].word").value("world"))
                 .andExpect(jsonPath("$[1].id").value(22))
-                .andExpect(jsonPath("$[1].startSec").value(3.0));
+                .andExpect(jsonPath("$[1].startSec").value(3.0))
+                .andExpect(jsonPath("$[1].words").isEmpty());
     }
 
     @Test

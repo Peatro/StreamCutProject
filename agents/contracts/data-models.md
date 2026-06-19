@@ -129,6 +129,7 @@ Fields:
 - end_sec
 - text
 - word_count
+- words_json (nullable TEXT/CLOB; JSON array of `{word, startSec, endSec}` per-word timings from whisper; null for legacy/word-less transcripts)
 
 ## silence_segment
 Represents a persisted silence interval for one analyzed job.

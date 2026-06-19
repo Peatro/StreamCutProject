@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Callable, Iterable, Protocol, Sequence
 
 from .exceptions import TranscriptionException
-from .models import TranscriptSegment, TranscriptionRequest, TranscriptionResult
+from .models import TranscriptSegment, TranscriptWord, TranscriptionRequest, TranscriptionResult
 
 
 class WhisperWordLike(Protocol):
@@ -83,6 +83,7 @@ class FasterWhisperTranscriptionService:
                 end_sec=float(segment.end),
                 text=segment.text.strip(),
                 word_count=_count_words(segment),
+                words=_extract_words(segment),
             ))
             if on_progress is not None and total_duration is not None and total_duration > 0:
                 on_progress(min(float(segment.end), total_duration), total_duration)
@@ -129,6 +130,20 @@ def _count_words(segment: WhisperSegmentLike) -> int:
     if not text:
         return 0
     return len(text.split())
+
+
+def _extract_words(segment: WhisperSegmentLike) -> list[TranscriptWord]:
+    words = getattr(segment, "words", None)
+    if not words:
+        return []
+    return [
+        TranscriptWord(
+            word=w.word.strip(),
+            start_sec=float(w.start),
+            end_sec=float(w.end),
+        )
+        for w in words
+    ]
 
 
 def _resolve_duration(duration: float | None, segments: list[TranscriptSegment]) -> float:

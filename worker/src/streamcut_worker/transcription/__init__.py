@@ -1,6 +1,7 @@
 from .exceptions import TranscriptionException
 from .models import (
     TranscriptSegment,
+    TranscriptWord,
     TranscriptionRequest,
     TranscriptionResult,
 )

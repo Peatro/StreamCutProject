@@ -42,6 +42,9 @@ public class TranscriptSegment {
     @Column(name = "word_count", nullable = false)
     private Integer wordCount;
 
+    @Column(name = "words_json", columnDefinition = "TEXT")
+    private String wordsJson;
+
     public static TranscriptSegment create(
             VodJob vodJob,
             Double startSec,
@@ -55,6 +58,19 @@ public class TranscriptSegment {
         segment.setEndSec(endSec);
         segment.setText(text);
         segment.setWordCount(wordCount);
+        return segment;
+    }
+
+    public static TranscriptSegment create(
+            VodJob vodJob,
+            Double startSec,
+            Double endSec,
+            String text,
+            Integer wordCount,
+            String wordsJson
+    ) {
+        TranscriptSegment segment = create(vodJob, startSec, endSec, text, wordCount);
+        segment.setWordsJson(wordsJson);
         return segment;
     }
 }

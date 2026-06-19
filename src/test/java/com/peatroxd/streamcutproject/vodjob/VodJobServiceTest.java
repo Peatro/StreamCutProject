@@ -1359,7 +1359,7 @@ class VodJobServiceTest {
                 "en",
                 "/var/lib/streamcut/jobs/1/source/video.mp4",
                 "/var/lib/streamcut/jobs/1/audio/audio.wav",
-                List.of(new TranscriptSegmentWorkerPayload(0.0, 2.0, "hello", 1)),
+                List.of(new TranscriptSegmentWorkerPayload(0.0, 2.0, "hello", 1, null)),
                 List.of(new SilenceSegmentWorkerPayload(2.0, 3.0, 1.0)),
                 List.of(new AnalysisWindowWorkerPayload(0.0, 20.0, 1.0, 0.1, 0, 0.8, 0.9)),
                 List.of(new ClipCandidateWorkerPayload(5.0, 15.0, 0.95, "hello"))
@@ -1410,7 +1410,7 @@ class VodJobServiceTest {
                 "en",
                 "/var/lib/streamcut/jobs/1/source/video.mp4",
                 "/var/lib/streamcut/jobs/1/audio/audio.wav",
-                List.of(new TranscriptSegmentWorkerPayload(0.0, 2.0, "hello", 1)),
+                List.of(new TranscriptSegmentWorkerPayload(0.0, 2.0, "hello", 1, null)),
                 List.of(new SilenceSegmentWorkerPayload(2.0, 3.0, 1.0)),
                 List.of(new AnalysisWindowWorkerPayload(0.0, 20.0, 1.0, 0.1, 0, 0.8, 0.9)),
                 List.of()

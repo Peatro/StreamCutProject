@@ -246,7 +246,8 @@ public class VodJobService {
                         segment.getStartSec(),
                         segment.getEndSec(),
                         segment.getText(),
-                        segment.getWordCount()
+                        segment.getWordCount(),
+                        TranscriptSegmentPersistenceMapper.wordsFromJson(segment.getWordsJson())
                 ))
                 .toList();
     }

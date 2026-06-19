@@ -29,6 +29,49 @@ class TranscriptSegmentPersistenceMapperTest {
         assertThat(segment.getEndSec()).isEqualTo(18.25);
         assertThat(segment.getText()).isEqualTo("hello world");
         assertThat(segment.getWordCount()).isEqualTo(2);
+        assertThat(segment.getWordsJson()).isNull();
+    }
+
+    @Test
+    void mapsWorkerPayloadWithWordsToEntity() {
+        VodJob job = buildJob(42L);
+        List<TranscriptWordPayload> words = List.of(
+                new TranscriptWordPayload("hello", 12.5, 13.0),
+                new TranscriptWordPayload("world", 13.1, 14.0)
+        );
+        TranscriptSegmentWorkerPayload payload = TranscriptSegmentPersistenceMapper.payload(
+                12.5,
+                18.25,
+                "hello world",
+                2,
+                words
+        );
+
+        TranscriptSegment segment = TranscriptSegmentPersistenceMapper.toEntity(job, payload);
+
+        assertThat(segment.getVodJob()).isSameAs(job);
+        assertThat(segment.getStartSec()).isEqualTo(12.5);
+        assertThat(segment.getEndSec()).isEqualTo(18.25);
+        assertThat(segment.getText()).isEqualTo("hello world");
+        assertThat(segment.getWordCount()).isEqualTo(2);
+        assertThat(segment.getWordsJson()).isNotNull();
+
+        List<TranscriptWordPayload> parsed = TranscriptSegmentPersistenceMapper.wordsFromJson(segment.getWordsJson());
+        assertThat(parsed).hasSize(2);
+        assertThat(parsed.get(0).word()).isEqualTo("hello");
+        assertThat(parsed.get(0).startSec()).isEqualTo(12.5);
+        assertThat(parsed.get(0).endSec()).isEqualTo(13.0);
+        assertThat(parsed.get(1).word()).isEqualTo("world");
+    }
+
+    @Test
+    void wordsFromJsonReturnsEmptyForNull() {
+        assertThat(TranscriptSegmentPersistenceMapper.wordsFromJson(null)).isEmpty();
+    }
+
+    @Test
+    void wordsFromJsonReturnsEmptyForBlank() {
+        assertThat(TranscriptSegmentPersistenceMapper.wordsFromJson("")).isEmpty();
     }
 
     @Test

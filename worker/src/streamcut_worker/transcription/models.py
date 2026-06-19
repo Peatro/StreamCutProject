@@ -1,8 +1,15 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+
+@dataclass(frozen=True, slots=True)
+class TranscriptWord:
+    word: str
+    start_sec: float
+    end_sec: float
 
 
 @dataclass(frozen=True, slots=True)
@@ -11,6 +18,7 @@ class TranscriptSegment:
     end_sec: float
     text: str
     word_count: int
+    words: list[TranscriptWord] = field(default_factory=list)
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,6 +53,14 @@ class TranscriptionResult:
                     "endSec": segment.end_sec,
                     "text": segment.text,
                     "wordCount": segment.word_count,
+                    "words": [
+                        {
+                            "word": w.word,
+                            "startSec": w.start_sec,
+                            "endSec": w.end_sec,
+                        }
+                        for w in segment.words
+                    ] if segment.words else [],
                 }
                 for segment in self.transcript_segments
             ],

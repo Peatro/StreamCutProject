@@ -44,6 +44,41 @@ class TranscriptSegmentRepositoryTest {
         assertThat(segments.get(1).getText()).isEqualTo("second");
     }
 
+    @Test
+    void persistsAndRetrievesWordsJson() {
+        VodJob job = vodJobRepository.save(buildJob());
+        String wordsJson = "[{\"word\":\"hello\",\"startSec\":5.0,\"endSec\":5.5},{\"word\":\"world\",\"startSec\":5.6,\"endSec\":6.0}]";
+        transcriptSegmentRepository.save(
+                TranscriptSegment.create(job, 5.0, 9.0, "hello world", 2, wordsJson)
+        );
+
+        List<TranscriptSegment> segments = transcriptSegmentRepository.findAllByJobIdOrderByStartSecAscIdAsc(job.getId());
+
+        assertThat(segments).hasSize(1);
+        assertThat(segments.get(0).getWordsJson()).isEqualTo(wordsJson);
+
+        List<TranscriptWordPayload> words = TranscriptSegmentPersistenceMapper.wordsFromJson(segments.get(0).getWordsJson());
+        assertThat(words).hasSize(2);
+        assertThat(words.get(0).word()).isEqualTo("hello");
+        assertThat(words.get(0).startSec()).isEqualTo(5.0);
+        assertThat(words.get(0).endSec()).isEqualTo(5.5);
+        assertThat(words.get(1).word()).isEqualTo("world");
+    }
+
+    @Test
+    void segmentWithoutWordsJsonPersistsCorrectly() {
+        VodJob job = vodJobRepository.save(buildJob());
+        transcriptSegmentRepository.save(
+                TranscriptSegment.create(job, 5.0, 9.0, "hello world", 2)
+        );
+
+        List<TranscriptSegment> segments = transcriptSegmentRepository.findAllByJobIdOrderByStartSecAscIdAsc(job.getId());
+
+        assertThat(segments).hasSize(1);
+        assertThat(segments.get(0).getWordsJson()).isNull();
+        assertThat(TranscriptSegmentPersistenceMapper.wordsFromJson(segments.get(0).getWordsJson())).isEmpty();
+    }
+
     private static VodJob buildJob() {
         VodJob job = newVodJob();
         job.setSourceType("URL");

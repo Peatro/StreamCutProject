@@ -147,7 +147,7 @@ class VodJobLifecycleIntegrationTest {
                 "en",
                 storageService.resolveSourceVideoPath(job.getId(), "video.mp4").toString(),
                 storageService.resolveAudioPath(job.getId()).toString(),
-                List.of(new TranscriptSegmentWorkerPayload(0.0, 2.0, "hello", 1)),
+                List.of(new TranscriptSegmentWorkerPayload(0.0, 2.0, "hello", 1, null)),
                 List.of(new SilenceSegmentWorkerPayload(2.0, 3.0, 1.0)),
                 List.of(new AnalysisWindowWorkerPayload(0.0, 20.0, 1.0, 0.1, 0, 0.8, 0.9)),
                 List.of(new com.peatroxd.streamcutproject.clipcandidate.ClipCandidateWorkerPayload(5.0, 15.0, 0.95, "hello"))

@@ -1,0 +1,12 @@
+databaseChangeLog:
+  - changeSet:
+      id: 015-add-words-json-to-transcript-segment
+      author: codex
+      comment: Add nullable words_json column for per-word timings from whisper. Backward-compatible — null means no word data.
+      changes:
+        - addColumn:
+            tableName: transcript_segment
+            columns:
+              - column:
+                  name: words_json
+                  type: CLOB

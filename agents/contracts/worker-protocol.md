@@ -95,7 +95,14 @@ If no compatible queued task is available, the backend returns `204 No Content`.
       "startSec": 0.0,
       "endSec": 0.0,
       "text": "string",
-      "wordCount": 0
+      "wordCount": 0,
+      "words": [
+        {
+          "word": "string",
+          "startSec": 0.0,
+          "endSec": 0.0
+        }
+      ]
     }
   ],
   "silenceSegments": [
@@ -200,3 +207,4 @@ Returned by worker callback endpoints.
 - worker must not invent follow-up tasks; backend owns orchestration and queue transitions
 - worker should remain idempotent across retries whenever practical
 - delayed availability and retry exhaustion are backend concerns, not transport concerns
+- `words` in `transcriptSegments` is additive and optional; an empty array or absent field is valid for word-less transcripts (backward-compatible)
