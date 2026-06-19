@@ -61,7 +61,7 @@ CHUNK_STEP_SEC: float = CHUNK_DURATION_SEC - CHUNK_OVERLAP_SEC  # 480 s
 
 # LLM generation parameters
 LLM_MAX_TOKENS: int = 1024
-LLM_TEMPERATURE: float = 0.2
+LLM_TEMPERATURE: float = 0.0  # greedy decode: reproducible detection (no sampling noise)
 
 # Merge/dedupe: two moments with IoU above this are considered duplicates
 MERGE_IOU_THRESHOLD: float = 0.3
@@ -516,6 +516,13 @@ def hybrid_detect(
             prompt,
             max_tokens=LLM_MAX_TOKENS,
             temperature=LLM_TEMPERATURE,
+        )
+
+        # Observability: surface what the model actually returned so a
+        # parsed_moments=0 can be told apart from a parse failure.
+        logger.info(
+            "hybrid_detect chunk=%d/%d llm_raw len=%d preview=%r",
+            i + 1, len(chunks), len(raw_output), raw_output[:600],
         )
 
         # Parse
