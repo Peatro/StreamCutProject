@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import logging
 import re
 from pathlib import Path
 
 from .exceptions import ClipExportException
 from .models import ClipExportRequest, ClipExportResult
 from .process import ProcessRunner, SubprocessProcessRunner
+from .subtitles import write_ass_file
+
+logger = logging.getLogger(__name__)
 
 _SAFE_COMPONENT_RE = re.compile(r"[^a-zA-Z0-9._-]+")
 
@@ -68,12 +72,32 @@ class FfmpegClipExportService:
         coarse_sec = max(0.0, request.start_sec - _SEEK_PREROLL_SEC)
         fine_sec = request.start_sec - coarse_sec
 
+        # --- Subtitle file generation (graceful no-op) ---
+        ass_path = self._maybe_generate_subtitles(request, artifact_path)
+
         filter_args: list[str] = []
         map_args: list[str] = []
-        if request.vertical_reframe:
+
+        if request.vertical_reframe and ass_path is not None:
+            # Compose: reframe filter_complex produces [out], then burn
+            # subtitles on top via the ass filter appended to the graph.
+            reframe_graph = _build_reframe_filter()
+            # Replace the final [out] label with [reframed], then chain
+            # the ass subtitle filter: [reframed]ass=<file>[out]
+            composed_graph = reframe_graph.replace("[out]", "[reframed]")
+            ass_escaped = _escape_filter_path(str(ass_path))
+            composed_graph += f";[reframed]ass={ass_escaped}[out]"
+            filter_args = ["-filter_complex", composed_graph]
+            map_args = ["-map", "[out]", "-map", "0:a"]
+        elif request.vertical_reframe:
             filter_graph = _build_reframe_filter()
             filter_args = ["-filter_complex", filter_graph]
             map_args = ["-map", "[out]", "-map", "0:a"]
+        elif ass_path is not None:
+            # No reframe, burn subtitles directly on the source video via -vf
+            ass_escaped = _escape_filter_path(str(ass_path))
+            filter_args = ["-vf", f"ass={ass_escaped}"]
+        # else: no reframe, no subtitles -- plain export
 
         command = [
             "ffmpeg",
@@ -128,6 +152,37 @@ class FfmpegClipExportService:
             stderr=execution_result.stderr,
         )
 
+    def _maybe_generate_subtitles(
+        self,
+        request: ClipExportRequest,
+        artifact_path: Path,
+    ) -> Path | None:
+        """Generate an ASS subtitle file if captions are enabled and words exist.
+
+        Returns the path to the generated ASS file, or None (graceful no-op).
+        """
+        if not request.captions_enabled:
+            logger.debug("captions_disabled jobId=%s candidateId=%s", request.job_id, request.candidate_id)
+            return None
+        if not request.words:
+            logger.debug("captions_no_words jobId=%s candidateId=%s — exporting without captions", request.job_id, request.candidate_id)
+            return None
+
+        ass_path = artifact_path.with_suffix(".ass")
+        result = write_ass_file(
+            request.words,
+            request.start_sec,
+            request.end_sec,
+            ass_path,
+            vertical_reframe=request.vertical_reframe,
+        )
+        if result is None:
+            logger.debug("captions_no_clip_words jobId=%s candidateId=%s — no words in clip window", request.job_id, request.candidate_id)
+            return None
+
+        logger.info("captions_generated jobId=%s candidateId=%s assPath=%s", request.job_id, request.candidate_id, ass_path)
+        return ass_path
+
     def _validate_request(self, request: ClipExportRequest) -> None:
         if not request.source_video_path.exists():
             raise ClipExportException(
@@ -151,6 +206,25 @@ class FfmpegClipExportService:
 
 def _format_time(value: float) -> str:
     return f"{value:.6f}"
+
+
+def _escape_filter_path(path: str) -> str:
+    r"""Escape a filesystem path for use inside an ffmpeg filter argument.
+
+    ffmpeg filter option values treat ``\``, ``:``, ``'``, and ``[``/``]``
+    as special characters.  We escape them so Windows paths (which contain
+    ``\`` and ``:``) and paths with other special characters work correctly.
+
+    The escaping follows ffmpeg's libavutil/avutil.h ``av_get_token``
+    convention: each special char is prefixed with a backslash, and the
+    entire value is wrapped in single quotes for extra safety (the outer
+    quotes are consumed by the filter parser, not passed to the filesystem).
+    """
+    # Escape backslashes first, then colons, then single quotes, brackets.
+    escaped = path.replace("\\", "/")
+    escaped = escaped.replace(":", r"\:")
+    escaped = escaped.replace("'", r"\'")
+    return f"'{escaped}'"
 
 
 def _normalize_component(value: str, fallback: str) -> str:

@@ -9,7 +9,7 @@ from typing import Callable, TypeVar
 from streamcut_worker.analysis import CandidateAnalysisRequest, LoudnessProfile, SlidingWindowCandidateAnalysisService
 from streamcut_worker.analysis.hybrid import analyze_candidates_hybrid
 from streamcut_worker.audio import AudioExtractionRequest, FfmpegAudioExtractionService
-from streamcut_worker.export import ClipExportRequest, FfmpegClipExportService
+from streamcut_worker.export import ClipExportRequest, FfmpegClipExportService, WordTiming
 from streamcut_worker.inference import LlmClient
 from streamcut_worker.loudness import (
     FfmpegLoudnessDetectionService,
@@ -175,6 +175,17 @@ class WorkerJobRunner:
         if job.candidate_id is None or job.clip_start_sec is None or job.clip_end_sec is None:
             raise WorkerJobRunnerError("EXPORTING_CLIP", f"Export job {job.job_id} is missing clip boundaries")
 
+        # Convert transport word dicts to WordTiming for the export request.
+        clip_words = [
+            WordTiming(
+                word=str(w.get("word", "")),
+                start_sec=float(w.get("startSec", 0)),
+                end_sec=float(w.get("endSec", 0)),
+            )
+            for w in (job.clip_words or [])
+            if w.get("word")
+        ]
+
         try:
             export_result = self.export_service.export(
                 ClipExportRequest(
@@ -183,6 +194,7 @@ class WorkerJobRunner:
                     source_video_path=source_video_path,
                     start_sec=job.clip_start_sec,
                     end_sec=job.clip_end_sec,
+                    words=clip_words,
                 )
             )
         except Exception as exc:

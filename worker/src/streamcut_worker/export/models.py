@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 
@@ -12,6 +12,14 @@ class ProcessExecutionResult:
 
 
 @dataclass(frozen=True, slots=True)
+class WordTiming:
+    """A single word with absolute (VOD-relative) timestamps."""
+    word: str
+    start_sec: float
+    end_sec: float
+
+
+@dataclass(frozen=True, slots=True)
 class ClipExportRequest:
     job_id: str
     candidate_id: str
@@ -19,6 +27,8 @@ class ClipExportRequest:
     start_sec: float
     end_sec: float
     vertical_reframe: bool = False
+    captions_enabled: bool = True
+    words: list[WordTiming] = field(default_factory=list)
 
 
 @dataclass(frozen=True, slots=True)

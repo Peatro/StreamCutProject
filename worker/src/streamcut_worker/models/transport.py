@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +20,10 @@ class ClaimedJob:
     clip_start_sec: float | None = None
     clip_end_sec: float | None = None
     artifact_path: Path | None = None
+    # Per-word timings for the clip window (TASK-092 karaoke captions).
+    # Each entry: {"word": str, "startSec": float, "endSec": float}.
+    # Empty/absent = export without captions (graceful no-op).
+    clip_words: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass(frozen=True, slots=True)

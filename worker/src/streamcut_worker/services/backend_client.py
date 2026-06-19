@@ -58,6 +58,7 @@ class BackendClient:
             clip_start_sec=None if response.get("clipStartSec") is None else float(response["clipStartSec"]),
             clip_end_sec=None if response.get("clipEndSec") is None else float(response["clipEndSec"]),
             artifact_path=None if response.get("artifactPath") in (None, "") else _path(response["artifactPath"]),
+            clip_words=response.get("clipWords") or [],
         )
 
     def submit_result(self, payload: WorkerProcessingPayload) -> dict[str, Any]:
