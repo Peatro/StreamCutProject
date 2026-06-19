@@ -13,12 +13,17 @@ RUN apt-get update \
 
 WORKDIR /app
 
-COPY pyproject.toml ./
-COPY src ./src
-
+# Heavy, code-independent layer: CUDA runtime libs + the ~500 MB prebuilt
+# llama wheel. Kept BEFORE `COPY src` so editing worker code reuses this
+# cached layer instead of re-downloading the wheel on every rebuild.
 RUN python -m venv "${VIRTUAL_ENV}" \
-    && pip install --no-cache-dir . nvidia-cublas-cu12 nvidia-cudnn-cu12 nvidia-cuda-runtime-cu12 \
+    && pip install --no-cache-dir nvidia-cublas-cu12 nvidia-cudnn-cu12 nvidia-cuda-runtime-cu12 \
     && pip install --no-cache-dir llama-cpp-python==0.3.12 \
         --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cu124
+
+# Cheap, frequently-changing layer: the app package + its (smaller) deps.
+COPY pyproject.toml ./
+COPY src ./src
+RUN pip install --no-cache-dir .
 
 CMD ["python", "-m", "streamcut_worker"]
