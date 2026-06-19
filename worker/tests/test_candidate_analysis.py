@@ -10,13 +10,18 @@ from streamcut_worker.analysis import (
     SlidingWindowCandidateAnalysisService,
 )
 from streamcut_worker.analysis.service import (
+    HOOK_LEAD_IN_SEC,
     WEIGHT_LOUDNESS,
     WEIGHT_EMOTION,
     WEIGHT_CONTINUITY,
     WEIGHT_SILENCE,
+    _shift_start_to_peak,
+    _snap_to_boundary,
+    _window_peak_loudness_time,
 )
 from streamcut_worker.silence import SilenceInterval
 from streamcut_worker.transcription import TranscriptSegment
+from streamcut_worker.transcription.models import TranscriptWord
 
 
 class CandidateAnalysisServiceTests(unittest.TestCase):
@@ -296,6 +301,323 @@ class CandidateAnalysisServiceTests(unittest.TestCase):
             # But should still have the expected keys
             self.assertIn("totalScore", window_payload)
             self.assertIn("speechDensity", window_payload)
+
+
+class HookStartShiftTests(unittest.TestCase):
+    """Tests for TASK-090: shift clip start to the action peak."""
+
+    def test_hook_lead_in_default(self) -> None:
+        """HOOK_LEAD_IN_SEC should default to ~0.4s."""
+        self.assertAlmostEqual(HOOK_LEAD_IN_SEC, 0.4)
+
+    def test_service_hook_lead_in_default(self) -> None:
+        """The service dataclass should default to the module constant."""
+        service = SlidingWindowCandidateAnalysisService()
+        self.assertAlmostEqual(service.hook_lead_in_sec, HOOK_LEAD_IN_SEC)
+
+    # --- _window_peak_loudness_time ---
+
+    def test_peak_loudness_time_returns_time_of_max(self) -> None:
+        profile = LoudnessProfile(
+            time_sec=(0.0, 1.0, 2.0, 3.0, 4.0),
+            rms_db=(-30.0, -20.0, -5.0, -15.0, -25.0),
+        )
+        self.assertEqual(_window_peak_loudness_time(profile, 0.0, 5.0), 2.0)
+
+    def test_peak_loudness_time_none_without_profile(self) -> None:
+        self.assertIsNone(_window_peak_loudness_time(None, 0.0, 10.0))
+
+    def test_peak_loudness_time_none_empty_profile(self) -> None:
+        self.assertIsNone(_window_peak_loudness_time(LoudnessProfile((), ()), 0.0, 10.0))
+
+    def test_peak_loudness_time_scoped_to_window(self) -> None:
+        profile = LoudnessProfile(
+            time_sec=(0.0, 5.0, 10.0, 15.0),
+            rms_db=(-5.0, -30.0, -10.0, -40.0),
+        )
+        # Window 10-20: only samples at t=10 and t=15 are in range.
+        self.assertEqual(_window_peak_loudness_time(profile, 10.0, 20.0), 10.0)
+
+    # --- _snap_to_boundary ---
+
+    def test_snap_to_word_boundary(self) -> None:
+        segments = [
+            TranscriptSegment(
+                0.0, 5.0, "hello world", 2,
+                words=[
+                    TranscriptWord("hello", 0.0, 0.5),
+                    TranscriptWord("world", 0.6, 1.1),
+                ],
+            ),
+        ]
+        # Target 0.55 should snap to 0.5 (end of "hello") or 0.6 (start of "world").
+        result = _snap_to_boundary(0.55, segments, [])
+        self.assertIn(result, (0.5, 0.6))
+
+    def test_snap_to_silence_boundary(self) -> None:
+        silence = [SilenceInterval(4.8, 5.3, 0.5)]
+        result = _snap_to_boundary(5.0, [], silence)
+        # Closest edge: 4.8 (dist 0.2) or 5.3 (dist 0.3) -> 4.8
+        self.assertAlmostEqual(result, 4.8)
+
+    def test_snap_returns_target_when_no_boundary_nearby(self) -> None:
+        """When no boundary is within the search radius, return the target unchanged."""
+        result = _snap_to_boundary(50.0, [], [])
+        self.assertAlmostEqual(result, 50.0)
+
+    def test_snap_uses_segment_boundaries_when_no_words(self) -> None:
+        segments = [TranscriptSegment(2.0, 4.0, "hi", 1)]
+        result = _snap_to_boundary(2.1, segments, [])
+        self.assertAlmostEqual(result, 2.0)
+
+    # --- _shift_start_to_peak ---
+
+    def test_shift_moves_start_to_peak_minus_lead_in(self) -> None:
+        """Core behavior: start moves to peak - lead_in."""
+        profile = LoudnessProfile(
+            time_sec=(10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 19.0),
+            rms_db=(-30.0, -25.0, -20.0, -15.0, -5.0, -10.0, -20.0, -25.0, -30.0, -35.0),
+        )
+        # Peak is at t=14.0. lead_in=0.4 -> raw_start=13.6
+        # No transcript/silence boundaries nearby, so snapping is a no-op.
+        result = _shift_start_to_peak(
+            window_start=10.0,
+            window_end=20.0,
+            lead_in_sec=0.4,
+            loudness_profile=profile,
+            transcript_segments=[],
+            silence_segments=[],
+        )
+        self.assertAlmostEqual(result, 13.6)
+
+    def test_shift_snaps_to_word_boundary(self) -> None:
+        """After computing peak - lead_in, the start should snap to a word boundary."""
+        profile = LoudnessProfile(
+            time_sec=(10.0, 11.0, 12.0, 13.0, 14.0),
+            rms_db=(-30.0, -25.0, -20.0, -5.0, -15.0),
+        )
+        # Peak at t=13.0. lead_in=0.4 -> raw_start=12.6
+        segments = [
+            TranscriptSegment(
+                10.0, 15.0, "one two three four", 4,
+                words=[
+                    TranscriptWord("one", 10.0, 10.5),
+                    TranscriptWord("two", 11.0, 11.5),
+                    TranscriptWord("three", 12.0, 12.5),
+                    TranscriptWord("four", 12.7, 13.2),
+                ],
+            ),
+        ]
+        result = _shift_start_to_peak(
+            window_start=10.0,
+            window_end=15.0,
+            lead_in_sec=0.4,
+            loudness_profile=profile,
+            transcript_segments=segments,
+            silence_segments=[],
+        )
+        # raw_start=12.6, nearest word boundaries: 12.5 (end of "three") and 12.7 (start of "four")
+        # 12.5 is dist 0.1, 12.7 is dist 0.1 -> either is valid; both within [10.0, 13.0]
+        self.assertIn(result, (12.5, 12.7))
+
+    def test_shift_clamps_to_window_start(self) -> None:
+        """When peak is near the window start, the shifted start should not go before it."""
+        profile = LoudnessProfile(
+            time_sec=(10.0, 10.1, 10.2),
+            rms_db=(-5.0, -10.0, -15.0),
+        )
+        # Peak at t=10.0. lead_in=0.4 -> raw_start=9.6, clamped to 10.0
+        result = _shift_start_to_peak(
+            window_start=10.0,
+            window_end=20.0,
+            lead_in_sec=0.4,
+            loudness_profile=profile,
+            transcript_segments=[],
+            silence_segments=[],
+        )
+        self.assertAlmostEqual(result, 10.0)
+
+    def test_shift_clamps_at_zero(self) -> None:
+        """When the window starts at 0 and peak is early, start should not go negative."""
+        profile = LoudnessProfile(
+            time_sec=(0.0, 0.1, 0.2, 0.3),
+            rms_db=(-15.0, -5.0, -10.0, -20.0),
+        )
+        # Peak at t=0.1. lead_in=0.4 -> raw_start=-0.3, clamped to 0.0
+        result = _shift_start_to_peak(
+            window_start=0.0,
+            window_end=10.0,
+            lead_in_sec=0.4,
+            loudness_profile=profile,
+            transcript_segments=[],
+            silence_segments=[],
+        )
+        self.assertAlmostEqual(result, 0.0)
+
+    def test_shift_fallback_when_no_loudness(self) -> None:
+        """Without loudness data, the start should not move."""
+        result = _shift_start_to_peak(
+            window_start=5.0,
+            window_end=15.0,
+            lead_in_sec=0.4,
+            loudness_profile=None,
+            transcript_segments=[],
+            silence_segments=[],
+        )
+        self.assertAlmostEqual(result, 5.0)
+
+    def test_shift_does_not_exceed_peak_time(self) -> None:
+        """The shifted start should never go past the peak time."""
+        profile = LoudnessProfile(
+            time_sec=(10.0, 11.0, 12.0),
+            rms_db=(-30.0, -5.0, -20.0),
+        )
+        # Peak at t=11.0. lead_in=0.4 -> raw_start=10.6
+        # Silence boundary at 10.95 (closer, still < peak)
+        silence = [SilenceInterval(10.9, 10.95, 0.05)]
+        result = _shift_start_to_peak(
+            window_start=10.0,
+            window_end=13.0,
+            lead_in_sec=0.4,
+            loudness_profile=profile,
+            transcript_segments=[],
+            silence_segments=silence,
+        )
+        self.assertLessEqual(result, 11.0)
+
+    # --- Integration: full analyze pipeline with hook shift ---
+
+    def test_analyze_shifts_candidate_start_with_loudness(self) -> None:
+        """Full-pipeline test: candidates should have their start shifted toward the peak."""
+        service = SlidingWindowCandidateAnalysisService(
+            window_duration_sec=10.0, step_sec=10.0, top_n=1,
+        )
+
+        segments = [
+            TranscriptSegment(0.0, 10.0, "hello world", 2),
+        ]
+
+        # Peak loudness is at t=7.0 (-5 dB).
+        profile = LoudnessProfile(
+            time_sec=(0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0),
+            rms_db=(-30.0, -28.0, -25.0, -20.0, -15.0, -12.0, -8.0, -5.0, -10.0, -20.0),
+        )
+
+        request = CandidateAnalysisRequest(
+            job_id="job-hook-1",
+            transcript_segments=segments,
+            silence_segments=[],
+            duration_sec=10.0,
+            window_duration_sec=10.0,
+            step_sec=10.0,
+            loudness_profile=profile,
+        )
+
+        result = service.analyze(request)
+
+        self.assertEqual(len(result.clip_candidates), 1)
+        candidate = result.clip_candidates[0]
+        # Peak at 7.0, lead_in 0.4 -> raw 6.6, no nearby boundaries -> 6.6
+        self.assertAlmostEqual(candidate.start_sec, 6.6)
+        # End should be unchanged.
+        self.assertAlmostEqual(candidate.end_sec, 10.0)
+
+    def test_analyze_preserves_start_without_loudness(self) -> None:
+        """Without loudness, candidate start should remain at the window edge."""
+        service = SlidingWindowCandidateAnalysisService(
+            window_duration_sec=10.0, step_sec=10.0, top_n=1,
+        )
+
+        request = CandidateAnalysisRequest(
+            job_id="job-hook-2",
+            transcript_segments=[TranscriptSegment(0.0, 10.0, "hello", 1)],
+            silence_segments=[],
+            duration_sec=10.0,
+            window_duration_sec=10.0,
+            step_sec=10.0,
+            loudness_profile=None,
+        )
+
+        result = service.analyze(request)
+
+        self.assertEqual(len(result.clip_candidates), 1)
+        self.assertAlmostEqual(result.clip_candidates[0].start_sec, 0.0)
+
+    def test_analyze_custom_lead_in(self) -> None:
+        """The hook_lead_in_sec field on the service should be respected."""
+        service = SlidingWindowCandidateAnalysisService(
+            window_duration_sec=10.0, step_sec=10.0, top_n=1,
+            hook_lead_in_sec=1.0,
+        )
+
+        profile = LoudnessProfile(
+            time_sec=(0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0),
+            rms_db=(-30.0, -28.0, -25.0, -20.0, -15.0, -12.0, -8.0, -5.0, -10.0, -20.0),
+        )
+
+        request = CandidateAnalysisRequest(
+            job_id="job-hook-3",
+            transcript_segments=[TranscriptSegment(0.0, 10.0, "hello", 1)],
+            silence_segments=[],
+            duration_sec=10.0,
+            window_duration_sec=10.0,
+            step_sec=10.0,
+            loudness_profile=profile,
+        )
+
+        result = service.analyze(request)
+
+        self.assertEqual(len(result.clip_candidates), 1)
+        # Peak at 7.0, lead_in=1.0 -> raw 6.0. No nearby boundaries -> 6.0
+        self.assertAlmostEqual(result.clip_candidates[0].start_sec, 6.0)
+
+    def test_analyze_score_and_end_preserved(self) -> None:
+        """Hook shift must not alter the score or end of the candidate."""
+        service = SlidingWindowCandidateAnalysisService(
+            window_duration_sec=10.0, step_sec=10.0, top_n=1,
+        )
+
+        profile = LoudnessProfile(
+            time_sec=(0.0, 5.0, 9.0),
+            rms_db=(-20.0, -5.0, -30.0),
+        )
+
+        request = CandidateAnalysisRequest(
+            job_id="job-hook-4",
+            transcript_segments=[TranscriptSegment(0.0, 10.0, "test", 1)],
+            silence_segments=[],
+            duration_sec=10.0,
+            window_duration_sec=10.0,
+            step_sec=10.0,
+            loudness_profile=profile,
+        )
+
+        result = service.analyze(request)
+
+        candidate = result.clip_candidates[0]
+        # End must be the original window end.
+        self.assertAlmostEqual(candidate.end_sec, 10.0)
+        # Score must match the analysis window score (not recomputed).
+        self.assertAlmostEqual(candidate.score, result.analysis_windows[0].total_score)
+
+    def test_snap_prefers_closest_boundary(self) -> None:
+        """When multiple boundaries are nearby, snap picks the closest one."""
+        segments = [
+            TranscriptSegment(
+                0.0, 10.0, "a b c", 3,
+                words=[
+                    TranscriptWord("a", 4.0, 4.3),
+                    TranscriptWord("b", 4.5, 4.8),
+                    TranscriptWord("c", 5.2, 5.5),
+                ],
+            ),
+        ]
+        silence = [SilenceInterval(4.8, 5.2, 0.4)]
+
+        # Target at 5.0: boundaries are 4.8 (sil start, dist 0.2), 5.2 (sil end / word start, dist 0.2)
+        # Both at same distance; either is acceptable.
+        result = _snap_to_boundary(5.0, segments, silence)
+        self.assertIn(result, (4.8, 5.2))
 
 
 if __name__ == "__main__":
