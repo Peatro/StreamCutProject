@@ -136,6 +136,14 @@ class WorkerJobRunner:
                     "endSec": segment.end_sec,
                     "text": segment.text,
                     "wordCount": segment.word_count,
+                    "words": [
+                        {
+                            "word": w.word,
+                            "startSec": w.start_sec,
+                            "endSec": w.end_sec,
+                        }
+                        for w in segment.words
+                    ],
                 }
                 for segment in transcription_result.transcript_segments
             ],
