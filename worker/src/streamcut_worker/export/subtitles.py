@@ -170,11 +170,18 @@ def generate_ass_content(
     *,
     vertical_reframe: bool = False,
     max_words_per_phrase: int = MAX_WORDS_PER_PHRASE,
+    time_offset: float = 0.0,
 ) -> str | None:
     """Generate ASS subtitle content from word timings.
 
     Returns the full ASS file content as a string, or None if no words
     fall within the clip window (graceful no-op).
+
+    ``time_offset`` is added to every event timestamp. The export burns
+    subtitles in a filtergraph fed by an input-seek (``-ss`` before ``-i``)
+    that rebases timestamps to the seek point, not the clip start. Passing
+    the residual fine-seek offset keeps the karaoke aligned with speech
+    instead of appearing ``fine_sec`` (the seek preroll) early.
     """
     clip_words = _offset_words_to_clip(words, clip_start, clip_end)
     if not clip_words:
@@ -212,8 +219,8 @@ def generate_ass_content(
 
     events: list[str] = []
     for phrase in phrases:
-        start_ts = _format_ass_time(phrase.start_sec)
-        end_ts = _format_ass_time(phrase.end_sec)
+        start_ts = _format_ass_time(phrase.start_sec + time_offset)
+        end_ts = _format_ass_time(phrase.end_sec + time_offset)
         text = _build_karaoke_text(phrase)
         events.append(
             f"Dialogue: 0,{start_ts},{end_ts},Karaoke,,0,0,0,,{text}"
@@ -229,6 +236,7 @@ def write_ass_file(
     output_path: Path,
     *,
     vertical_reframe: bool = False,
+    time_offset: float = 0.0,
 ) -> Path | None:
     """Generate and write an ASS subtitle file.
 
@@ -236,7 +244,9 @@ def write_ass_file(
     (graceful no-op when no words are available).
     """
     content = generate_ass_content(
-        words, clip_start, clip_end, vertical_reframe=vertical_reframe,
+        words, clip_start, clip_end,
+        vertical_reframe=vertical_reframe,
+        time_offset=time_offset,
     )
     if content is None:
         return None

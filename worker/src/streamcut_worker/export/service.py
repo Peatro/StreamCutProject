@@ -73,7 +73,10 @@ class FfmpegClipExportService:
         fine_sec = request.start_sec - coarse_sec
 
         # --- Subtitle file generation (graceful no-op) ---
-        ass_path = self._maybe_generate_subtitles(request, artifact_path)
+        # fine_sec is the residual seek handled as an output -ss after the
+        # input -ss; the ass filter sees input-seek-rebased timestamps, so
+        # subtitle event times must be shifted by it to stay in sync.
+        ass_path = self._maybe_generate_subtitles(request, artifact_path, time_offset=fine_sec)
 
         filter_args: list[str] = []
         map_args: list[str] = []
@@ -156,6 +159,7 @@ class FfmpegClipExportService:
         self,
         request: ClipExportRequest,
         artifact_path: Path,
+        time_offset: float = 0.0,
     ) -> Path | None:
         """Generate an ASS subtitle file if captions are enabled and words exist.
 
@@ -175,6 +179,7 @@ class FfmpegClipExportService:
             request.end_sec,
             ass_path,
             vertical_reframe=request.vertical_reframe,
+            time_offset=time_offset,
         )
         if result is None:
             logger.debug("captions_no_clip_words jobId=%s candidateId=%s — no words in clip window", request.job_id, request.candidate_id)
