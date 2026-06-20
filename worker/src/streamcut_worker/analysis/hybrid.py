@@ -48,7 +48,12 @@ from .models import (
     ClipCandidate,
     LoudnessProfile,
 )
-from .service import analyze_candidates, _count_emotion_hits, _interval_overlap
+from .service import (
+    analyze_candidates,
+    _count_emotion_hits,
+    _interval_overlap,
+    _segment_text_in_window,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -428,7 +433,7 @@ def moments_to_candidates(
         excerpt_parts: list[str] = []
         for seg in segments:
             if _interval_overlap(seg.start_sec, seg.end_sec, moment.start_sec, moment.end_sec) > 0:
-                excerpt_parts.append(seg.text.strip())
+                excerpt_parts.append(_segment_text_in_window(seg, moment.start_sec, moment.end_sec))
         excerpt = " ".join(excerpt_parts)
         # Collapse whitespace
         excerpt = " ".join(excerpt.split())

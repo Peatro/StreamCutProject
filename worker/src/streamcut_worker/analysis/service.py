@@ -127,7 +127,7 @@ class SlidingWindowCandidateAnalysisService:
             if overlap <= 0.0:
                 continue
 
-            excerpt_segments.append(segment.text.strip())
+            excerpt_segments.append(_segment_text_in_window(segment, start_sec, end_sec))
             segment_duration = max(segment.end_sec - segment.start_sec, 0.0)
             if segment_duration > 0.0:
                 speech_words += segment.word_count * (overlap / segment_duration)
@@ -338,6 +338,26 @@ def _collapse_text(parts: Iterable[str]) -> str:
 
 def _interval_overlap(start_a: float, end_a: float, start_b: float, end_b: float) -> float:
     return max(0.0, min(end_a, end_b) - max(start_a, start_b))
+
+
+def _segment_text_in_window(
+    segment: TranscriptSegment, start_sec: float, end_sec: float
+) -> str:
+    """Return the part of a segment's text spoken inside [start_sec, end_sec].
+
+    Uses word-level timings so a long run-on segment that merely overlaps the
+    window contributes only the words actually inside it (a 40s segment no
+    longer dumps 40s of text into a 17s clip excerpt). Falls back to the full
+    segment text only when the segment carries no word timings.
+    """
+    if segment.words:
+        words = [
+            w.word.strip()
+            for w in segment.words
+            if _interval_overlap(w.start_sec, w.end_sec, start_sec, end_sec) > 0.0
+        ]
+        return " ".join(words)
+    return segment.text.strip()
 
 
 def _merge_intervals(intervals: list[tuple[float, float]]) -> list[tuple[float, float]]:
