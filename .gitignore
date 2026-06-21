@@ -58,3 +58,9 @@ graphify-out
 
 # Manual export validation clips (throwaway)
 export_test/
+
+# Redesign reference package (heavy standalone mockups; deliverables live in static/)
+frontRedesign/
+
+# Local-only Qwen/hybrid test override
+docker-compose.qwen.local.yml

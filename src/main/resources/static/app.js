@@ -95,6 +95,22 @@
         }
       });
     }
+    // Logout: native form POST so the browser follows Spring Security's 302
+    // redirect to /login.html?logout itself. ponytail: a real form beats a
+    // fetch here — no parsing an HTML redirect body as JSON.
+    document.querySelector("[data-logout]")?.addEventListener("click", async () => {
+      const token = await getCsrfToken();
+      const form = document.createElement("form");
+      form.method = "POST";
+      form.action = "/logout";
+      const input = document.createElement("input");
+      input.type = "hidden";
+      input.name = "_csrf";
+      input.value = token;
+      form.appendChild(input);
+      document.body.appendChild(form);
+      form.submit();
+    });
   });
 
   window.addEventListener("beforeunload", stopLiveUpdates);
@@ -161,8 +177,21 @@
         </aside>
       </section>
 ${renderJobFailureSummary(job)}
+      ${renderWorkerRuntimePanel(job)}
       <section class="job-console-grid">
         <div class="job-console-main">
+          <section class="panel">
+            <div class="panel-header">
+              <div>
+                <h2>Candidate Review</h2>
+                <p>Clip windows are ready to inspect immediately. Moderate only when you need curation, then download from the same surface.</p>
+              </div>
+              <div class="shortcut-hint">Shortcuts: A approve | R reject | J/K next/prev</div>
+            </div>
+            ${renderCandidates(job, candidates, candidatePage)}
+          </section>
+        </div>
+        <aside class="job-console-side">
           <section class="panel panel-compact">
             <div class="panel-header">
               <span class="eyebrow">Job Details</span>
@@ -171,10 +200,9 @@ ${renderJobFailureSummary(job)}
               ${infoItem("Source Type", job.sourceType)}
               ${infoItem("Source URL", job.sourceUrl || "n/a")}
               ${infoItem("Original File", job.originalFilename || "n/a")}
-              ${infoItem("Created", formatRelativeDateTime(job.createdAt))}
-              ${infoItem("Updated", formatRelativeDateTime(job.updatedAt))}
               ${infoItem("Duration", formatDuration(job.durationSec))}
               ${infoItem("Language", job.language || "n/a")}
+              ${infoItem("Created", formatRelativeDateTime(job.createdAt))}
               ${infoItem("Started", formatRelativeDateTime(job.startedAt))}
               ${infoItem("Finished", formatRelativeDateTime(job.finishedAt))}
               ${infoItem("Source Video Reference", job.sourceVideoReference || "n/a")}
@@ -183,23 +211,6 @@ ${renderJobFailureSummary(job)}
               ${infoItem("Error", job.errorMessage || "none")}
             </div>
           </section>
-
-          ${renderWorkerRuntimePanel(job)}
-          ${renderExecutionHistoryPanel(executions)}
-
-          <!--
-          <section class="panel">
-            <div class="panel-header">
-              <div>
-                <h2>Transcript Preview</h2>
-                <p>Scan the first recovered segments and their coverage before you drill into clip candidates.</p>
-              </div>
-            </div>
-            ${renderTranscript(transcript)}
-          </section>
-          -->
-        </div>
-        <aside class="job-console-side">
           <div class="panel panel-sticky">
             <div class="panel-header">
               <div>
@@ -212,16 +223,7 @@ ${renderJobFailureSummary(job)}
         </aside>
       </section>
 
-      <section class="panel">
-        <div class="panel-header">
-          <div>
-            <h2>Candidate Review</h2>
-            <p>Clip windows are ready to inspect immediately. Moderate only when you need curation, then download from the same surface.</p>
-          </div>
-          <div class="shortcut-hint">Shortcuts: A approve | R reject | J/K next/prev</div>
-        </div>
-        ${renderCandidates(job, candidates, candidatePage)}
-      </section>
+      ${renderExecutionHistoryPanel(executions)}
     `;
 
     bindCandidateActions(root, jobId);
@@ -291,18 +293,18 @@ ${renderJobFailureSummary(job)}
         </div>
         <div class="control-grid">
           <form class="action-form" data-url-job-form>
-            <label class="field-label" for="job-url-input">Create from URL</label>
+            <label class="field-label" for="job-url-input">VOD URL</label>
             <div class="form-row">
               <input id="job-url-input" class="text-input" name="url" type="url" placeholder="https://example.com/video" required>
-              <button class="action-button action-button-primary" type="submit">Create URL Job</button>
+              <button class="action-button action-button-primary" type="submit">Queue from URL</button>
             </div>
             <div class="form-message" data-url-job-message></div>
           </form>
           <form class="action-form" data-upload-job-form>
-            <label class="field-label" for="job-file-input">Create from File</label>
+            <label class="field-label" for="job-file-input">Upload File</label>
             <div class="form-row">
               <input id="job-file-input" class="file-input" name="file" type="file" accept=".mp4,.mov,.mkv,.webm,.avi,.mpeg,.mpg,video/mp4,video/quicktime,video/x-matroska,video/webm,video/x-msvideo,video/mpeg" required>
-              <button class="action-button action-button-primary" type="submit">Upload Job</button>
+              <button class="action-button action-button-primary" type="submit">Upload &amp; Queue</button>
             </div>
             <div class="upload-hint" aria-live="polite">
               Single file only. Supported formats: MP4, MOV, MKV, WEBM, AVI, MPEG/MPG. Max file size: 512 MB.
@@ -1165,11 +1167,7 @@ ${renderJobFailureSummary(job)}
             <span class="worker-progress-detail">${escapeHtml(stageProgress.label)}</span>
             <span class="worker-heartbeat-badge worker-heartbeat-${escapeHtml(heartbeat.state)}">${escapeHtml(heartbeat.badge)}</span>
           </div>
-          <div class="worker-progress-track" aria-hidden="true">
-            <div class="worker-progress-fill" style="width: ${escapeHtml(progressPercent)}%;"></div>
-            <div class="worker-progress-sheen"></div>
-            <div class="worker-progress-grid"></div>
-          </div>
+          ${renderWaveProgress(progressPercent, currentStatus)}
           <div class="worker-runtime-grid">
             <article class="micro-card">
               <span class="micro-card-label">Worker</span>
@@ -2136,14 +2134,27 @@ ${renderJobFailureSummary(job)}
         actions.push(`<button class="action-button action-button-reject" type="button" data-delete-job data-job-id="${escapeHtml(String(job.id))}">Delete</button>`);
       }
 
+      const checkbox = deletable
+        ? `<label class="bulk-select-label"><input type="checkbox" class="bulk-select-checkbox" data-bulk-select data-job-id="${escapeHtml(String(job.id))}" /></label>`
+        : `<span class="bulk-spacer" aria-hidden="true"></span>`;
+      const metaBits = [sourceLabel(job), formatDuration(job.durationSec), formatRelativeDateTime(job.createdAt)]
+        .filter((bit) => bit && bit !== "n/a")
+        .map((bit) => escapeHtml(bit))
+        .join(" · ");
       return `
         <tr>
-          <td>${deletable ? `<label class="bulk-select-label"><input type="checkbox" class="bulk-select-checkbox" data-bulk-select data-job-id="${escapeHtml(String(job.id))}" /> </label>` : ""}<a href="/job.html?id=${encodeURIComponent(job.id)}">Job #${escapeHtml(job.id)}</a></td>
+          <td class="job-cell">
+            ${checkbox}
+            <span class="job-thumb" data-source-type="${escapeHtml(String(job.sourceType || ""))}" aria-hidden="true">
+              <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><polygon points="5,3 13,8 5,13"/></svg>
+            </span>
+            <div class="job-cell-copy">
+              <a href="/job.html?id=${encodeURIComponent(job.id)}">Job #${escapeHtml(job.id)}</a>
+              <div class="job-cell-meta" title="${escapeHtml(formatDate(job.createdAt))}">${metaBits}</div>
+            </div>
+          </td>
           <td>${renderStatusPill(job.status)}</td>
           <td>${renderCompactProgress(job)}</td>
-          <td>${escapeHtml(sourceLabel(job))}</td>
-          <td title="${escapeHtml(formatDate(job.createdAt))}">${escapeHtml(formatRelativeDateTime(job.createdAt))}</td>
-          <td>${escapeHtml(formatDuration(job.durationSec))}</td>
           <td class="actions-cell">${actions.join(" ")}</td>
         </tr>
       `;
@@ -2166,9 +2177,6 @@ ${renderJobFailureSummary(job)}
               <th>Job</th>
               <th>Status</th>
               <th>Progress</th>
-              <th>Source</th>
-              <th>Created</th>
-              <th>Duration</th>
               <th></th>
             </tr>
           </thead>
@@ -2178,25 +2186,58 @@ ${renderJobFailureSummary(job)}
     `;
   }
 
+  // Audio-wave progress: N vertical bars coloured signal(violet)→silence,
+  // filled up to the percent, with a playhead needle while active. Mirrors
+  // the redesign mockup's wave() so the look matches streamcut-theme.css §21.
+  function renderWaveProgress(progressPercent, status) {
+    const pct = Math.max(0, Math.min(100, Number(progressPercent) || 0));
+    const upper = String(status || "").toUpperCase();
+    const failed = upper === "FAILED";
+    const active = activeWorkerStatuses.has(upper);
+    const filled = pct / 100;
+    const lerp = (a, b, t) => Math.round(a + (b - a) * t);
+    // Drawn as one SVG (viewBox 0..count*2 × 0..100, preserveAspectRatio="none"):
+    // bars stay evenly distributed at any pixel width, unlike sub-pixel flex
+    // children which the browser rounds unevenly in a narrow cell.
+    const count = 240;
+    const unit = 2; // 1 unit bar + 1 unit gap
+    let rects = "";
+    for (let i = 0; i < count; i++) {
+      const p = i / (count - 1);
+      const on = filled > 0 && p <= filled;
+      // Layered sines → spiky 0..1 amplitude.
+      const tex = Math.abs(Math.sin(i * 1.7) + Math.sin(i * 0.6) * 0.6 + Math.sin(i * 3.1) * 0.35) / 1.95;
+      const h = on ? 20 + tex * 80 : 12;
+      let color;
+      if (on) {
+        const t = Math.min(1, p / filled);
+        color = failed
+          ? `rgb(${lerp(150, 176, t)},${lerp(60, 72, t)},${lerp(70, 80, t)})`
+          : `rgb(${lerp(112, 212, t)},${lerp(4, 48, t)},${lerp(214, 143, t)})`;
+      } else {
+        color = "#dcd6c9";
+      }
+      const y = (100 - h) / 2;
+      rects += `<rect x="${(i * unit).toFixed(1)}" y="${y.toFixed(1)}" width="1" height="${h.toFixed(1)}" fill="${color}"/>`;
+    }
+    const vbWidth = count * unit - 1;
+    const playhead = active && filled > 0 && filled < 1
+      ? `<span class="wave-playhead" style="left:${pct}%;"></span>`
+      : "";
+    return `<div class="wave-progress" aria-hidden="true"><svg class="wave-svg" viewBox="0 0 ${vbWidth} 100" preserveAspectRatio="none">${rects}</svg>${playhead}</div>`;
+  }
+
   function renderCompactProgress(job) {
     const progressPercent = normalizedProgressPercent(job);
-    const progressLabel = job?.progressMessage || defaultProgressMessage(job);
     const stageProgress = describeStageProgress(job);
-    const heartbeat = describeWorkerHeartbeat(job);
-    const latestExecution = job?.latestExecution || null;
-    const executionSummary = latestExecution ? summarizeLatestExecution(latestExecution) : "No execution yet";
     const currentStatus = String(job?.status || "").toUpperCase();
     const isActive = activeWorkerStatuses.has(currentStatus);
+    // Compact list cell: the wave plus a single percent · stage line. The
+    // heartbeat / worker / execution detail lives on the job page runtime panel.
     return `
       <div class="table-progress ${isActive ? "is-active" : ""}">
-        <div class="table-progress-copy">${escapeHtml(progressLabel)}</div>
-        <div class="table-progress-track" aria-hidden="true">
-          <span class="table-progress-fill" style="width: ${escapeHtml(progressPercent)}%;"></span>
-          <span class="table-progress-sheen"></span>
-        </div>
-        <div class="table-progress-meta">${escapeHtml(`${progressPercent}% | ${stageProgress.label}`)}</div>
-        <div class="table-progress-meta table-progress-meta-secondary">${escapeHtml(heartbeat.badge)}${job?.currentWorkerId ? ` | ${escapeHtml(job.currentWorkerId)}` : ""}</div>
-        <div class="table-progress-meta table-progress-meta-secondary">${escapeHtml(executionSummary)}</div>
+        ${renderWaveProgress(progressPercent, currentStatus)}
+        <div class="table-progress-meta">${escapeHtml(`${progressPercent}% · ${stageProgress.label}`)}</div>
       </div>
     `;
   }

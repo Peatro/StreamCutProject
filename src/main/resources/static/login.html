@@ -1,362 +1,261 @@
-<!doctype html>
-<link rel="icon" href="/favicon.ico">
-<html lang="en">
+<!DOCTYPE html>
+<html lang="ru">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Sign In — StreamCut</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>StreamCut · Sign in</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=Space+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;700&family=Noto+Sans+JP:wght@700;900&display=swap" rel="stylesheet">
   <style>
-    :root {
-      color-scheme: dark;
-      --bg: #08090a;
-      --bg-elevated: #191a1b;
-      --surface: rgba(255, 255, 255, 0.02);
-      --text: #f7f8f8;
-      --text-secondary: #d0d6e0;
-      --text-muted: #8a8f98;
-      --text-faint: #62666d;
-      --accent: #5e6ad2;
-      --accent-bright: #7170ff;
-      --accent-hover: #828fff;
-      --success: #10b981;
-      --warning: #d0a45c;
-      --danger: #f06a6a;
-      --line: rgba(255, 255, 255, 0.08);
-      --line-subtle: rgba(255, 255, 255, 0.05);
-      --shadow-focus: 0 0 0 1px rgba(113, 112, 255, 0.45), 0 0 0 4px rgba(113, 112, 255, 0.14);
+    /* ============================================================
+       StreamCut · login.html  (self-contained — styles + script)
+       Контрактные хуки сохранены:
+         form#login-form action="/login", input[name=_csrf]#csrf-token,
+         #username-input, #password-input, #remember-me-input, #status-message
+       ============================================================ */
+    :root{
+      --canvas:#0e0a22; --ink:#1a1138; --ink-2:#3a3350; --ink-muted:#8a8478;
+      --paper:#f6f4ee; --paper-line:#e5e1d6; --field-line:#ddd7cb;
+      --accent:#7004d6; --accent-bright:#9b2bf0; --orchid:#b574d6; --magenta:#d4308f;
+      --danger:#d23b3b; --warning:#c79030;
+      --f-display:'Syne',sans-serif; --f-ui:'Space Grotesk',sans-serif; --f-mono:'Space Mono',monospace; --f-jp:'Noto Sans JP',sans-serif;
     }
+    *{box-sizing:border-box;margin:0;padding:0}
+    @keyframes scBreath{0%,100%{opacity:.5;transform:scale(.85)}50%{opacity:1;transform:scale(1)}}
+    body{font-family:var(--f-ui); background:var(--canvas); color:#efece6; min-height:100vh;}
 
-    * { box-sizing: border-box; }
+    .sc-wrap{position:relative; min-height:100vh; display:flex; overflow:hidden;}
+    /* canvas layers */
+    .sc-layer{position:absolute; inset:0; z-index:0; pointer-events:none;}
+    .sc-glow{background:radial-gradient(circle at 18% 12%, rgba(112,4,214,.34), transparent 46%), radial-gradient(circle at 60% 90%, rgba(212,48,143,.18), transparent 44%);}
+    .sc-grid{background-image:linear-gradient(rgba(255,255,255,.025) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.025) 1px,transparent 1px); background-size:40px 40px;}
+    .sc-grain{opacity:.05; mix-blend-mode:overlay; background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>"); background-size:140px;}
 
-    body {
-      margin: 0;
-      min-height: 100vh;
-      background:
-        radial-gradient(circle at top center, rgba(94, 106, 210, 0.12), transparent 28rem),
-        radial-gradient(circle at 20% 20%, rgba(113, 112, 255, 0.06), transparent 22rem),
-        linear-gradient(180deg, #08090a 0%, #0b0c0d 100%);
-      color: var(--text);
-      font-family: "Inter", "SF Pro Display", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      font-feature-settings: "cv01", "ss03";
-      -webkit-font-smoothing: antialiased;
-      text-rendering: optimizeLegibility;
-      display: grid;
-      place-items: center;
-      padding: 32px 20px;
-    }
+    /* ---- left brand panel ---- */
+    .sc-brand{position:relative; z-index:2; flex:1.25; min-width:0; padding:52px 56px; display:flex; flex-direction:column; justify-content:space-between;}
+    .sc-kata{position:absolute; right:30px; top:90px; writing-mode:vertical-rl; font-family:var(--f-jp); font-weight:700; font-size:15px; letter-spacing:.18em; color:rgba(181,116,214,.32);}
+    .sc-logo{display:flex; align-items:center; gap:12px;}
+    .sc-mark{position:relative; width:38px; height:38px; background:var(--ink); border-radius:11px; display:flex; align-items:center; justify-content:center; overflow:hidden; flex:none; box-shadow:0 0 0 1px rgba(255,255,255,.08);}
+    .sc-mark .s1{font-family:var(--f-display); font-weight:800; font-size:27px; color:var(--orchid); line-height:1; clip-path:polygon(0 0,100% 0,100% 44%,0 56%);}
+    .sc-mark .s2{position:absolute; font-family:var(--f-display); font-weight:800; font-size:27px; color:var(--orchid); line-height:1; clip-path:polygon(0 56%,100% 44%,100% 100%,0 100%); transform:translate(2px,1.4px);}
+    .sc-mark .blade{position:absolute; left:5px; right:5px; top:50%; height:1.8px; background:linear-gradient(90deg,transparent,#efece6,transparent); transform:translateY(-50%) rotate(-9deg);}
+    .sc-word{display:flex; align-items:baseline; line-height:1; font-family:var(--f-display); font-weight:800; font-size:22px; letter-spacing:-.02em;}
+    .sc-word .a{color:#efece6;} .sc-word .b{color:var(--orchid);}
 
-    .shell {
-      width: min(100%, 420px);
-      padding: 28px;
-      border: 1px solid var(--line);
-      border-radius: 12px;
-      background:
-        linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.015));
-      box-shadow:
-        rgba(0, 0, 0, 0.2) 0 0 0 1px,
-        rgba(0, 0, 0, 0.4) 0 24px 80px -32px,
-        inset 0 0 0 1px rgba(255, 255, 255, 0.02);
-    }
+    .sc-hero{max-width:560px;}
+    .sc-eyebrow{font-family:var(--f-mono); font-size:12px; letter-spacing:.28em; color:var(--accent-bright); text-transform:uppercase; margin-bottom:20px; display:flex; align-items:center; gap:10px;}
+    .sc-ticks{display:flex; gap:3px;} .sc-ticks i{width:3px;height:12px;transform:skewX(-20deg);display:block;}
+    .sc-h1{font-family:var(--f-display); font-weight:800; font-size:64px; line-height:.95; letter-spacing:-.035em; color:#efece6;}
+    .sc-h1 .em{color:var(--orchid);}
+    .sc-lead{margin-top:22px; font-size:17px; line-height:1.55; color:#b3aecd; max-width:440px;}
 
-    .eyebrow {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      padding: 6px 10px;
-      margin-bottom: 16px;
-      border: 1px solid var(--line-subtle);
-      border-radius: 9999px;
-      background: rgba(255, 255, 255, 0.02);
-      color: var(--text-secondary);
-      font-size: 12px;
-      font-weight: 510;
-      line-height: 1.4;
-      letter-spacing: normal;
-    }
+    .sc-wave-box{margin-top:36px; max-width:480px; position:relative;}
+    .sc-wave{position:relative; height:84px; display:flex; align-items:center; gap:2.5px;}
+    .sc-wave .bar{flex:1; min-width:2px; border-radius:2px; align-self:center;}
+    .sc-wave .blade{position:absolute; left:50%; top:-8px; bottom:-8px; width:2.5px; transform:translateX(-50%) rotate(14deg); background:linear-gradient(180deg,#dfe7ee,#9aa6b5 30%,var(--accent)); box-shadow:0 0 12px rgba(112,4,214,.5);}
+    .sc-wave .gem{position:absolute; left:calc(50% - 8px); top:50%; width:17px; height:17px; transform:translateY(-50%) rotate(45deg); background:var(--ink); border:2px solid var(--accent-bright); border-radius:3px;}
+    .sc-wave-legend{display:flex; justify-content:space-between; margin-top:11px; font-family:var(--f-mono); font-size:10.5px; letter-spacing:.14em; text-transform:uppercase;}
+    .sc-wave-legend .sig{color:var(--orchid);} .sc-wave-legend .sil{color:#6b6488;}
 
-    h1 {
-      margin: 0 0 8px;
-      color: var(--text);
-      font-size: 28px;
-      font-weight: 510;
-      line-height: 1.13;
-      letter-spacing: -0.704px;
-    }
+    .sc-foot{display:flex; align-items:flex-end; justify-content:space-between; gap:24px;}
+    .sc-foot .tag{font-family:var(--f-mono); font-size:10.5px; letter-spacing:.16em; color:#544c6e; text-transform:uppercase;}
+    /* Место под арт героини: подставьте <img> или фон сюда */
+    .sc-character{width:200px; height:200px; flex:none; /* background:url('/static/img/heroine.png') center/contain no-repeat; */}
 
-    .subtitle {
-      margin: 0 0 24px;
-      color: var(--text-muted);
-      font-size: 15px;
-      font-weight: 400;
-      line-height: 1.6;
-      letter-spacing: -0.165px;
-    }
+    /* ---- right login card ---- */
+    .sc-side{position:relative; z-index:2; flex:0 0 480px; display:flex; align-items:center; justify-content:center; padding:40px 52px 40px 20px;}
+    .sc-card{width:100%; max-width:388px; background:var(--paper); border:1px solid var(--paper-line); border-radius:20px; padding:38px 36px; box-shadow:0 30px 70px -30px rgba(0,0,0,.7); position:relative; overflow:hidden;}
+    .sc-card .corner{position:absolute; right:-34px; top:30px; width:120px; height:2px; background:linear-gradient(90deg,transparent,rgba(112,4,214,.4)); transform:rotate(-38deg);}
+    .sc-badge{display:inline-flex; align-items:center; gap:8px; font-family:var(--f-mono); font-size:10px; letter-spacing:.16em; color:var(--accent); text-transform:uppercase; background:rgba(112,4,214,.08); border:1px solid rgba(112,4,214,.18); padding:5px 11px; border-radius:9999px;}
+    .sc-badge i{width:5px;height:5px;border-radius:50%;background:var(--accent);display:block;}
+    .sc-title{font-family:var(--f-display); font-weight:800; font-size:34px; letter-spacing:-.025em; color:var(--ink); margin-top:18px; line-height:1;}
+    .sc-sub{font-size:14px; color:var(--ink-muted); margin-top:8px;}
 
-    .notice {
-      display: block;
-      margin: 0 0 18px;
-      padding: 11px 14px 11px 16px;
-      border: 1px solid var(--line);
-      border-left: 2px solid var(--text-faint);
-      border-radius: 6px;
-      background: rgba(255, 255, 255, 0.02);
-      color: var(--text-muted);
-      font-size: 14px;
-      line-height: 1.5;
-      letter-spacing: -0.182px;
-      animation: notice-in 180ms ease forwards;
-    }
+    /* notice (#status-message) */
+    #status-message{display:none; align-items:flex-start; gap:10px; margin-top:20px; padding:12px 14px; border-radius:10px;}
+    #status-message.is-shown{display:flex;}
+    #status-message .nt{font-weight:600; font-size:13px;}
+    #status-message .nb{font-size:12.5px; margin-top:2px;}
+    #status-message.tone-error{background:rgba(210,59,59,.08); border:1px solid rgba(210,59,59,.28);}
+    #status-message.tone-error .nt{color:#c0392f;} #status-message.tone-error .nb{color:#9a5048;}
+    #status-message.tone-warning{background:rgba(208,164,92,.1); border:1px solid rgba(208,164,92,.32);}
+    #status-message.tone-warning .nt{color:#9a6b1e;} #status-message.tone-warning .nb{color:#9a8050;}
 
-    .notice[data-tone="warning"] {
-      color: var(--warning);
-      border-left-color: var(--warning);
-      border-color: rgba(208, 164, 92, 0.2);
-      background: rgba(208, 164, 92, 0.05);
-    }
+    #login-form{margin-top:22px;}
+    .sc-label{display:block; font-weight:600; font-size:13px; color:var(--ink-2); margin-bottom:7px;}
+    .sc-label.mt{margin:18px 0 7px;}
+    .sc-input{width:100%; font-family:var(--f-ui); font-size:14.5px; color:var(--ink); background:#fff; border:1px solid var(--field-line); border-radius:10px; padding:12px 14px; outline:none; transition:border-color .15s, box-shadow .15s;}
+    .sc-input:focus{border-color:var(--accent); box-shadow:0 0 0 3px rgba(112,4,214,.14);}
+    .sc-pw{position:relative;}
+    .sc-pw .sc-input{padding-right:44px;}
+    .sc-eye{position:absolute; right:6px; top:50%; transform:translateY(-50%); width:34px; height:34px; display:flex; align-items:center; justify-content:center; background:transparent; border:none; color:#a39d90; cursor:pointer; transition:color .15s;}
+    .sc-eye:hover{color:var(--ink);}
 
-    .notice[data-tone="error"] {
-      color: var(--danger);
-      border-left-color: var(--danger);
-      border-color: rgba(240, 106, 106, 0.2);
-      background: rgba(240, 106, 106, 0.05);
-    }
+    .sc-row{display:flex; align-items:center; justify-content:space-between; margin-top:18px;}
+    .sc-remember{display:flex; align-items:center; gap:9px; cursor:pointer; user-select:none; position:relative;}
+    .sc-check{width:19px; height:19px; border-radius:6px; border:1.5px solid #cfc9bd; background:transparent; display:inline-flex; align-items:center; justify-content:center; transition:.12s; flex:none;}
+    .sc-check svg{opacity:0; transition:opacity .12s;}
+    #remember-me-input{position:absolute; opacity:0; width:0; height:0;}
+    #remember-me-input:checked + .sc-remember .sc-check,
+    .sc-remember.is-on .sc-check{background:var(--accent); border-color:var(--accent);}
+    .sc-remember.is-on .sc-check svg{opacity:1;}
+    .sc-remember .lbl{font-size:13px; color:var(--ink-2);}
+    .sc-forgot{font-size:13px; color:var(--ink-muted); text-decoration:none; cursor:pointer; transition:color .15s;}
+    .sc-forgot:hover{color:var(--accent);}
 
-    @keyframes notice-in {
-      from { opacity: 0; transform: translateY(-4px); }
-      to   { opacity: 1; transform: translateY(0); }
-    }
+    .sc-submit{width:100%; margin-top:24px; display:flex; align-items:center; justify-content:center; gap:9px; font-family:var(--f-ui); font-weight:700; font-size:15px; color:#fff; background:var(--accent); border:none; border-radius:11px; padding:14px; cursor:pointer; transition:filter .15s; box-shadow:0 10px 28px -12px rgba(112,4,214,.7);}
+    .sc-submit:hover{filter:brightness(1.07);}
+    .sc-submit .slash{display:inline-block; transition:transform .18s;}
+    .sc-submit:hover .slash{transform:translateX(4px);}
 
-    form {
-      display: grid;
-      gap: 16px;
-    }
+    .sc-cardfoot{margin-top:26px; padding-top:18px; border-top:1px solid #ece8dd; display:flex; align-items:center; justify-content:space-between;}
+    .sc-cardfoot span{font-family:var(--f-mono); font-size:10.5px; letter-spacing:.1em; color:#a39d90;}
 
-    .field {
-      display: grid;
-      gap: 8px;
-    }
-
-    .field-label {
-      color: var(--text-faint);
-      font-size: 12px;
-      font-weight: 510;
-      line-height: 1.4;
-      text-transform: uppercase;
-      letter-spacing: normal;
-    }
-
-    input[type="text"],
-    input[type="password"] {
-      width: 100%;
-      padding: 11px 14px;
-      border: 1px solid var(--line);
-      border-radius: 6px;
-      background: rgba(255, 255, 255, 0.02);
-      color: var(--text-secondary);
-      font: inherit;
-      font-size: 15px;
-      line-height: 1.6;
-      transition: border-color 140ms ease, box-shadow 140ms ease;
-    }
-
-    input[type="text"]::placeholder,
-    input[type="password"]::placeholder {
-      color: var(--text-faint);
-    }
-
-    input[type="text"]:focus,
-    input[type="password"]:focus {
-      outline: none;
-      border-color: rgba(113, 112, 255, 0.45);
-      box-shadow: var(--shadow-focus);
-    }
-
-    .actions {
-      display: flex;
-      align-items: center;
-      gap: 14px;
-      margin-top: 6px;
-    }
-
-    button[type="submit"] {
-      appearance: none;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      flex-shrink: 0;
-      padding: 10px 18px;
-      border: 1px solid rgba(113, 112, 255, 0.3);
-      border-radius: 6px;
-      background: var(--accent);
-      color: #ffffff;
-      font: inherit;
-      font-size: 14px;
-      font-weight: 590;
-      line-height: 1.5;
-      cursor: pointer;
-      white-space: nowrap;
-      transition: background 140ms ease, border-color 140ms ease;
-    }
-
-    button[type="submit"]:hover:not(:disabled) {
-      background: var(--accent-bright);
-      border-color: rgba(130, 143, 255, 0.4);
-    }
-
-    button[type="submit"]:focus-visible {
-      outline: none;
-      box-shadow: var(--shadow-focus);
-    }
-
-    button[type="submit"]:disabled {
-      opacity: 0.45;
-      cursor: not-allowed;
-    }
-
-    .remember-me {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      cursor: pointer;
-    }
-
-    .remember-me input[type="checkbox"] {
-      appearance: none;
-      width: 16px;
-      height: 16px;
-      border: 1px solid var(--line);
-      border-radius: 4px;
-      background: rgba(255, 255, 255, 0.02);
-      cursor: pointer;
-      flex-shrink: 0;
-      transition: border-color 140ms ease, background 140ms ease;
-    }
-
-    .remember-me input[type="checkbox"]:checked {
-      background: var(--accent);
-      border-color: rgba(113, 112, 255, 0.45);
-    }
-
-    .remember-me input[type="checkbox"]:checked::after {
-      content: "";
-      display: block;
-      width: 10px;
-      height: 10px;
-      margin: 2px;
-      background: #ffffff;
-      mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Cpath d='M1.5 5.5L4 8L8.5 2' stroke='white' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center/contain no-repeat;
-      -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Cpath d='M1.5 5.5L4 8L8.5 2' stroke='white' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center/contain no-repeat;
-    }
-
-    .remember-me input[type="checkbox"]:focus-visible {
-      outline: none;
-      box-shadow: var(--shadow-focus);
-    }
-
-    .remember-me-label {
-      color: var(--text-muted);
-      font-size: 13px;
-      line-height: 1.5;
-      letter-spacing: -0.13px;
-      user-select: none;
-    }
-
-    .hint {
-      color: var(--text-muted);
-      font-size: 13px;
-      line-height: 1.5;
-      letter-spacing: -0.13px;
-    }
-
-    .footer {
-      margin-top: 20px;
-      padding-top: 16px;
-      border-top: 1px solid var(--line-subtle);
-      color: var(--text-faint);
-      font-size: 13px;
-      line-height: 1.6;
-      letter-spacing: -0.13px;
-    }
-
-    .footer a {
-      color: var(--accent-bright);
-      text-decoration: none;
-    }
-
-    .footer a:hover {
-      color: var(--accent-hover);
+    @media (max-width:900px){
+      .sc-wrap{flex-direction:column;}
+      .sc-brand{padding:36px 28px;}
+      .sc-h1{font-size:46px;}
+      .sc-side{flex:1 1 auto; padding:8px 24px 40px;}
     }
   </style>
 </head>
 <body>
-  <main class="shell">
-    <span class="eyebrow">StreamCut Operator Access</span>
-    <h1>Sign in to continue.</h1>
-    <p class="subtitle">Operator pages and API actions are protected by a session cookie. Use the shared operator account for this self-hosted deployment.</p>
-    <div class="notice" id="status-message" hidden></div>
-    <form method="post" action="/login" id="login-form">
-      <input type="hidden" name="_csrf" id="csrf-token">
-      <div class="field">
-        <label class="field-label" for="username-input">Username</label>
-        <input id="username-input" type="text" name="username" autocomplete="username" required autofocus>
+  <div class="sc-wrap">
+    <div class="sc-layer sc-glow"></div>
+    <div class="sc-layer sc-grid"></div>
+    <div class="sc-layer sc-grain"></div>
+
+    <!-- LEFT · BRAND -->
+    <div class="sc-brand">
+      <div class="sc-kata">ストリームカット · 斬</div>
+
+      <div class="sc-logo">
+        <div class="sc-mark"><span class="s1">S</span><span class="s2">S</span><span class="blade"></span></div>
+        <div class="sc-word"><span class="a">Stream</span><span class="b">Cut</span></div>
       </div>
-      <div class="field">
-        <label class="field-label" for="password-input">Password</label>
-        <input id="password-input" type="password" name="password" autocomplete="current-password" required>
+
+      <div class="sc-hero">
+        <div class="sc-eyebrow"><span class="sc-ticks"><i style="background:#7004d6"></i><i style="background:#9b2bf0"></i><i style="background:#d4308f"></i></span>SILENCE-BASED&nbsp;SEGMENTATION</div>
+        <h1 class="sc-h1">Режет тишину.<br><span class="em">Оставляет сигнал.</span></h1>
+        <p class="sc-lead">6 часов VOD → лучшие моменты за минуты. Авто-нарезка стримов по тишине: чистая склейка и AI-хайлайты из одного прохода.</p>
+
+        <div class="sc-wave-box">
+          <div class="sc-wave" id="sc-wave">
+            <div class="blade"></div><div class="gem"></div>
+          </div>
+          <div class="sc-wave-legend"><span class="sig">信号 · SIGNAL KEPT</span><span class="sil">静寂 · SILENCE CUT</span></div>
+        </div>
       </div>
-      <label class="remember-me">
-        <input type="checkbox" name="remember-me" id="remember-me-input" checked>
-        <span class="remember-me-label">Keep me signed in</span>
-      </label>
-      <div class="actions">
-        <button type="submit">Sign in</button>
-        <span class="hint">Need the operator credentials? Check the runtime docs for the configured bootstrap values.</span>
+
+      <div class="sc-foot">
+        <div class="tag">A&nbsp;PEATROXD&nbsp;TOOL · v1.0</div>
+        <div class="sc-character" aria-hidden="true"></div>
       </div>
-    </form>
-    <div class="footer">
-      Protected area: dashboard pages, write APIs, exports, and clip download/stream endpoints.
-      <br>
-      <a href="/health">Health check</a> remains public.
     </div>
-  </main>
+
+    <!-- RIGHT · LOGIN -->
+    <div class="sc-side">
+      <div class="sc-card">
+        <span class="corner"></span>
+        <div class="sc-badge"><i></i>CONSOLE&nbsp;ACCESS</div>
+        <h2 class="sc-title">Sign in</h2>
+        <p class="sc-sub">Вход в панель StreamCut</p>
+
+        <div id="status-message" role="alert">
+          <span class="ni" aria-hidden="true"></span>
+          <div><div class="nt"></div><div class="nb"></div></div>
+        </div>
+
+        <form id="login-form" action="/login" method="post">
+          <input type="hidden" name="_csrf" id="csrf-token" value="" />
+
+          <label class="sc-label" for="username-input">Username</label>
+          <input class="sc-input" id="username-input" name="username" type="text" autocomplete="username" placeholder="peatroxd" required />
+
+          <label class="sc-label mt" for="password-input">Password</label>
+          <div class="sc-pw">
+            <input class="sc-input" id="password-input" name="password" type="password" autocomplete="current-password" placeholder="••••••••••" required />
+            <button type="button" class="sc-eye" id="sc-eye" title="Show / hide" aria-label="Показать пароль"></button>
+          </div>
+
+          <div class="sc-row">
+            <label class="sc-remember is-on" id="sc-remember">
+              <input id="remember-me-input" name="remember-me" type="checkbox" checked />
+              <span class="sc-check"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12l5 5L20 6"/></svg></span>
+              <span class="lbl">Remember me</span>
+            </label>
+            <a class="sc-forgot" href="#">Forgot?</a>
+          </div>
+
+          <button type="submit" class="sc-submit">Enter console
+            <span class="slash"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span>
+          </button>
+        </form>
+
+        <div class="sc-cardfoot"><span>斬 · SECURE</span><span>JAVA · SPRING&nbsp;BOOT</span></div>
+      </div>
+    </div>
+  </div>
+
   <script>
-    (async () => {
-      const csrfField = document.getElementById("csrf-token");
-      const statusMessage = document.getElementById("status-message");
-      const form = document.getElementById("login-form");
-      const query = new URLSearchParams(window.location.search);
-      const reason = query.get("reason");
-
-      if (reason === "session") {
-        statusMessage.textContent = "Your session is missing or expired. Sign in again to continue.";
-        statusMessage.dataset.tone = "warning";
-        statusMessage.hidden = false;
-      } else if (query.has("logout") || reason === "logout") {
-        statusMessage.textContent = "You have been signed out.";
-        statusMessage.dataset.tone = "warning";
-        statusMessage.hidden = false;
-      } else if (query.has("error") || reason === "error") {
-        statusMessage.textContent = "Invalid username or password. Try again.";
-        statusMessage.dataset.tone = "error";
-        statusMessage.hidden = false;
+    (function(){
+      // ---- audiowave (signal kept / silence cut) ----
+      var wave = document.getElementById('sc-wave'); var N = 56;
+      var frag = document.createDocumentFragment();
+      function lerp(a,b,t){ return Math.round(a+(b-a)*t); }
+      for(var i=0;i<N;i++){
+        var p = i/(N-1), active = p < 0.5, bar = document.createElement('div');
+        bar.className = 'bar'; var h, color;
+        if(active){
+          var env = Math.sin((p/0.5)*Math.PI);
+          var tex = Math.abs(Math.sin(i*1.8)+Math.sin(i*0.65)*0.6+Math.sin(i*3.2)*0.32);
+          h = 6 + env*62*(0.45+tex*0.55); var t = p/0.5;
+          color = 'rgb('+lerp(112,212,t)+','+lerp(4,48,t)+','+lerp(214,143,t)+')';
+        } else { h = 3; color = 'rgba(255,255,255,.16)'; }
+        bar.style.height = Math.round(h)+'px'; bar.style.background = color;
+        frag.appendChild(bar);
       }
+      wave.insertBefore(frag, wave.firstChild);
 
-      try {
-        const response = await fetch("/csrf", { headers: { Accept: "application/json" } });
-        if (!response.ok) {
-          throw new Error("Unable to bootstrap the login session.");
-        }
-        const payload = await response.json();
-        csrfField.value = payload.token;
-      } catch (error) {
-        statusMessage.textContent = error.message || "Unable to bootstrap the login session.";
-        statusMessage.dataset.tone = "error";
-        statusMessage.hidden = false;
-        form.querySelector("button[type='submit']").disabled = true;
+      // ---- CSRF token (best-effort; backend contract /csrf) ----
+      try{
+        fetch('/csrf', {credentials:'same-origin'})
+          .then(function(r){ return r.ok ? r.json() : null; })
+          .then(function(d){ if(d && (d.token||d._csrf)) document.getElementById('csrf-token').value = d.token||d._csrf; })
+          .catch(function(){});
+      }catch(e){}
+
+      // ---- status notice from query (?error / ?logout) ----
+      var sm = document.getElementById('status-message');
+      function showNotice(tone, title, body){
+        sm.className = 'is-shown tone-'+tone;
+        sm.querySelector('.nt').textContent = title;
+        sm.querySelector('.nb').textContent = body;
+        var icon = sm.querySelector('.ni');
+        icon.innerHTML = tone==='error'
+          ? '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#d23b3b" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg>'
+          : '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#c79030" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l9 16H3z"/><path d="M12 9v4M12 16h.01"/></svg>';
       }
+      var q = new URLSearchParams(location.search);
+      if(q.has('error') || q.get('reason') === 'error')  showNotice('error','Неверный логин или пароль','Проверьте данные и попробуйте снова.');
+      else if(q.has('logout') || q.get('reason') === 'logout') showNotice('warning','Сессия завершена','Вы вышли из системы. Войдите снова.');
+      else if(q.get('reason') === 'session') showNotice('warning','Сессия истекла','Войдите снова, чтобы продолжить.');
+
+      // ---- password show/hide ----
+      var pw = document.getElementById('password-input'), eye = document.getElementById('sc-eye');
+      var eyeOpen = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>';
+      var eyeOff = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3l18 18"/><path d="M10.6 10.6a2 2 0 0 0 2.8 2.8"/><path d="M9.4 5.2A9 9 0 0 1 21 12a17 17 0 0 1-2.2 3M6.3 6.3A17 17 0 0 0 3 12a9 9 0 0 0 12 6.7"/></svg>';
+      eye.innerHTML = eyeOpen;
+      eye.addEventListener('click', function(){
+        var show = pw.type === 'password'; pw.type = show ? 'text' : 'password';
+        eye.innerHTML = show ? eyeOff : eyeOpen;
+      });
+
+      // ---- remember-me visual sync ----
+      var rm = document.getElementById('remember-me-input'), rlabel = document.getElementById('sc-remember');
+      function syncRem(){ rlabel.classList.toggle('is-on', rm.checked); }
+      rm.addEventListener('change', syncRem); syncRem();
     })();
   </script>
 </body>
