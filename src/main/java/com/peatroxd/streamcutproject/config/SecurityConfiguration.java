@@ -15,6 +15,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.provisioning.InMemoryUserDetailsManager;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
+import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
 
 import java.time.Duration;
 
@@ -32,6 +33,12 @@ public class SecurityConfiguration {
         http
                 .csrf(csrf -> csrf
                         .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
+                        // Plain handler (not the default XOR/BREACH one): the raw token in the
+                        // XSRF-TOKEN cookie is the canonical value, so the SPA can read the cookie
+                        // and echo it back in X-XSRF-TOKEN as-is. With XorCsrfTokenRequestAttributeHandler
+                        // the cookie holds the raw token while the server expects the XOR-encoded one,
+                        // which 403'd every mutating request that read the cookie.
+                        .csrfTokenRequestHandler(new CsrfTokenRequestAttributeHandler())
                         .ignoringRequestMatchers("/api/internal/worker/**")
                 )
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED))
