@@ -19,6 +19,11 @@ _EMPHASIS_WORD_RE = re.compile(r"\b[A-Z]{2,}\b")
 
 # --- Scoring weight constants (tunable without code surgery) ---
 HOOK_LEAD_IN_SEC: float = 0.4
+# Floor on the post-shift clip length. The hook shift trims the front of the
+# window toward the loudness peak; with the peak near the window end this can
+# leave a ~2s sliver. Cap the shift so [shifted_start, window_end] never drops
+# below this. ponytail: fixed floor, expose per-job knob if clip lengths vary.
+HOOK_MIN_CLIP_SEC: float = 8.0
 # Word-level speech runs separated by a gap shorter than this are treated as
 # continuous speech (natural inter-word pauses); a longer gap breaks the run.
 WORD_GAP_BRIDGE_SEC: float = 0.6
@@ -99,6 +104,7 @@ class SlidingWindowCandidateAnalysisService:
     top_n: int | None = None
     min_overlap_ratio: float = 0.0
     hook_lead_in_sec: float = HOOK_LEAD_IN_SEC
+    hook_min_clip_sec: float = HOOK_MIN_CLIP_SEC
 
     def analyze(self, request: CandidateAnalysisRequest) -> CandidateAnalysisResult:
         duration_sec = self._resolve_duration(request)
@@ -347,6 +353,7 @@ class SlidingWindowCandidateAnalysisService:
                 window_start=w_start,
                 window_end=w_end,
                 lead_in_sec=self.hook_lead_in_sec,
+                min_clip_sec=self.hook_min_clip_sec,
                 loudness_profile=loudness_profile,
                 transcript_segments=transcript_segments or [],
                 silence_segments=silence_segments or [],
@@ -578,7 +585,8 @@ def _shift_start_to_peak(
     window_start: float,
     window_end: float,
     lead_in_sec: float,
-    loudness_profile: LoudnessProfile | None,
+    min_clip_sec: float = 0.0,
+    loudness_profile: LoudnessProfile | None = None,
     transcript_segments: list[TranscriptSegment],
     silence_segments: list[SilenceInterval],
 ) -> float:
@@ -588,7 +596,8 @@ def _shift_start_to_peak(
     2. Compute raw_start = peak - lead_in.
     3. Snap to the nearest word/silence boundary.
     4. Clamp so start >= 0, start >= window_start (never before window),
-       and the resulting clip length stays within the original window length.
+       the resulting clip length stays within the original window length, and
+       [shifted_start, window_end] stays >= ``min_clip_sec`` (no hook sliver).
 
     Falls back to the original window_start when no loudness data is available.
     """
@@ -610,6 +619,11 @@ def _shift_start_to_peak(
     # Final clamp after snapping: stay within [window_start, peak_time] and >= 0.
     snapped = max(snapped, window_start, 0.0)
     snapped = min(snapped, peak_time)
+
+    # Min-clip guard: don't trim the front past the point where the remaining
+    # clip would be shorter than min_clip_sec. Never push before window_start
+    # (if the window itself is < min_clip_sec there's nothing to give back).
+    snapped = min(snapped, max(window_start, window_end - min_clip_sec))
 
     return round(snapped, 6)
 

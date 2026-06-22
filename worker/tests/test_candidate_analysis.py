@@ -562,12 +562,50 @@ class HookStartShiftTests(unittest.TestCase):
         )
         self.assertLessEqual(result, 11.0)
 
+    def test_shift_respects_min_clip_floor(self) -> None:
+        """Peak near the window end must not trim the clip below min_clip_sec."""
+        profile = LoudnessProfile(
+            time_sec=(10.0, 26.0, 27.0, 28.0, 29.0),
+            rms_db=(-30.0, -25.0, -20.0, -5.0, -25.0),
+        )
+        # Peak at t=28.0; lead_in 0.4 -> raw 27.6 would leave a 2.4s clip.
+        # min_clip_sec=8 caps start at window_end - 8 = 22.0.
+        result = _shift_start_to_peak(
+            window_start=10.0,
+            window_end=30.0,
+            lead_in_sec=0.4,
+            min_clip_sec=8.0,
+            loudness_profile=profile,
+            transcript_segments=[],
+            silence_segments=[],
+        )
+        self.assertAlmostEqual(result, 22.0)
+
+    def test_shift_min_clip_floor_never_precedes_window_start(self) -> None:
+        """If the window itself is shorter than min_clip_sec, stay at window_start."""
+        profile = LoudnessProfile(
+            time_sec=(10.0, 14.0, 15.0),
+            rms_db=(-30.0, -5.0, -25.0),
+        )
+        # Window is only 5s; min_clip_sec=8 can't be met -> clamp to window_start.
+        result = _shift_start_to_peak(
+            window_start=10.0,
+            window_end=15.0,
+            lead_in_sec=0.4,
+            min_clip_sec=8.0,
+            loudness_profile=profile,
+            transcript_segments=[],
+            silence_segments=[],
+        )
+        self.assertAlmostEqual(result, 10.0)
+
     # --- Integration: full analyze pipeline with hook shift ---
 
     def test_analyze_shifts_candidate_start_with_loudness(self) -> None:
         """Full-pipeline test: candidates should have their start shifted toward the peak."""
+        # hook_min_clip_sec=0 isolates shift behavior; the floor has its own test.
         service = SlidingWindowCandidateAnalysisService(
-            window_duration_sec=10.0, step_sec=10.0, top_n=1,
+            window_duration_sec=10.0, step_sec=10.0, top_n=1, hook_min_clip_sec=0.0,
         )
 
         segments = [
@@ -624,7 +662,7 @@ class HookStartShiftTests(unittest.TestCase):
         """The hook_lead_in_sec field on the service should be respected."""
         service = SlidingWindowCandidateAnalysisService(
             window_duration_sec=10.0, step_sec=10.0, top_n=1,
-            hook_lead_in_sec=1.0,
+            hook_lead_in_sec=1.0, hook_min_clip_sec=0.0,
         )
 
         profile = LoudnessProfile(
