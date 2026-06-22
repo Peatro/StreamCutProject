@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 import logging
 from pathlib import Path
 import threading
@@ -60,6 +60,12 @@ class WorkerJobRunner:
     export_service: FfmpegClipExportService
     llm_client: LlmClient | None = None
     emotion_keywords: tuple[str, ...] = field(default_factory=tuple)
+    # Candidate gate (applied to both heuristic and hybrid output): drop clips
+    # with no real transcript or a low score, then keep only the strongest few.
+    # Stops the wordless/low-signal flood (job-13 produced 321) from reaching review.
+    candidate_min_score: float = 0.5
+    candidate_top_n: int = 30
+    candidate_min_excerpt_chars: int = 3
 
     def run(
         self,
@@ -445,7 +451,7 @@ class WorkerJobRunner:
             )
 
         try:
-            return self._run_with_stage_heartbeat(
+            result = self._run_with_stage_heartbeat(
                 on_progress=on_progress,
                 status="ANALYZING_WINDOWS",
                 progress_percent=self.ANALYZING_WINDOWS_PROGRESS,
@@ -454,6 +460,24 @@ class WorkerJobRunner:
             )
         except Exception as exc:
             raise WorkerJobRunnerError("ANALYZING_WINDOWS", str(exc)) from exc
+        return self._gate_candidates(result)
+
+    def _gate_candidates(self, result):
+        """Drop clips with no real transcript or a sub-threshold score, then keep
+        the strongest ``candidate_top_n``. Applied to whichever path produced the
+        candidates (heuristic or hybrid)."""
+        kept = [
+            c for c in result.clip_candidates
+            if len(c.transcript_excerpt.strip()) >= self.candidate_min_excerpt_chars
+            and c.score >= self.candidate_min_score
+        ]
+        kept.sort(key=lambda c: (-c.score, c.start_sec))
+        kept = kept[: self.candidate_top_n]
+        logger.info(
+            "candidate_gate kept=%d of %d (min_score=%.2f top_n=%d)",
+            len(kept), len(result.clip_candidates), self.candidate_min_score, self.candidate_top_n,
+        )
+        return replace(result, clip_candidates=kept)
 
     def _run_with_stage_heartbeat(
         self,

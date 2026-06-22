@@ -208,6 +208,83 @@ class CandidateAnalysisServiceTests(unittest.TestCase):
         # The loud/sparse window should be the top candidate
         self.assertEqual(result.clip_candidates[0].start_sec, 10.0)
 
+    def test_shifted_candidate_score_reflects_clip_window_not_original(self) -> None:
+        """After the hook shift trims the quiet front, the candidate score is
+        recomputed for the actual clip window — so it should differ from (and,
+        when the trimmed front was silent, exceed) the original window score."""
+        service = SlidingWindowCandidateAnalysisService(
+            window_duration_sec=20.0, step_sec=20.0, top_n=1
+        )
+        # Front 0-16s is silent; the only speech + the loudness peak sit at the end.
+        segments = [TranscriptSegment(16.0, 20.0, "insane clutch win", 3)]
+        loud_profile = LoudnessProfile(
+            time_sec=tuple(float(t) for t in range(21)),
+            rms_db=tuple(-40.0 if t != 18 else -5.0 for t in range(21)),
+        )
+        request = CandidateAnalysisRequest(
+            job_id="job-rescore",
+            transcript_segments=segments,
+            silence_segments=[SilenceInterval(0.0, 16.0, 16.0)],
+            duration_sec=20.0,
+            window_duration_sec=20.0,
+            step_sec=20.0,
+            top_n=1,
+            loudness_profile=loud_profile,
+        )
+
+        result = service.analyze(request)
+
+        self.assertEqual(len(result.clip_candidates), 1)
+        candidate = result.clip_candidates[0]
+        original_window_score = result.analysis_windows[0].total_score
+        # Start shifted out of the silent front toward the peak.
+        self.assertGreater(candidate.start_sec, 0.0)
+        # Score now describes [shifted_start, 20] (almost no silence) and beats
+        # the original [0, 20] window score (80% silent).
+        self.assertGreater(candidate.score, original_window_score)
+        # Excerpt is built from the clip window, so the end-speech survives.
+        self.assertIn("clutch", candidate.transcript_excerpt)
+
+    def test_wordless_window_has_no_phantom_speech(self) -> None:
+        """A segment whose time range spans a window but whose WORDS sit outside
+        it must not credit that window with speech/continuity/emotion (the job-13
+        bug: continuity=1.0 + empty excerpt scoring ~0.8)."""
+        service = SlidingWindowCandidateAnalysisService(window_duration_sec=10.0, step_sec=10.0)
+        # One segment spans 0-20s, but every word is in the first 8 seconds.
+        words = [
+            TranscriptWord("hello", 0.5, 1.0),
+            TranscriptWord("there", 1.0, 1.5),
+            TranscriptWord("friends", 6.0, 8.0),
+        ]
+        segments = [TranscriptSegment(0.0, 20.0, "hello there friends", 3, words)]
+        # The wordless second half (10-20s) is the loudest part of the VOD.
+        loud_profile = LoudnessProfile(
+            time_sec=tuple(float(t) for t in range(20)),
+            rms_db=tuple(-40.0 if t < 10 else -5.0 for t in range(20)),
+        )
+        request = CandidateAnalysisRequest(
+            job_id="job-wordless",
+            transcript_segments=segments,
+            silence_segments=[],
+            duration_sec=20.0,
+            window_duration_sec=10.0,
+            step_sec=10.0,
+            loudness_profile=loud_profile,
+        )
+
+        result = service.analyze(request)
+        by_start = {round(w.start_sec): w for w in result.analysis_windows}
+
+        # Loud but wordless window: no phantom continuous speech.
+        self.assertEqual(by_start[10].continuity_score, 0.0)
+        self.assertEqual(by_start[10].speech_density, 0.0)
+        self.assertEqual(by_start[10].emotion_hits, 0)
+        # The candidate covering that window carries an empty excerpt and no
+        # longer outscores everything on phantom speech (was ~0.8).
+        wordless = next(c for c in result.clip_candidates if 10 <= c.start_sec < 20)
+        self.assertEqual(wordless.transcript_excerpt, "")
+        self.assertLess(wordless.score, 0.65)
+
     def test_missing_loudness_profile_still_produces_candidates(self) -> None:
         """When loudness_profile is None, analysis falls back to the prior formula."""
         service = SlidingWindowCandidateAnalysisService(window_duration_sec=10.0, step_sec=10.0)

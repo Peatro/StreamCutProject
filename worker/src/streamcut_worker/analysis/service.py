@@ -19,6 +19,9 @@ _EMPHASIS_WORD_RE = re.compile(r"\b[A-Z]{2,}\b")
 
 # --- Scoring weight constants (tunable without code surgery) ---
 HOOK_LEAD_IN_SEC: float = 0.4
+# Word-level speech runs separated by a gap shorter than this are treated as
+# continuous speech (natural inter-word pauses); a longer gap breaks the run.
+WORD_GAP_BRIDGE_SEC: float = 0.6
 WEIGHT_LOUDNESS: float = 0.45
 WEIGHT_EMOTION: float = 0.20
 WEIGHT_CONTINUITY: float = 0.20
@@ -29,6 +32,64 @@ _FALLBACK_WEIGHT_SPEECH_DENSITY: float = 0.35
 _FALLBACK_WEIGHT_SILENCE: float = 0.25
 _FALLBACK_WEIGHT_EMOTION: float = 0.20
 _FALLBACK_WEIGHT_CONTINUITY: float = 0.20
+
+
+@dataclass(frozen=True, slots=True)
+class _WindowNorm:
+    """Job-wide normalization constants, computed once across all windows so a
+    single window's raw metrics can be (re)scored consistently — including a
+    candidate window whose start was shifted to the hook (TASK-090)."""
+    max_speech_density: float
+    max_emotion_hits: int
+    has_loudness: bool
+    min_loudness: float
+    loudness_range: float
+
+
+def _compute_total_score(
+    raw: dict[str, float | int | str],
+    norm: _WindowNorm,
+) -> tuple[float, float]:
+    """Composite 0..1 score for one window's raw metrics, normalized against the
+    job-wide maxima in ``norm``. Returns (total_score, normalized_loudness)."""
+    speech_density = float(raw["speech_density"])
+    silence_ratio = float(raw["silence_ratio"])
+    emotion_hits = int(raw["emotion_hits"])
+    continuity_score = float(raw["continuity_score"])
+
+    normalized_speech_density = (
+        speech_density / norm.max_speech_density if norm.max_speech_density > 0.0 else 0.0
+    )
+    normalized_emotion_hits = (
+        emotion_hits / norm.max_emotion_hits if norm.max_emotion_hits > 0 else 0.0
+    )
+
+    if norm.has_loudness:
+        raw_loud = raw.get("raw_loudness")
+        if raw_loud is not None:
+            normalized_loudness = (
+                (float(raw_loud) - norm.min_loudness) / norm.loudness_range
+                if norm.loudness_range > 0.0
+                else 1.0
+            )
+        else:
+            normalized_loudness = 0.0
+        total_score = (
+            WEIGHT_LOUDNESS * normalized_loudness
+            + WEIGHT_EMOTION * normalized_emotion_hits
+            + WEIGHT_CONTINUITY * continuity_score
+            + WEIGHT_SILENCE * (1.0 - silence_ratio)
+        )
+    else:
+        # Graceful degradation: prior formula when loudness is entirely missing.
+        normalized_loudness = 0.0
+        total_score = (
+            _FALLBACK_WEIGHT_SPEECH_DENSITY * normalized_speech_density
+            + _FALLBACK_WEIGHT_SILENCE * (1.0 - silence_ratio)
+            + _FALLBACK_WEIGHT_EMOTION * normalized_emotion_hits
+            + _FALLBACK_WEIGHT_CONTINUITY * continuity_score
+        )
+    return total_score, normalized_loudness
 
 
 @dataclass(slots=True)
@@ -55,13 +116,15 @@ class SlidingWindowCandidateAnalysisService:
             for start_sec, end_sec in windows
         ]
 
-        normalized_samples = self._normalize_windows(window_samples)
+        normalized_samples, norm = self._normalize_windows(window_samples)
         candidates = self._select_candidates(
             normalized_samples,
             request.top_n,
             loudness_profile=request.loudness_profile,
             transcript_segments=request.transcript_segments,
             silence_segments=request.silence_segments,
+            emotion_keywords=request.emotion_keywords,
+            norm=norm,
         )
 
         return CandidateAnalysisResult(
@@ -123,19 +186,41 @@ class SlidingWindowCandidateAnalysisService:
         excerpt_segments: list[str] = []
 
         for segment in transcript_segments:
-            overlap = _interval_overlap(segment.start_sec, segment.end_sec, start_sec, end_sec)
-            if overlap <= 0.0:
+            if _interval_overlap(segment.start_sec, segment.end_sec, start_sec, end_sec) <= 0.0:
                 continue
 
-            excerpt_segments.append(_segment_text_in_window(segment, start_sec, end_sec))
-            segment_duration = max(segment.end_sec - segment.start_sec, 0.0)
-            if segment_duration > 0.0:
-                speech_words += segment.word_count * (overlap / segment_duration)
+            if segment.words:
+                # Word-level: count only words whose timing lands in the window so
+                # speech_density / continuity / emotion / excerpt all describe what
+                # is actually spoken here. A long run-on segment that merely
+                # overlaps in time but has no words inside contributes nothing —
+                # this kills the phantom "continuous speech" that scored wordless
+                # windows ~0.8 (see job-13: continuity=1.0 with an empty excerpt).
+                words_in = [
+                    w for w in segment.words
+                    if _interval_overlap(w.start_sec, w.end_sec, start_sec, end_sec) > 0.0
+                ]
+                if not words_in:
+                    continue
+                excerpt_segments.append(" ".join(w.word.strip() for w in words_in))
+                speech_words += len(words_in)
+                speech_intervals.extend(
+                    (max(w.start_sec, start_sec), min(w.end_sec, end_sec)) for w in words_in
+                )
+                emotion_hits += _count_emotion_hits(
+                    " ".join(w.word for w in words_in), emotion_keywords
+                )
             else:
-                speech_words += float(segment.word_count)
-
-            speech_intervals.append((max(segment.start_sec, start_sec), min(segment.end_sec, end_sec)))
-            emotion_hits += _count_emotion_hits(segment.text, emotion_keywords)
+                # No word timings → segment-level fallback (prior behavior).
+                overlap = _interval_overlap(segment.start_sec, segment.end_sec, start_sec, end_sec)
+                excerpt_segments.append(segment.text.strip())
+                segment_duration = max(segment.end_sec - segment.start_sec, 0.0)
+                if segment_duration > 0.0:
+                    speech_words += segment.word_count * (overlap / segment_duration)
+                else:
+                    speech_words += float(segment.word_count)
+                speech_intervals.append((max(segment.start_sec, start_sec), min(segment.end_sec, end_sec)))
+                emotion_hits += _count_emotion_hits(segment.text, emotion_keywords)
 
         for silence_segment in silence_segments:
             silence_duration += _interval_overlap(
@@ -145,7 +230,9 @@ class SlidingWindowCandidateAnalysisService:
                 end_sec,
             )
 
-        longest_continuous_speech = _longest_interval_length(_merge_intervals(speech_intervals))
+        longest_continuous_speech = _longest_interval_length(
+            _merge_intervals(speech_intervals, gap=WORD_GAP_BRIDGE_SEC)
+        )
 
         # Compute per-window loudness: peak RMS dB among samples that fall
         # within the window.  None signals "no data available".
@@ -167,7 +254,7 @@ class SlidingWindowCandidateAnalysisService:
     def _normalize_windows(
         self,
         raw_windows: list[dict[str, float | int | str]],
-    ) -> list["_WindowSample"]:
+    ) -> tuple[list["_WindowSample"], _WindowNorm]:
         max_speech_density = max((float(window["speech_density"]) for window in raw_windows), default=0.0)
         max_emotion_hits = max((int(window["emotion_hits"]) for window in raw_windows), default=0)
 
@@ -185,60 +272,31 @@ class SlidingWindowCandidateAnalysisService:
             # RMS dB is negative (louder = closer to 0); shift so the loudest
             # window maps to 1.0 and the quietest to 0.0.
             min_loudness = min(raw_loudness_values)
-            max_loudness = max(raw_loudness_values)
-            loudness_range = max_loudness - min_loudness
+            loudness_range = max(raw_loudness_values) - min_loudness
         else:
             min_loudness = 0.0
-            max_loudness = 0.0
             loudness_range = 0.0
+
+        norm = _WindowNorm(
+            max_speech_density=max_speech_density,
+            max_emotion_hits=max_emotion_hits,
+            has_loudness=has_loudness,
+            min_loudness=min_loudness,
+            loudness_range=loudness_range,
+        )
 
         normalized: list[_WindowSample] = []
         for window in raw_windows:
-            speech_density = float(window["speech_density"])
-            silence_ratio = float(window["silence_ratio"])
-            emotion_hits = int(window["emotion_hits"])
-            continuity_score = float(window["continuity_score"])
-
-            normalized_speech_density = speech_density / max_speech_density if max_speech_density > 0.0 else 0.0
-            normalized_emotion_hits = emotion_hits / max_emotion_hits if max_emotion_hits > 0 else 0.0
-
-            if has_loudness:
-                raw_loud = window.get("raw_loudness")
-                if raw_loud is not None:
-                    normalized_loudness = (
-                        (float(raw_loud) - min_loudness) / loudness_range
-                        if loudness_range > 0.0
-                        else 1.0
-                    )
-                else:
-                    normalized_loudness = 0.0
-
-                total_score = (
-                    WEIGHT_LOUDNESS * normalized_loudness
-                    + WEIGHT_EMOTION * normalized_emotion_hits
-                    + WEIGHT_CONTINUITY * continuity_score
-                    + WEIGHT_SILENCE * (1.0 - silence_ratio)
-                )
-            else:
-                # Graceful degradation: fall back to the prior formula
-                # when loudness data is entirely missing.
-                normalized_loudness = 0.0
-                total_score = (
-                    _FALLBACK_WEIGHT_SPEECH_DENSITY * normalized_speech_density
-                    + _FALLBACK_WEIGHT_SILENCE * (1.0 - silence_ratio)
-                    + _FALLBACK_WEIGHT_EMOTION * normalized_emotion_hits
-                    + _FALLBACK_WEIGHT_CONTINUITY * continuity_score
-                )
-
+            total_score, normalized_loudness = _compute_total_score(window, norm)
             normalized.append(
                 _WindowSample(
                     analysis_window=AnalysisWindow(
                         start_sec=float(window["start_sec"]),
                         end_sec=float(window["end_sec"]),
-                        speech_density=speech_density,
-                        silence_ratio=silence_ratio,
-                        emotion_hits=emotion_hits,
-                        continuity_score=continuity_score,
+                        speech_density=float(window["speech_density"]),
+                        silence_ratio=float(window["silence_ratio"]),
+                        emotion_hits=int(window["emotion_hits"]),
+                        continuity_score=float(window["continuity_score"]),
                         total_score=round(total_score, 6),
                         loudness=round(normalized_loudness, 6),
                     ),
@@ -246,7 +304,7 @@ class SlidingWindowCandidateAnalysisService:
                 )
             )
 
-        return normalized
+        return normalized, norm
 
     def _select_candidates(
         self,
@@ -256,6 +314,8 @@ class SlidingWindowCandidateAnalysisService:
         loudness_profile: LoudnessProfile | None = None,
         transcript_segments: list[TranscriptSegment] | None = None,
         silence_segments: list[SilenceInterval] | None = None,
+        emotion_keywords: tuple[str, ...] = (),
+        norm: _WindowNorm | None = None,
     ) -> list[ClipCandidate]:
         if top_n is not None and top_n <= 0:
             return []
@@ -292,12 +352,33 @@ class SlidingWindowCandidateAnalysisService:
                 silence_segments=silence_segments or [],
             )
 
+            # The hook shift trims the front of the window, so the clip is
+            # [shifted_start, w_end] — a different span than the one scored in
+            # _normalize_windows. Re-score (and re-excerpt) for the actual clip
+            # window so score/excerpt describe what's exported, not the original
+            # analysis window. No shift → reuse the precomputed values.
+            if norm is not None and shifted_start > w_start:
+                raw = self._build_window_metrics(
+                    transcript_segments=transcript_segments or [],
+                    silence_segments=silence_segments or [],
+                    start_sec=shifted_start,
+                    end_sec=w_end,
+                    emotion_keywords=emotion_keywords,
+                    loudness_profile=loudness_profile,
+                )
+                total_score, _ = _compute_total_score(raw, norm)
+                score = round(total_score, 6)
+                excerpt = str(raw["excerpt"])
+            else:
+                score = window.analysis_window.total_score
+                excerpt = window.transcript_excerpt
+
             candidates.append(
                 ClipCandidate(
                     start_sec=shifted_start,
                     end_sec=w_end,
-                    score=window.analysis_window.total_score,
-                    transcript_excerpt=window.transcript_excerpt,
+                    score=score,
+                    transcript_excerpt=excerpt,
                 )
             )
 
@@ -360,7 +441,11 @@ def _segment_text_in_window(
     return segment.text.strip()
 
 
-def _merge_intervals(intervals: list[tuple[float, float]]) -> list[tuple[float, float]]:
+def _merge_intervals(
+    intervals: list[tuple[float, float]], gap: float = 0.0
+) -> list[tuple[float, float]]:
+    """Merge overlapping intervals. With ``gap`` > 0, intervals separated by a
+    gap no larger than ``gap`` are also merged (bridges inter-word pauses)."""
     if not intervals:
         return []
 
@@ -369,7 +454,7 @@ def _merge_intervals(intervals: list[tuple[float, float]]) -> list[tuple[float, 
 
     for start, end in sorted_intervals[1:]:
         last_start, last_end = merged[-1]
-        if start <= last_end:
+        if start <= last_end + gap:
             merged[-1] = (last_start, max(last_end, end))
         else:
             merged.append((start, end))
