@@ -1515,12 +1515,12 @@ ${renderJobFailureSummary(job)}
               <div class="candidate-preview-stage">
                 <video
                   class="candidate-preview"
-                  preload="metadata"
+                  preload="none"
                   playsinline
                   data-preview-video
                   data-preview-start-sec="${escapeHtml(candidate.startSec)}"
                   data-preview-end-sec="${escapeHtml(candidate.endSec)}"
-                  src="/api/jobs/${encodeURIComponent(job.id)}/source/stream"></video>
+                  data-src="/api/jobs/${encodeURIComponent(job.id)}/source/stream"></video>
               </div>
               <div class="candidate-preview-controls" data-preview-controls>
                 <button class="candidate-preview-play" type="button" data-preview-play title="Play / Pause">
@@ -1890,6 +1890,22 @@ ${renderJobFailureSummary(job)}
   }
 
   function bindCandidatePreviewPlayers(root) {
+    // Lazy-attach the stream source as a card scrolls into view, so 20 open
+    // cards don't all fetch the same VOD stream's metadata at once (page lag).
+    const lazyAttach = "IntersectionObserver" in window
+      ? new IntersectionObserver((entries, obs) => {
+          for (const entry of entries) {
+            if (!entry.isIntersecting) continue;
+            const v = entry.target;
+            if (!v.getAttribute("src") && v.dataset.src) {
+              v.preload = "metadata";
+              v.src = v.dataset.src;
+            }
+            obs.unobserve(v);
+          }
+        }, { rootMargin: "300px" })
+      : null;
+
     root.querySelectorAll("[data-preview-video]").forEach((video) => {
       const shell = video.closest("[data-preview-shell]");
       const note = shell?.querySelector("[data-preview-note]");
@@ -2067,6 +2083,14 @@ ${renderJobFailureSummary(job)}
           note.textContent = "Preview could not be loaded. Refresh the page and try again.";
         }
       });
+
+      // Defer the actual stream fetch until the card is near/in the viewport.
+      if (lazyAttach) {
+        lazyAttach.observe(video);
+      } else {
+        video.preload = "metadata";
+        video.src = video.dataset.src;
+      }
     });
   }
 
