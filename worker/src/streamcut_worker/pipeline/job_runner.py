@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
 import logging
+import os
 from pathlib import Path
 import threading
 from typing import Callable, TypeVar
@@ -31,6 +32,23 @@ from streamcut_worker.transcription import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _maybe_freeze_request(request: CandidateAnalysisRequest) -> None:
+    """Dump the detector input to ``$STREAMCUT_FREEZE_ANALYSIS_DIR/<job_id>.json``
+    when that env var is set, so it can be replayed by the eval harness. No-op
+    (and never fatal) otherwise — this is offline tooling, not a pipeline step."""
+    freeze_dir = os.environ.get("STREAMCUT_FREEZE_ANALYSIS_DIR")
+    if not freeze_dir:
+        return
+    try:
+        from streamcut_worker.analysis.fixture import dump_request
+
+        path = Path(freeze_dir) / f"{request.job_id}.json"
+        dump_request(request, path)
+        logger.info("analysis_request_frozen jobId=%s path=%s", request.job_id, path)
+    except Exception:
+        logger.warning("analysis_request_freeze_failed jobId=%s", request.job_id, exc_info=True)
 
 
 class WorkerJobRunnerError(RuntimeError):
@@ -442,6 +460,7 @@ class WorkerJobRunner:
             emotion_keywords=self.emotion_keywords,
             loudness_profile=loudness_profile,
         )
+        _maybe_freeze_request(request)
 
         def _run_analysis():
             return analyze_candidates_hybrid(

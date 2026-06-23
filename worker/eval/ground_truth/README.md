@@ -48,6 +48,28 @@ often have very different durations (a 5-second labeled moment vs. a 30-second
 sliding window), which makes IoU misleadingly low even when the detector clearly
 found the right moment.
 
+## Reproducible runs (freeze the detector input)
+
+The same Twitch VOD downloads at a slightly different length each run, which
+changes the transcript and therefore the detector output. To tune the detector
+by the numbers (not by eye), freeze the input once and replay it:
+
+1. **Capture** a detector input from a real job — run the worker with
+   `STREAMCUT_FREEZE_ANALYSIS_DIR=/some/dir` set; it writes
+   `<job_id>.json` (transcript + silence + loudness + emotion keywords) when
+   the job reaches analysis.
+2. **Label** that same VOD into a file here (format above), using timestamps
+   from stream start so they line up with the frozen transcript.
+3. **Measure** — replay the frozen input through the detector and score it:
+   ```
+   python -m eval.run_fixture --request <job_id>.json \
+       --labels eval/ground_truth/my-vod.json --tolerance 5
+   # add --hybrid to score the LLM path (needs a wired LlmClient)
+   ```
+
+Now any hit-rate change is the detector's, not download jitter — so you can
+iterate on the prompt / `[]` escape / thresholds and trust the delta.
+
 ## Sample file
 
 `sample.json` is a synthetic example for format reference only -- it does not
