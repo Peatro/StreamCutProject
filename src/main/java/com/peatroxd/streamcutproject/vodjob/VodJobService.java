@@ -423,17 +423,17 @@ public class VodJobService {
             );
         }
 
-        List<ClipCandidate> exportedCandidates = clipCandidateRepository.findAllByVodJobIdAndExportStatus(
+        // Fetch only the paths, not managed entities: the bulk deletes below bypass
+        // the persistence context, so loading entities here would leave them pointing
+        // at the removed job and break the flush (TransientPropertyValueException).
+        List<String> exportedClipPaths = clipCandidateRepository.findExportedClipPaths(
                 jobId, ExportStatus.COMPLETED
         );
-        for (ClipCandidate candidate : exportedCandidates) {
-            String reference = candidate.getExportedClipPath();
-            if (reference != null && !reference.isBlank()) {
-                try {
-                    artifactStorageService.delete(reference);
-                } catch (IOException ex) {
-                    log.warn("job_delete_artifact_failed jobId={} candidateId={} message={}", jobId, candidate.getId(), ex.getMessage());
-                }
+        for (String reference : exportedClipPaths) {
+            try {
+                artifactStorageService.delete(reference);
+            } catch (IOException ex) {
+                log.warn("job_delete_artifact_failed jobId={} reference={} message={}", jobId, reference, ex.getMessage());
             }
         }
 

@@ -2089,11 +2089,29 @@ class VodJobServiceTest {
         VodJob job = buildJob(1L, "https://example.com/video", Instant.parse("2026-04-05T10:00:00Z"));
         job.setStatus(JobStatus.READY_FOR_REVIEW);
         when(vodJobRepository.findById(1L)).thenReturn(java.util.Optional.of(job));
-        when(clipCandidateRepository.findAllByVodJobIdAndExportStatus(1L, ExportStatus.COMPLETED))
+        when(clipCandidateRepository.findExportedClipPaths(1L, ExportStatus.COMPLETED))
                 .thenReturn(List.of());
 
         vodJobService.deleteJob(1L);
 
+        verify(vodJobRepository).delete(job);
+    }
+
+    @Test
+    void deleteJobRemovesExportedArtifactsWithoutLoadingEntities() throws Exception {
+        VodJob job = buildJob(1L, "https://example.com/video", Instant.parse("2026-04-05T10:00:00Z"));
+        job.setStatus(JobStatus.READY_FOR_REVIEW);
+        when(vodJobRepository.findById(1L)).thenReturn(java.util.Optional.of(job));
+        when(clipCandidateRepository.findExportedClipPaths(1L, ExportStatus.COMPLETED))
+                .thenReturn(List.of("s3://streamcut-artifacts/exports/jobs/1/candidate-7.mp4"));
+
+        vodJobService.deleteJob(1L);
+
+        // Paths fetched as a projection, never as managed entities (which would break the
+        // flush after the bulk child deletes); each exported artifact still gets removed.
+        verify(clipCandidateRepository, org.mockito.Mockito.never()).findAllByVodJobIdAndExportStatus(anyLong(), any(ExportStatus.class));
+        verify(artifactStorageService).delete("s3://streamcut-artifacts/exports/jobs/1/candidate-7.mp4");
+        verify(clipCandidateRepository).deleteAllByJobId(1L);
         verify(vodJobRepository).delete(job);
     }
 

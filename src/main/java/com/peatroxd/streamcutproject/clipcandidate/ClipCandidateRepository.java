@@ -48,6 +48,15 @@ public interface ClipCandidateRepository extends JpaRepository<ClipCandidate, Lo
 
     List<ClipCandidate> findAllByVodJobIdAndExportStatus(Long jobId, ExportStatus exportStatus);
 
+    @Query("""
+            select c.exportedClipPath
+            from ClipCandidate c
+            where c.vodJob.id = :jobId
+              and c.exportStatus = :exportStatus
+              and c.exportedClipPath is not null
+            """)
+    List<String> findExportedClipPaths(@Param("jobId") Long jobId, @Param("exportStatus") ExportStatus exportStatus);
+
     boolean existsByVodJobIdAndModerationStatus(Long jobId, ModerationStatus moderationStatus);
 
     @Query("""
