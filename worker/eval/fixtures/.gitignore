@@ -1,0 +1,4 @@
+# Scratch / derived artifacts. The frozen request fixtures (<job_id>.json) are
+# committed as reproducible harness input; these are throwaway.
+*_transcript.txt
+*_candidates.json
