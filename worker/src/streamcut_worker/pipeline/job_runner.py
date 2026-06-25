@@ -34,6 +34,12 @@ from streamcut_worker.transcription import (
 logger = logging.getLogger(__name__)
 
 
+def _captions_enabled() -> bool:
+    """Burn karaoke subtitles at export unless STREAMCUT_CAPTIONS_ENABLED is a
+    falsey value (false/0/no). Default on. Set on the export-worker."""
+    return os.environ.get("STREAMCUT_CAPTIONS_ENABLED", "true").strip().lower() not in {"false", "0", "no"}
+
+
 def _maybe_freeze_request(request: CandidateAnalysisRequest) -> None:
     """Dump the detector input to ``$STREAMCUT_FREEZE_ANALYSIS_DIR/<job_id>.json``
     when that env var is set, so it can be replayed by the eval harness. No-op
@@ -227,6 +233,7 @@ class WorkerJobRunner:
                     start_sec=job.clip_start_sec,
                     end_sec=job.clip_end_sec,
                     words=clip_words,
+                    captions_enabled=_captions_enabled(),
                 )
             )
         except Exception as exc:

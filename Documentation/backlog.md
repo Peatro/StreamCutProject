@@ -245,6 +245,7 @@ Priority ladder and decisions are recorded in `Documentation/clip-quality-plan.m
 - `TASK-092` Word-By-Word Karaoke Burned-In Subtitles At Export (depends `TASK-091`)
 - `TASK-093` Vertical Reframe Tier 0 Blurred-Fill At Export
 - `TASK-094` Supply Clip-Local Word Timings In The Export-Claim Payload (backend; closes the TASK-091→TASK-092 delivery gap so karaoke captions actually fire)
+- `TASK-095` Frontend-Configurable Subtitle Style (deferred, raised 2026-06-25) — lift the hardcoded ASS style constants in `worker/.../export/subtitles.py` (font/size/colors/outline/position/words-per-line) and the on/off flag into operator-editable settings on the frontend. Today: on/off is the `STREAMCUT_CAPTIONS_ENABLED` env on export-worker; style is module constants needing a rebuild. **Scope when picked up:** decide per-job vs global-default vs named presets; add a settings model + backend persistence + API; the export-claim payload must carry the resolved style so the worker builds the ASS from the payload instead of constants; frontend form. Not started — no single-operator urgency, captions currently off.
 
 Guardrail: "better" is the detector's hit-rate against a hand-labeled set (`TASK-087`), not a feeling — tune from the metric, not by taste.
 
