@@ -5,6 +5,7 @@ import logging
 import os
 from pathlib import Path
 import threading
+import time
 from typing import Callable, TypeVar
 
 from streamcut_worker.analysis import CandidateAnalysisRequest, LoudnessProfile, SlidingWindowCandidateAnalysisService
@@ -523,9 +524,14 @@ class WorkerJobRunner:
             message=message,
         )
 
+        start = time.perf_counter()
         try:
             return operation()
         finally:
+            elapsed = time.perf_counter() - start
+            # Wall-clock per stage so CPU-vs-GPU cost is measurable (e.g. for VPS
+            # capacity planning — transcription is the device-sensitive one).
+            logger.info("stage_timing status=%s elapsed_sec=%.1f", status, elapsed)
             heartbeat_stop.set()
             if heartbeat_thread is not None:
                 heartbeat_thread.join()
