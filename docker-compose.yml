@@ -1,3 +1,5 @@
+name: streamcut
+
 services:
   postgres:
     image: postgres:15
