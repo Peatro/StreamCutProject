@@ -28,6 +28,8 @@ from streamcut_worker.analysis.hybrid import (
     hybrid_detect,
     is_hybrid_enabled,
     merge_moments,
+    select_moments,
+    _parse_selection,
     moments_to_candidates,
     parse_llm_highlights,
     _extract_emotion_hits,
@@ -729,6 +731,40 @@ class TestEvalHarnessIntegration(unittest.TestCase):
         self.assertGreaterEqual(hybrid_eval.hit_rate, heuristic_eval.hit_rate)
         self.assertEqual(hybrid_eval.hit_rate, 1.0)  # 100% on synthetic
         self.assertEqual(hybrid_eval.false_positives, 0)
+
+
+class SelectMomentsTests(unittest.TestCase):
+    """Stage-2 cross-stream selection."""
+
+    def _moments(self, n: int) -> list[LlmHighlightMoment]:
+        return [
+            LlmHighlightMoment(start_sec=i * 10.0, end_sec=i * 10.0 + 5, reason=f"m{i}", confidence=0.5 + i * 0.01)
+            for i in range(n)
+        ]
+
+    def test_passthrough_when_at_or_below_target(self) -> None:
+        moments = self._moments(3)
+        llm = MagicMock()
+        kept = select_moments(moments, [], llm, target_n=5)
+        self.assertEqual(kept, moments)
+        llm.generate.assert_not_called()  # no LLM call needed
+
+    def test_keeps_selected_indices(self) -> None:
+        moments = self._moments(10)
+        llm = MagicMock()
+        llm.generate.return_value = "[3, 7, 1]"
+        kept = select_moments(moments, [], llm, target_n=3)
+        self.assertEqual([m.reason for m in kept], ["m3", "m7", "m1"])
+
+    def test_falls_back_to_confidence_topn_on_garbage(self) -> None:
+        moments = self._moments(10)  # confidence ascends with index → m9 highest
+        llm = MagicMock()
+        llm.generate.return_value = "I cannot decide."
+        kept = select_moments(moments, [], llm, target_n=2)
+        self.assertEqual([m.reason for m in kept], ["m9", "m8"])
+
+    def test_parse_selection_filters_out_of_range_and_dupes(self) -> None:
+        self.assertEqual(_parse_selection("[2, 2, 99, 0]", n=5), [2, 0])
 
 
 if __name__ == "__main__":

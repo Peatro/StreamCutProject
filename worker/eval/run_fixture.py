@@ -61,7 +61,15 @@ def main(argv: Sequence[str] | None = None) -> None:
     args = parser.parse_args(argv)
 
     request = load_request(args.request)
-    candidates = run_detector(request, hybrid=args.hybrid)
+    llm_client = None
+    if args.hybrid:
+        # Build the real Qwen client from env (QWEN_*). Only works where the
+        # model + llama-cpp are present, i.e. inside the processing-worker.
+        from streamcut_worker.inference import create_llm_client
+
+        llm_client = create_llm_client()
+        print(f"LLM client: enabled={llm_client.enabled} available={llm_client.is_available}")
+    candidates = run_detector(request, hybrid=args.hybrid, llm_client=llm_client)
     print(f"Detector produced {len(candidates)} candidate(s).")
 
     if args.out:

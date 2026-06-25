@@ -52,6 +52,12 @@ DEFAULT_TEMPERATURE = 0.3
 DEFAULT_N_GPU_LAYERS = -1
 # Context window — 4096 is sufficient for transcript-chunk prompts
 DEFAULT_N_CTX = 4096
+# KV-cache quantization — None keeps the fp16 cache. "q8_0" roughly halves the
+# KV footprint at negligible quality cost, which is what lets a 14B model fit an
+# 11 GB card at n_ctx 8192. Quantized KV requires flash attention in llama.cpp.
+DEFAULT_KV_QUANT: str | None = None
+# GGML type ids (stable enum) for the KV cache.
+_GGML_TYPES = {"f16": 1, "q8_0": 8, "q5_1": 7, "q5_0": 6, "q4_1": 3, "q4_0": 2}
 
 
 class LlmUnavailableError(Exception):
@@ -79,6 +85,7 @@ class LlmClient:
     model_path: Path
     n_gpu_layers: int = DEFAULT_N_GPU_LAYERS
     n_ctx: int = DEFAULT_N_CTX
+    kv_quant: str | None = DEFAULT_KV_QUANT
     _model: Any = field(default=None, init=False, repr=False)
 
     # ------------------------------------------------------------------
@@ -174,11 +181,23 @@ class LlmClient:
                 f"(pinned {PINNED_LLAMA_CPP_VERSION}): {exc}"
             ) from exc
 
+        kwargs: dict[str, Any] = {}
+        if self.kv_quant:
+            kv = self.kv_quant.strip().lower()
+            if kv not in _GGML_TYPES:
+                raise LlmUnavailableError(
+                    f"Unsupported QWEN_KV_QUANT={self.kv_quant!r}; expected one of {sorted(_GGML_TYPES)}"
+                )
+            if kv != "f16":
+                # Quantized KV cache requires flash attention in llama.cpp.
+                kwargs.update(type_k=_GGML_TYPES[kv], type_v=_GGML_TYPES[kv], flash_attn=True)
+
         logger.info(
-            "llm_load model=%s n_gpu_layers=%d n_ctx=%d",
+            "llm_load model=%s n_gpu_layers=%d n_ctx=%d kv_quant=%s",
             self.model_path,
             self.n_gpu_layers,
             self.n_ctx,
+            self.kv_quant or "f16",
         )
 
         try:
@@ -188,6 +207,7 @@ class LlmClient:
                 n_ctx=self.n_ctx,
                 verbose=False,
                 chat_format="chatml",
+                **kwargs,
             )
         except Exception as exc:
             raise LlmUnavailableError(
@@ -231,6 +251,7 @@ def create_llm_client(
       - ``QWEN_MODEL_PATH`` — explicit path to the .gguf file.
       - ``QWEN_N_GPU_LAYERS`` — GPU offload layers; default -1 (all).
       - ``QWEN_N_CTX``      — context window size; default 4096.
+      - ``QWEN_KV_QUANT``   — KV-cache type (e.g. "q8_0"); default fp16.
     """
     if enabled is None:
         enabled = os.getenv("QWEN_ENABLED", "false").strip().lower() in ("1", "true", "yes")
@@ -247,6 +268,8 @@ def create_llm_client(
         else int(os.getenv("QWEN_N_CTX", str(DEFAULT_N_CTX)))
     )
 
+    resolved_kv_quant = os.getenv("QWEN_KV_QUANT", "").strip().lower() or DEFAULT_KV_QUANT
+
     model_path = _resolve_model_path(model_dir)
 
     client = LlmClient(
@@ -254,6 +277,7 @@ def create_llm_client(
         model_path=model_path,
         n_gpu_layers=resolved_gpu_layers,
         n_ctx=resolved_ctx,
+        kv_quant=resolved_kv_quant,
     )
 
     logger.info(

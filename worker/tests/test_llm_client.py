@@ -117,6 +117,35 @@ class LlmClientGenerateTests(unittest.TestCase):
         self.assertEqual(call_kwargs.kwargs["max_tokens"], 128)
         self.assertAlmostEqual(call_kwargs.kwargs["temperature"], 0.7)
 
+    def test_kv_quant_passes_types_and_flash_attn(self) -> None:
+        client, fake_llama_module = self._make_client_with_mock_model()
+        client.kv_quant = "q8_0"
+        with mock.patch.object(Path, "exists", return_value=True), \
+             mock.patch.dict("sys.modules", {"llama_cpp": fake_llama_module}):
+            client.generate("test")
+        kwargs = fake_llama_module.Llama.call_args.kwargs
+        self.assertEqual(kwargs["type_k"], 8)
+        self.assertEqual(kwargs["type_v"], 8)
+        self.assertTrue(kwargs["flash_attn"])
+
+    def test_fp16_kv_omits_quant_kwargs(self) -> None:
+        client, fake_llama_module = self._make_client_with_mock_model()  # kv_quant=None
+        with mock.patch.object(Path, "exists", return_value=True), \
+             mock.patch.dict("sys.modules", {"llama_cpp": fake_llama_module}):
+            client.generate("test")
+        kwargs = fake_llama_module.Llama.call_args.kwargs
+        self.assertNotIn("type_k", kwargs)
+        self.assertNotIn("flash_attn", kwargs)
+
+    def test_invalid_kv_quant_raises(self) -> None:
+        from streamcut_worker.inference.client import LlmUnavailableError
+        client, fake_llama_module = self._make_client_with_mock_model()
+        client.kv_quant = "bogus"
+        with mock.patch.object(Path, "exists", return_value=True), \
+             mock.patch.dict("sys.modules", {"llama_cpp": fake_llama_module}):
+            with self.assertRaises(LlmUnavailableError):
+                client.generate("test")
+
     def test_generate_uses_chatml_user_message(self) -> None:
         client, fake_llama_module = self._make_client_with_mock_model()
 

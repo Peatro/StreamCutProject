@@ -243,12 +243,20 @@ def build_chunk_prompt(
 
     return f"""You are a highlight detector for a livestream VOD. Your job is to identify moments worth clipping for short-form content (TikTok, YouTube Shorts, etc.).
 
-Analyze the following transcript chunk (from {chunk.start_sec:.0f}s to {chunk.end_sec:.0f}s) and the heuristic hints below. Identify the most clip-worthy moments: funny reactions, hype moments, surprising events, emotional peaks, epic fails, or any moment a viewer would want to rewatch.
+This is a TALKATIVE stream: the streamer chats, jokes, and reacts almost constantly. Clip-worthy moments are very often VERBAL, not just loud action. Look for:
+- Funny one-liners, witty remarks, punchlines (can be short, ~5s)
+- Spicy or contrarian hot takes, strong/relatable opinions
+- Self-deprecating jokes, funny rants, comebacks, banter with chat
+- Genuine hype, surprising events, epic fails, emotional peaks, lucky moments
+
+A moment can be clip-worthy on the strength of WHAT IS SAID alone — it does NOT need a loudness peak or excitement marker. The hints below are supplementary signals, never requirements.
+
+Analyze the transcript chunk (from {chunk.start_sec:.0f}s to {chunk.end_sec:.0f}s).
 
 TRANSCRIPT:
 {transcript_text}
 
-HEURISTIC HINTS (use these as additional signals, not as the sole criteria):
+HEURISTIC HINTS (supplementary signals only — a quiet but funny line is still clip-worthy):
 {hints_text}
 
 Return your findings as a JSON array of highlight moments. Each moment should have:
@@ -257,10 +265,12 @@ Return your findings as a JSON array of highlight moments. Each moment should ha
 - "reason": brief explanation of why this is clip-worthy (string)
 - "confidence": how confident you are this is a good clip, from 0.0 to 1.0 (float)
 
+Calibrate confidence honestly: 0.5-0.6 = mildly amusing, 0.7-0.8 = clearly clip-worthy, 0.9+ = standout moment of the stream. Do not inflate.
+
 Rules:
 - Only return moments within the chunk range ({chunk.start_sec:.0f}s to {chunk.end_sec:.0f}s).
-- Each moment should be 10-60 seconds long (ideal clip length).
-- Return an empty array [] if nothing in this chunk is clip-worthy.
+- Each moment should be 5-60 seconds long, tightly bounded around the actual punchline/peak.
+- A talkative chunk usually contains at least one clippable line. Return an empty array [] ONLY if the chunk is essentially filler — silence, pure menu/UI navigation, or routine narration with no notable line.
 - Return ONLY the JSON array, no other text.
 
 JSON:"""
@@ -449,6 +459,83 @@ def moments_to_candidates(
 
 
 # ---------------------------------------------------------------------------
+# Stage 2: cross-stream selection (optional, env-gated)
+# ---------------------------------------------------------------------------
+
+SELECTION_TOP_N_DEFAULT: int = 12
+
+
+def _moment_excerpt(
+    moment: LlmHighlightMoment,
+    segments: list[TranscriptSegment],
+    limit: int = 220,
+) -> str:
+    """Short transcript excerpt for a moment, for the selection prompt."""
+    parts = [
+        _segment_text_in_window(seg, moment.start_sec, moment.end_sec)
+        for seg in segments
+        if _interval_overlap(seg.start_sec, seg.end_sec, moment.start_sec, moment.end_sec) > 0
+    ]
+    return " ".join(" ".join(parts).split())[:limit]
+
+
+def _build_selection_prompt(
+    moments: list[LlmHighlightMoment],
+    excerpts: list[str],
+    target_n: int,
+) -> str:
+    listing = "\n".join(
+        f'[{i}] {m.start_sec:.0f}s — reason: {m.reason} — said: "{ex}"'
+        for i, (m, ex) in enumerate(zip(moments, excerpts))
+    )
+    return f"""You are choosing the final highlight clips for a livestream VOD.
+
+A first-pass detector flagged the {len(moments)} candidate moments below. Pick the {target_n} BEST — the moments a viewer would most want to watch or share: the funniest lines, sharpest takes, biggest reactions, genuine hype. Drop filler, near-duplicates, and anything only mildly interesting.
+
+CANDIDATES:
+{listing}
+
+Return ONLY a JSON array of the indices to keep, best first, at most {target_n}. Example: [4, 0, 11]
+JSON:"""
+
+
+def _parse_selection(raw: str, n: int) -> list[int]:
+    match = re.search(r"\[[\d,\s]*\]", raw)
+    nums = re.findall(r"\d+", match.group(0) if match else raw)
+    kept: list[int] = []
+    for x in nums:
+        idx = int(x)
+        if 0 <= idx < n and idx not in kept:
+            kept.append(idx)
+    return kept
+
+
+def select_moments(
+    moments: list[LlmHighlightMoment],
+    segments: list[TranscriptSegment],
+    llm_client: LlmClient,
+    target_n: int,
+) -> list[LlmHighlightMoment]:
+    """Stage-2 selection: one LLM call ranks the whole candidate shortlist and
+    keeps the strongest ``target_n``. The 7B can't self-regulate selectivity
+    per-chunk (it floods or bails), but ranking a shortlist is an easier task.
+    Falls back to confidence top-n if the model returns nothing usable."""
+    if len(moments) <= target_n:
+        return moments
+    excerpts = [_moment_excerpt(m, segments) for m in moments]
+    raw = llm_client.generate(
+        _build_selection_prompt(moments, excerpts, target_n),
+        max_tokens=256,
+        temperature=0.0,
+    )
+    kept = _parse_selection(raw, len(moments))
+    logger.info("hybrid_select kept=%d of %d", len(kept), len(moments))
+    if not kept:
+        return sorted(moments, key=lambda m: -m.confidence)[:target_n]
+    return [moments[i] for i in kept[:target_n]]
+
+
+# ---------------------------------------------------------------------------
 # Main hybrid detection entry point
 # ---------------------------------------------------------------------------
 
@@ -544,6 +631,14 @@ def hybrid_detect(
         "hybrid_detect merged_moments=%d (from %d raw across %d chunks)",
         len(merged), len(all_moments), len(chunks),
     )
+
+    # Stage 2: optional cross-stream selection pass (env-gated). The per-chunk
+    # recall prompt over-produces; this ranks the whole shortlist down to the
+    # strongest few.
+    if os.getenv("HYBRID_SELECTION_ENABLED", "false").strip().lower() in ("1", "true", "yes"):
+        target_n = int(os.getenv("HYBRID_SELECTION_TOP_N", str(SELECTION_TOP_N_DEFAULT)))
+        merged = select_moments(merged, request.transcript_segments, llm_client, target_n)
+        logger.info("hybrid_detect after_selection=%d (target_n=%d)", len(merged), target_n)
 
     # Convert to ClipCandidates
     candidates = moments_to_candidates(

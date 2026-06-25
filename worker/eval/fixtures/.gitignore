@@ -2,3 +2,4 @@
 # committed as reproducible harness input; these are throwaway.
 *_transcript.txt
 *_candidates.json
+exp_*.json
