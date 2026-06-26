@@ -64,6 +64,24 @@ class WorkerJobRunnerError(RuntimeError):
         self.failed_state = failed_state
 
 
+def _temporal_nms(candidates, window_sec: float):
+    """Greedy non-max suppression in time: keep the highest-scoring candidate,
+    drop any later one whose center is within ``window_sec`` of an already-kept
+    center, repeat. Collapses near-duplicate detections of the same moment
+    without a global top-N cut (which would drop true highlights, since score
+    does not separate hits from false positives). Returns candidates ordered by
+    score desc. ``window_sec <= 0`` is a no-op (returns score-sorted input)."""
+    ordered = sorted(candidates, key=lambda c: (-c.score, c.start_sec))
+    if window_sec <= 0:
+        return ordered
+    kept = []
+    for c in ordered:
+        center = (c.start_sec + c.end_sec) / 2.0
+        if all(abs(center - (k.start_sec + k.end_sec) / 2.0) > window_sec for k in kept):
+            kept.append(c)
+    return kept
+
+
 T = TypeVar("T")
 
 
@@ -86,11 +104,19 @@ class WorkerJobRunner:
     llm_client: LlmClient | None = None
     emotion_keywords: tuple[str, ...] = field(default_factory=tuple)
     # Candidate gate (applied to both heuristic and hybrid output): drop clips
-    # with no real transcript or a low score, then keep only the strongest few.
-    # Stops the wordless/low-signal flood (job-13 produced 321) from reaching review.
+    # with no real transcript or a low score, then dedup near-duplicate detections
+    # in time. Stops the wordless/low-signal flood (job-13 produced 321) reaching
+    # review. NOTE: we do NOT cut to a top-N by score — score (LLM confidence)
+    # does not separate true highlights from false positives, so a top-N-by-score
+    # cap silently drops real clips (measured: top-30 keeps only 5/10 vs 9/10 for
+    # the full deduped pool on fixture 21). Recall lives behind the tool; the
+    # operator's review is the precision filter. Temporal NMS is a lossless
+    # reducer (w=45s held 9/10 while cutting 100->68); candidate_top_n is only a
+    # pathological-flood backstop applied AFTER dedup.
     candidate_min_score: float = 0.5
-    candidate_top_n: int = 30
+    candidate_top_n: int = 100
     candidate_min_excerpt_chars: int = 3
+    candidate_nms_window_sec: float = 45.0
 
     def run(
         self,
@@ -490,21 +516,23 @@ class WorkerJobRunner:
         return self._gate_candidates(result)
 
     def _gate_candidates(self, result):
-        """Drop clips with no real transcript or a sub-threshold score, then keep
-        the strongest ``candidate_top_n``. Applied to whichever path produced the
-        candidates (heuristic or hybrid)."""
+        """Drop clips with no real transcript or a sub-threshold score, dedup
+        near-duplicate detections in time (NMS), then show the full pool. Applied
+        to whichever path produced the candidates (heuristic or hybrid). Does NOT
+        cut to a top-N by score — see the field comments above for why."""
         kept = [
             c for c in result.clip_candidates
             if len(c.transcript_excerpt.strip()) >= self.candidate_min_excerpt_chars
             and c.score >= self.candidate_min_score
         ]
-        kept.sort(key=lambda c: (-c.score, c.start_sec))
-        kept = kept[: self.candidate_top_n]
+        deduped = _temporal_nms(kept, self.candidate_nms_window_sec)
+        deduped = deduped[: self.candidate_top_n]  # pathological-flood backstop only
         logger.info(
-            "candidate_gate kept=%d of %d (min_score=%.2f top_n=%d)",
-            len(kept), len(result.clip_candidates), self.candidate_min_score, self.candidate_top_n,
+            "candidate_gate kept=%d of %d (min_score=%.2f nms_window=%.0fs backstop=%d)",
+            len(deduped), len(result.clip_candidates),
+            self.candidate_min_score, self.candidate_nms_window_sec, self.candidate_top_n,
         )
-        return replace(result, clip_candidates=kept)
+        return replace(result, clip_candidates=deduped)
 
     def _run_with_stage_heartbeat(
         self,

@@ -11,6 +11,7 @@ from streamcut_worker.audio import AudioExtractionResult
 from streamcut_worker.loudness import LoudnessDetectionResult, LoudnessSample
 from streamcut_worker.models import ClaimedJob
 from streamcut_worker.pipeline import WorkerJobRunner, WorkerJobRunnerError
+from streamcut_worker.pipeline.job_runner import _temporal_nms
 from streamcut_worker.services.source_materializer import SourceMaterializationError
 from streamcut_worker.silence import SilenceDetectionResult, SilenceInterval
 from streamcut_worker.transcription import TranscriptionResult, TranscriptSegment
@@ -403,3 +404,30 @@ class WorkerJobRunnerTests(unittest.TestCase):
         self.assertEqual(result.processing_version, 5)
         self.assertEqual(result.candidate_id, 3)
         self.assertEqual(result.artifact_path, str(artifact_path))
+
+
+class TemporalNmsTests(unittest.TestCase):
+    """Greedy time-domain NMS in the candidate gate (lossless dedup, no top-N cut)."""
+
+    def test_suppresses_near_duplicates_keeps_higher_score(self) -> None:
+        # Two detections ~20s apart (same moment) + one far away. Window 45s
+        # collapses the near pair to the higher-scoring one; the distant one survives.
+        cands = [
+            ClipCandidate(100.0, 110.0, 0.7, "a"),   # near, lower score -> dropped
+            ClipCandidate(120.0, 130.0, 0.9, "b"),   # near, higher score -> kept
+            ClipCandidate(900.0, 910.0, 0.6, "c"),   # far -> kept
+        ]
+        kept = _temporal_nms(cands, window_sec=45.0)
+        self.assertEqual([c.transcript_excerpt for c in kept], ["b", "c"])
+
+    def test_no_score_cut_keeps_all_distinct_moments(self) -> None:
+        # 50 well-separated low-and-high score candidates: none suppressed, all kept
+        # (proves we do not silently drop true highlights via a top-N-by-score cap).
+        cands = [ClipCandidate(i * 100.0, i * 100.0 + 5, 0.5 + (i % 5) * 0.1, f"m{i}") for i in range(50)]
+        kept = _temporal_nms(cands, window_sec=45.0)
+        self.assertEqual(len(kept), 50)
+
+    def test_window_zero_is_noop(self) -> None:
+        cands = [ClipCandidate(100.0, 110.0, 0.7, "a"), ClipCandidate(105.0, 115.0, 0.9, "b")]
+        kept = _temporal_nms(cands, window_sec=0.0)
+        self.assertEqual(len(kept), 2)
