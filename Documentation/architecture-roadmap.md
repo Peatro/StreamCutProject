@@ -234,6 +234,11 @@ The following roadmap steps should probably produce ADRs:
 
 ## Relation To Other Documents
 
+- `Documentation/STREAMCUT_ARCHITECTURE_BRIEF.md`
+  authoritative architecture of the highlight-detection / clip-selection / scoring / fusion pipeline.
+  This roadmap covers execution semantics, worker topology, storage, and delivery; the brief owns the
+  highlight pipeline (detection vs judgment layers, the LLM's role, arithmetic fusion, epistemic status).
+
 - `Documentation/backlog.md`
   status, task inventory, release progress
 

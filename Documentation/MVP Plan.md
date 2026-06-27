@@ -2,6 +2,9 @@
 >
 > This file is preserved for earlier planning context.
 > It should not be used as the active source of truth for current backlog, roadmap, architecture, or runtime behavior.
+> In particular, the top-N / sliding-window scoring model described below has been superseded: the current
+> highlight pipeline is a recall-oriented LLM detector feeding an arithmetic fusion of orthogonal voters,
+> rank-all (no top-N cut). The authoritative reference is `Documentation/STREAMCUT_ARCHITECTURE_BRIEF.md`.
 
 Отлично. Значит не распыляемся.
 

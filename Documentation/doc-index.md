@@ -29,6 +29,8 @@ If a document exists both in the repository and in Obsidian, the repository vers
 
 | Document | Purpose | Source Of Truth | Mirror |
 |---|---|---|---|
+| `Documentation/STREAMCUT_ARCHITECTURE_BRIEF.md` | authoritative architecture of the highlight-detection / clip-selection / scoring / fusion pipeline (detection vs judgment layers, LLM role, arithmetic fusion, epistemic status) | repository | none required |
+| `Documentation/clip-quality-plan.md` | clip-quality leverage ladder and remaining hook/subtitle/resize work; defers to the architecture brief for highlight-pipeline decisions | repository | none required |
 | `Documentation/backlog.md` | project status, release track, task queue, roadmap status | repository | Obsidian backlog mirror |
 | `README.md` | repository landing page with overview, quick start, and entry points to deeper docs | repository | none required |
 | `Documentation/documentarian-role.md` | documentation ownership and sync rules | repository | `Documentarian Role.md` |
@@ -194,6 +196,8 @@ Near-term likely ADRs:
 
 ### Active
 
+- `Documentation/STREAMCUT_ARCHITECTURE_BRIEF.md`
+- `Documentation/clip-quality-plan.md`
 - `Documentation/backlog.md`
 - `Documentation/doc-index.md`
 - `Documentation/documentarian-role.md`

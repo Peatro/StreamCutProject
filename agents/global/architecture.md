@@ -15,6 +15,11 @@ It helps reduce manual review time by:
 - supporting manual moderation
 - exporting approved clips
 
+> Highlight-pipeline detail (detection vs judgment layers, the LLM's role, arithmetic fusion of orthogonal
+> voters, rank-all selection) is owned authoritatively by `Documentation/STREAMCUT_ARCHITECTURE_BRIEF.md`.
+> The "analysis window scoring / candidate generation" responsibilities below are the system-level summary;
+> defer to the brief for how candidates are detected, scored, and ordered.
+
 ## High-Level Architecture
 - Web UI
 - Spring Boot backend

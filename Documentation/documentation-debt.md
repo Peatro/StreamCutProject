@@ -109,6 +109,25 @@ Use it for:
 
 ---
 
+### DOC-012 Highlight-pipeline docs aligned to the architecture brief
+
+- Status: `resolved`
+- Area: architecture docs
+- Problem:
+  several docs described the highlight pipeline with stale framing (LLM as ranker/selector, top-N / confidence-sorted
+  candidate cut, "hybrid" prompt-hint gate, audio treated as an unmeasured given) that contradicts
+  `Documentation/STREAMCUT_ARCHITECTURE_BRIEF.md` (the single source of truth for detection/judgment/fusion)
+- Fix:
+  registered the brief and `clip-quality-plan.md` in `doc-index.md`; added source-of-truth pointers from
+  `architecture-roadmap.md`, `agents/global/architecture.md`, and the historical `Main idea.md` / `MVP Plan.md`
+  banners (whose top-N body is preserved as history). `clip-quality-plan.md` and `backlog.md` already carried the
+  brief pointer and supersede notes from the prior pass
+- Remaining note:
+  the brief's §6 open question — an *independent* human ground truth (current `worker/eval/ground_truth/21.json` is
+  model-ratified recognition, not independent labeling) — is product/R&D work, not documentation debt; tracked in the
+  brief, not here. The fusion engine commit (`e535af7`, `worker/.../analysis/fusion.py`, not yet wired) is likewise
+  documented only in the brief
+
 ## Resolved Items
 
 ### DOC-007 No explicit documentation ownership model
