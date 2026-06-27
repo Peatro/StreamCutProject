@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 import re
 from dataclasses import dataclass, field
@@ -510,29 +511,65 @@ def _parse_selection(raw: str, n: int) -> list[int]:
     return kept
 
 
+def _rank_keep(
+    moments: list[LlmHighlightMoment],
+    segments: list[TranscriptSegment],
+    llm_client: LlmClient,
+    keep_n: int,
+) -> list[LlmHighlightMoment]:
+    """One LLM ranking call over a shortlist; return its ``keep_n`` picks.
+    Falls back to confidence top-n if the model returns nothing usable."""
+    if len(moments) <= keep_n:
+        return moments
+    excerpts = [_moment_excerpt(m, segments) for m in moments]
+    raw = llm_client.generate(
+        _build_selection_prompt(moments, excerpts, keep_n),
+        max_tokens=256,
+        temperature=0.0,
+    )
+    kept = _parse_selection(raw, len(moments))
+    if not kept:
+        return sorted(moments, key=lambda m: -m.confidence)[:keep_n]
+    return [moments[i] for i in kept[:keep_n]]
+
+
 def select_moments(
     moments: list[LlmHighlightMoment],
     segments: list[TranscriptSegment],
     llm_client: LlmClient,
     target_n: int,
+    batch_size: int | None = None,
 ) -> list[LlmHighlightMoment]:
-    """Stage-2 selection: one LLM call ranks the whole candidate shortlist and
-    keeps the strongest ``target_n``. The 7B can't self-regulate selectivity
-    per-chunk (it floods or bails), but ranking a shortlist is an easier task.
-    Falls back to confidence top-n if the model returns nothing usable."""
+    """Stage-2 selection: rank the candidate shortlist down to ``target_n``.
+
+    A single all-candidates call overflows context (~100 cands × ~140 Cyrillic
+    tokens >> n_ctx 8192): the tail is truncated so the model only ever ranks
+    the early (start-of-stream) candidates — measured recall 90%→20% with 6/12
+    picks in the first 1600s of an 11700s stream. Instead, rank in time-ordered
+    batches (``merged`` is sorted by start_sec) so every part of the stream is
+    judged in a short, non-truncated prompt, then re-rank the survivors across
+    batches down to ``target_n``."""
     if len(moments) <= target_n:
         return moments
-    excerpts = [_moment_excerpt(m, segments) for m in moments]
-    raw = llm_client.generate(
-        _build_selection_prompt(moments, excerpts, target_n),
-        max_tokens=256,
-        temperature=0.0,
+    batch_size = batch_size or int(os.getenv("HYBRID_SELECTION_BATCH_SIZE", "20"))
+    if len(moments) <= batch_size:
+        return _rank_keep(moments, segments, llm_client, target_n)
+
+    n_batches = math.ceil(len(moments) / batch_size)
+    keep_per_batch = max(1, math.ceil(target_n * 2 / n_batches))
+    survivors: list[LlmHighlightMoment] = []
+    for start in range(0, len(moments), batch_size):
+        batch = moments[start:start + batch_size]
+        survivors.extend(_rank_keep(batch, segments, llm_client, keep_per_batch))
+    logger.info(
+        "hybrid_select batched n_batches=%d keep_per_batch=%d survivors=%d of %d",
+        n_batches, keep_per_batch, len(survivors), len(moments),
     )
-    kept = _parse_selection(raw, len(moments))
-    logger.info("hybrid_select kept=%d of %d", len(kept), len(moments))
-    if not kept:
-        return sorted(moments, key=lambda m: -m.confidence)[:target_n]
-    return [moments[i] for i in kept[:target_n]]
+    if len(survivors) <= target_n:
+        return survivors
+    final = _rank_keep(survivors, segments, llm_client, target_n)
+    logger.info("hybrid_select final kept=%d of %d survivors", len(final), len(survivors))
+    return final
 
 
 # ---------------------------------------------------------------------------

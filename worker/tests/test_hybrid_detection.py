@@ -766,6 +766,20 @@ class SelectMomentsTests(unittest.TestCase):
     def test_parse_selection_filters_out_of_range_and_dupes(self) -> None:
         self.assertEqual(_parse_selection("[2, 2, 99, 0]", n=5), [2, 0])
 
+    def test_batched_reaches_late_candidates(self) -> None:
+        # 50 moments, batch_size 20 -> 3 batches + 1 final round. Each batch is
+        # ranked in its own short prompt so late-stream candidates can't be
+        # truncated away (the single-call overflow bug). Confidence ascends with
+        # index, so the per-batch + final confidence fallback must surface the
+        # highest-index (latest) moments, proving the late tail is reachable.
+        moments = self._moments(50)
+        llm = MagicMock()
+        llm.generate.return_value = "no valid indices here"  # force confidence fallback
+        kept = select_moments(moments, [], llm, target_n=5, batch_size=20)
+        self.assertEqual(llm.generate.call_count, 4)  # 3 batches + 1 final
+        self.assertEqual(len(kept), 5)
+        self.assertIn(moments[49], kept)  # last (latest) candidate survived
+
 
 if __name__ == "__main__":
     unittest.main()
