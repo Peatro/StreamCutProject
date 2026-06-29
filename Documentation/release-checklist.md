@@ -13,7 +13,7 @@
 - `Documentation/runtime.md`
 - `Documentation/operations.md`
 - `Documentation/runbook.md`
-- `Documentation/v1.0.0-release.md`
+- `Documentation/archive/v1.0.0-release.md`
 
 ## Purpose
 This checklist is the controlled release gate for moving the validated `v1.0.0` service state from `develop` to `main`.

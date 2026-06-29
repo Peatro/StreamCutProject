@@ -37,25 +37,21 @@ Use it for:
 
 ### DOC-002 `Documentation/DESIGN.md` is not a project design source
 
-- Status: `open`
+- Status: `resolved`
 - Area: legacy/reference docs
 - Problem:
-  the file currently contains unrelated design-system reference material and should not be mistaken for StreamCut architecture truth
-- Risk:
-  medium confusion risk
-- Intended fix:
-  mark as reference-only or archive if it remains unrelated to active project documentation
+  the file contains unrelated UI design-system reference material and should not be mistaken for StreamCut architecture truth
+- Fix:
+  classified `reference` in `legacy-notes.md` and the doc index (kept in place — frontend work references it); no longer listed as an active source-of-truth doc
 
 ### DOC-003 `Documentation/HELP.md` is generated scaffold text
 
-- Status: `open`
+- Status: `resolved`
 - Area: legacy/reference docs
 - Problem:
   the file is generic scaffold documentation and does not represent meaningful project guidance
-- Risk:
-  low, but it adds noise and weakens doc trust
-- Intended fix:
-  mark as historical/generated or archive it later
+- Fix:
+  moved to `Documentation/archive/HELP.md` (it is git-ignored, so it only ever existed in the working tree); out of the active docs surface
 
 ### DOC-004 `Documentation/Main idea.md` is historical and encoding-damaged in terminal output
 
@@ -127,6 +123,17 @@ Use it for:
   model-ratified recognition, not independent labeling) — is product/R&D work, not documentation debt; tracked in the
   brief, not here. The fusion engine commit (`e535af7`, `worker/.../analysis/fusion.py`, not yet wired) is likewise
   documented only in the brief
+
+### DOC-013 Documentation surface restructured (archive + lean index)
+
+- Status: `resolved`
+- Area: documentation structure
+- Problem:
+  the active `Documentation/` surface had accumulated historical docs beside current ones, and `doc-index.md` had grown several overlapping registries (ADR and mirror registries listed twice, "Current Registry Addendum" / "Normalized Mirror Registry" / "Document Lifecycle Registry" layered over Core/Supporting) — the index had become the graveyard it warns against
+- Fix:
+  moved the historical docs (`Main idea.md`, `MVP Plan.md`, `HELP.md`, `v1.0.0-release.md`) into `Documentation/archive/` and fixed inbound links (README, release-checklist, backlog, legacy-notes); rewrote `doc-index.md` into one lean lifecycle-grouped map (Source-of-truth / Process / Operations / Reference / Archive / ADR); registered `CHANGELOG.md`
+- Not done (deliberate):
+  the operational docs (`runtime.md`, `operations.md`, `runbook.md`, `STORAGE.md`, `alerts.md`, `docker-compose.md`, `worker-scaling-roadmap.md`) were grouped in the index but NOT moved into an `operations/` subfolder — that would break ~24 inbound links including references inside historical `agents/tasks/TASK-*.md`, for marginal gain over index grouping
 
 ## Resolved Items
 

@@ -45,7 +45,7 @@ Synced note: Obsidian backlog mirror in `StreamCutProject`
 - The release-candidate defect found during the drill was fixed before release: processing workers now defer queued `ANALYZE` claims until the referenced source video exists under `APP_STORAGE_LOCAL_ROOT`.
 - `TASK-066` cut the controlled `v1.0.0` release through `release/1.0.0`, merged it to `main`, and back-merged it to `develop`.
 - `main` contains the `v1.0.0` release state identified by git tag `v1.0.0`, and `develop` now carries that baseline plus additional post-release fixes.
-- Release notes and known limitations for this cut are recorded in `Documentation/v1.0.0-release.md`.
+- Release notes and known limitations for this cut are recorded in `Documentation/archive/v1.0.0-release.md`.
 - The repository now has a top-level `README.md` that serves as the landing page for overview, quick start, and documentation entry points.
 - The canonical MVP upload policy is defined in `runtime.md`:
   - single-file uploads only
@@ -400,7 +400,7 @@ Guardrail: "better" is the detector's hit-rate against a hand-labeled set (`TASK
 
 ### Release Checklist
 - `release-checklist.md` is the gate document used for the controlled `v1.0.0` cut.
-- `Documentation/v1.0.0-release.md` is the release record for the `v1.0.0` tag.
+- `Documentation/archive/v1.0.0-release.md` is the release record for the `v1.0.0` tag.
 - Future stable milestones should continue to record their gate outcome explicitly before merging to `main`.
 
 ## ROADMAP TO FULL SERVICE

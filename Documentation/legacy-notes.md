@@ -4,7 +4,7 @@
 
 This document tracks repository notes that still exist for historical value but should not be treated as active project guidance.
 
-It exists to reduce confusion without immediately deleting older material.
+It exists to reduce confusion without deleting older material.
 
 ---
 
@@ -12,66 +12,28 @@ It exists to reduce confusion without immediately deleting older material.
 
 If a document appears here, it is not an active source of truth unless it is explicitly promoted later.
 
-Use these notes for:
+Use these notes for: historical context, earlier product framing, old planning assumptions, external inspiration/reference.
 
-- historical context
-- earlier product framing
-- old planning assumptions
-- external inspiration/reference
-
-Do not use them for:
-
-- current task status
-- current architecture direction
-- current runtime behavior
-- release readiness decisions
+Do not use them for: current task status, current architecture direction, current runtime behavior, or release-readiness decisions.
 
 ---
 
-## Current Legacy Notes
+## Archived (moved out of the active surface)
 
-### `Documentation/Main idea.md`
+These were relocated to `Documentation/archive/` on 2026-06-29 — they remain available as history but no longer sit beside active docs.
 
-- Classification: `reference / historical`
-- Why it exists:
-  earlier product framing and concept description
-- Current caution:
-  terminal rendering shows encoding problems, so treat it as unstable for direct maintenance until a dedicated cleanup pass is done
+| Document | Classification | Why kept |
+|---|---|---|
+| `Documentation/archive/Main idea.md` | reference / historical | earliest product framing and concept description |
+| `Documentation/archive/MVP Plan.md` | historical | earlier planning context, not the current roadmap |
+| `Documentation/archive/HELP.md` | historical / generated | generated bootstrap scaffold (git-ignored), no project value |
+| `Documentation/archive/v1.0.0-release.md` | historical | release record for the `v1.0.0` tag; current history lives in `CHANGELOG.md` |
 
-### `Documentation/MVP Plan.md`
+## Reference (kept in place, not active source-of-truth)
 
-- Classification: `historical`
-- Why it exists:
-  earlier planning context
-- Current caution:
-  should not be read as the current roadmap or current delivery plan, and should be edited only after a safe encoding-normalization pass
-
-### `Documentation/DESIGN.md`
-
-- Classification: `reference`
-- Why it exists:
-  external design-system reference material
-- Current caution:
-  not the active StreamCut design or architecture source
-
-### `Documentation/HELP.md`
-
-- Classification: `historical / generated`
-- Why it exists:
-  generated scaffold content from project bootstrap
-- Current caution:
-  not useful as active project documentation
-
----
-
-## Cleanup Candidates
-
-These documents are candidates for later cleanup, rewrite, archival, or relocation:
-
-- `Documentation/Main idea.md`
-- `Documentation/MVP Plan.md`
-- `Documentation/DESIGN.md`
-- `Documentation/HELP.md`
+| Document | Classification | Why kept |
+|---|---|---|
+| `Documentation/DESIGN.md` | reference | UI design-system reference material; not StreamCut architecture truth |
 
 ---
 
@@ -79,17 +41,9 @@ These documents are candidates for later cleanup, rewrite, archival, or relocati
 
 When current truth is needed, prefer:
 
-- `Documentation/backlog.md`
-- `Documentation/architecture-roadmap.md`
-- `Documentation/runtime.md`
-- `Documentation/operations.md`
-- `Documentation/release-checklist.md`
-- `Documentation/doc-index.md`
-
----
-
-## Next Cleanup Actions
-
-- normalize encoding where practical
-- add explicit status headers to legacy files when safe
-- move clearly obsolete material into `Documentation/archive/` if the project wants a cleaner active docs surface
+- `CHANGELOG.md` — release history
+- `Documentation/backlog.md` — status / roadmap
+- `Documentation/STREAMCUT_ARCHITECTURE_BRIEF.md` — highlight-pipeline architecture
+- `Documentation/architecture-roadmap.md` — post-`v1.0.0` direction
+- `Documentation/runtime.md`, `Documentation/operations.md`, `Documentation/runbook.md` — runtime/operations
+- `Documentation/doc-index.md` — the full map

@@ -320,5 +320,6 @@ Start here for deeper project details:
 - [Documentation/runbook.md](Documentation/runbook.md) - operations, backup, restore, upgrade
 - [Documentation/STORAGE.md](Documentation/STORAGE.md) - storage layout and constraints
 - [Documentation/architecture-roadmap.md](Documentation/architecture-roadmap.md) - post-`v1.0.0` direction
-- [Documentation/v1.0.0-release.md](Documentation/v1.0.0-release.md) - release notes and limitations
+- [CHANGELOG.md](CHANGELOG.md) - release history (versions, what changed)
+- [Documentation/archive/v1.0.0-release.md](Documentation/archive/v1.0.0-release.md) - v1.0.0 release notes (archived)
 - [Documentation/adr/README.md](Documentation/adr/README.md) - architectural decision records
